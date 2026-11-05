@@ -6,6 +6,8 @@ import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { PlotTheme } from '@/lib/kan/city/style';
 import { botFigure, kanFigure, mat, sign } from './models';
 import { THEME_COLORS } from './themes';
+import { kidFigure } from './avatar';
+import { loadPlayers, playing } from '@/lib/kan/players';
 import { ball as tennisBall, catTower, climbs, petFigure, petFur, petName, petProfile, petSeed, toy, TOWER_PERCHES, type PetFig, type PetProfile } from './pets';
 
 /**
@@ -424,7 +426,7 @@ export class Inside {
   private gh = 0;
   private gx0 = 0;
   private gz0 = 0;
-  private player: { fig: ReturnType<typeof botFigure>; x: number; z: number; heading: number; path: Vec[]; walk: number };
+  private player: { fig: { group: THREE.Group; body: THREE.Object3D }; x: number; z: number; heading: number; path: Vec[]; walk: number };
   private movers = new Map<string, Mover>();
   private camYaw = 0;
   private yawTarget = 0;
@@ -487,8 +489,7 @@ export class Inside {
     this.renderTv();
     this.hoverLabel = this.makeLabel('', 'kc-label kc-card');
     this.hoverLabel.style.display = 'none';
-    const fig = botFigure(hash('you, the owner'));
-    fig.group.scale.setScalar(BOT_SCALE);
+    const fig = this.you();
     this.scene.add(fig.group);
     this.player = { fig, x: 0, z: 6.6, heading: Math.PI, path: [], walk: 0 };
     this.build(false);
@@ -496,6 +497,26 @@ export class Inside {
   }
 
   // ---------- Public ----------
+
+  /** You, in here: the mushroom, or whichever of the girls is playing. */
+  private you() {
+    const kid = playing(loadPlayers());
+    if (kid) return kidFigure(kid);
+    const fig = botFigure(hash('you, the owner'));
+    fig.group.scale.setScalar(BOT_SCALE);
+    return fig;
+  }
+
+  /** Someone else is playing now: swap who's standing here, in the same spot. */
+  restyleYou() {
+    const old = this.player.fig.group;
+    const fig = this.you();
+    fig.group.position.copy(old.position);
+    fig.group.rotation.copy(old.rotation);
+    old.removeFromParent();
+    this.scene.add(fig.group);
+    this.player.fig = fig;
+  }
 
   /** New cards, apps or layout: rebuild around you. Furniture drops in when it's a redecoration. */
   update(board: ChannelBoard, apps: InsideApp[], style: InteriorStyle, theme: PlotTheme | null, walls: string | null) {

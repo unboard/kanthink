@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { MapControls } from 'three/examples/jsm/controls/MapControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { hash } from '@/lib/kan/city/layout';
+import { loadPlayers, playing } from '@/lib/kan/players';
+import { kidFigure } from './avatar';
 import { BLOCK, CELL, GAP, Grid, PITCH, ROAD, rng, type Vec } from './grid';
 import {
   botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, moped, sportsCar, ufo,
@@ -1476,7 +1478,7 @@ export class CityEngine {
   /** You, and everything you ride, for another scene (the Freeway) to move you around in. */
   playerKit(): PlayerKit {
     return {
-      walker: () => this.makeWalker(),
+      walker: () => this.makeWalker(false),
       car: () => this.makeDriver(),
       moped: () => this.makeMoped(),
       flyer: () => this.makeFlyer(),
@@ -1681,8 +1683,18 @@ export class CityEngine {
 
   private forward(heading: number) { return { x: Math.sin(heading), z: Math.cos(heading) }; }
 
-  /** You, as a mushroom: your own cap, a clay stump with fins, out for a walk. */
-  private makeWalker(): THREE.Group {
+  /**
+   * You, out for a walk: the mushroom (your own cap, a clay stump with fins), or one
+   * of the girls as herself. In the city everything's built big, so she is too; the
+   * zoo and the other places take her at her real size.
+   */
+  private makeWalker(city = true): THREE.Group {
+    const kid = playing(loadPlayers());
+    if (kid) {
+      const k = kidFigure(kid).group;
+      if (city) { k.scale.setScalar(1.45); k.userData.cam = 0.8; }
+      return k;
+    }
     const fig = botFigure(hash('you, the owner'));
     fig.group.scale.setScalar(1.9);
     fig.group.userData.body = fig.body;
@@ -1711,13 +1723,29 @@ export class CityEngine {
     return m.group;
   }
 
-  /** You, the mushroom, in the seat of whatever you're riding. */
+  /** You (the mushroom, or one of the girls sitting down), in the seat of whatever you're riding. */
   private seatYou(vehicle: THREE.Object3D, seat: THREE.Object3D) {
-    const me = botFigure(hash('you, the owner'));
-    me.group.scale.setScalar(0.78);
-    me.group.rotation.y = Math.PI / 2;
-    seat.add(me.group);
-    vehicle.userData.driver = me.group;
+    const kid = playing(loadPlayers());
+    const me = kid ? kidFigure(kid, { sit: true }).group : botFigure(hash('you, the owner')).group;
+    me.scale.setScalar(kid ? 1.15 : 0.78);
+    me.rotation.y = Math.PI / 2;
+    seat.add(me);
+    vehicle.userData.driver = me;
+  }
+
+  /** Someone else is playing now (or changed her shirt): swap who's walking or driving, right where they are. */
+  restyleYou() {
+    this.inside?.restyleYou();
+    const p = this.player;
+    if (!p || this.chute) return;
+    if (this.mode === 'walk') {
+      p.obj.removeFromParent();
+      p.obj = this.makeWalker();
+      this.scene.add(p.obj);
+    } else if (this.mode === 'drive' || this.mode === 'ride') {
+      (p.obj.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
+      this.seatYou(p.obj, (p.obj.userData.seat as THREE.Object3D | undefined) ?? p.obj);
+    }
   }
 
   /** A violet glider with Kan riding on top. */
@@ -1944,10 +1972,11 @@ export class CityEngine {
         }
         p.obj.position.set(p.x, GROUND_Y, p.z);
         p.obj.rotation.set(0, p.heading, 0);
-        // Over the shoulder, close enough to feel small in a big town.
-        const want = new THREE.Vector3(p.x - f.x * 8.5, 4.6, p.z - f.z * 8.5);
+        // Over the shoulder, close enough to feel small in a big town (closer still for a girl).
+        const k = (p.obj.userData.cam as number | undefined) ?? 1;
+        const want = new THREE.Vector3(p.x - f.x * 8.5 * k, 4.6 * k, p.z - f.z * 8.5 * k);
         this.persp.position.lerp(want, 1 - Math.exp(-dt * 6));
-        this.persp.lookAt(p.x + f.x * 5, 2.2, p.z + f.z * 5);
+        this.persp.lookAt(p.x + f.x * 5, 2.2 * k, p.z + f.z * 5);
       } else if (riding) {
         // Lean into the turns.
         p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 12) * 0.38 - p.roll) * Math.min(1, dt * 5);

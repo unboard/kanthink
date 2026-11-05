@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { HABITATS, EXHIBITS, PLACES, toPx, toWorld } from '@/lib/kan/zoo/map';
 import { SPECIES } from '@/lib/kan/zoo/species';
-import { DAY, UPGRADES, advance, answerQuiz, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, note, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
+import { DAY, UPGRADES, advance, answerQuiz, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, note, plan, question, seeded, setCoach, todos } from '@/lib/kan/zoo/sim';
+import { KIDS, coachFor, fits, howTo, parseCoach } from '@/lib/kan/players';
 import { choose, escape, memory, startStory } from '@/lib/kan/zoo/stories';
 import { CARE, careFor, foodChoices, startPregnancy, weigh } from '@/lib/kan/zoo/care';
 
@@ -213,5 +214,41 @@ describe('kan zoo', () => {
     const w2 = weigh(z, baby);
     expect(w2.was).toBe(w1.n);
     expect(w2.n).toBeGreaterThan(w1.n);
+  });
+
+  it('sizes every question to whoever is playing', () => {
+    const z = newZoo(0, seeded(11));
+    const r = seeded(12);
+    const lennon = coachFor(7);
+    setCoach(lennon);
+    try {
+      for (let i = 0; i < 300; i++) {
+        const q = question(z, r);
+        expect(q.answer, q.q).toBeLessThanOrEqual(lennon.max);
+        expect(q.options).toContain(q.answer);
+        expect(new Set(q.options).size).toBe(4);
+        expect(q.why).not.toContain('÷');
+      }
+      // 37 kids × $8 is too big for a 7-year-old; the + line under it isn't.
+      const hard = note(z, { kind: 'fieldtrip', emoji: '🚌', title: 't', text: '', math: ['37 kids × $8 = $296', '$20 + $30 = $50'] });
+      expect(hard.quiz?.q).toBe('$20 + $30 = ?');
+      const none = note(z, { kind: 'fieldtrip', emoji: '🚌', title: 't', text: '', math: ['37 kids × $8 = $296'] });
+      expect(none.quiz).toBeUndefined();
+      setCoach(coachFor(9));
+      expect(note(z, { kind: 'fieldtrip', emoji: '🚌', title: 't', text: '', math: ['37 kids × $8 = $296'] }).quiz?.answer).toBe(296);
+    } finally { setCoach(null); }
+  });
+
+  it('keeps coach settings sane and gives a hint for each kind of sum', () => {
+    expect(KIDS.map((k) => k.name)).toEqual(['Scarlett', 'Lennon']);
+    const c = parseCoach({ skills: ['times', 'flying'], max: -5, tables: [3, 3, 99, 7], readAloud: 'yes' }, coachFor(7));
+    expect(c.skills).toEqual(['times']);
+    expect(c.max).toBe(10);
+    expect(c.tables).toEqual([3, 7]);
+    expect(c.readAloud).toBe(true);
+    expect(fits(coachFor(7), '×', 5, 7, 35)).toBe(true);
+    expect(fits(coachFor(7), '×', 7, 8, 56)).toBe(false);
+    expect(fits(coachFor(7), '÷', 20, 5, 4)).toBe(false);
+    for (const sum of ['3 × $8', '40 × $5', '$100 ÷ $5', '$50 − $12', '24 + 13']) expect(howTo(sum).length).toBeGreaterThan(10);
   });
 });

@@ -87,7 +87,8 @@ export class ZooVisit {
     this.keeper = kit.walker();
     this.keeper.position.set(this.side, set.tank ? 0 : 0.02, s * 0.25);
     this.keeper.rotation.y = Math.PI / 2;
-    this.keeper.scale.setScalar(THREE.MathUtils.clamp(0.5 + s * 0.15, 0.6, 1));
+    // A girl stands at her real size, so you see how big a giraffe really is next to her.
+    this.keeper.scale.setScalar(this.keeper.userData.real ? 1 : THREE.MathUtils.clamp(0.5 + s * 0.15, 0.6, 1));
     this.scene.add(this.keeper);
     this.between();
 

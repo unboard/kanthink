@@ -5,11 +5,13 @@ import * as THREE from 'three';
 import { ArrowLeft, Car, Footprints, LogOut, Plane, Scooter } from 'lucide-react';
 import type { PlayerKit } from '../city/engine';
 import { Stick } from '../city/Stick';
+import { PlayerSheet, Portrait, usePlayers } from '../city/PlayerSheet';
+import { playing } from '@/lib/kan/players';
 import { species } from '@/lib/kan/zoo/species';
 import { EXHIBITS, habitat, type Px } from '@/lib/kan/zoo/map';
 import {
   CLOSE, DAY, OPEN, WEATHER_WORD, advance, answerQuiz, answered, babyNames, buy, catchLoose, catchUp, clockText, day, feed as feedSim, fixFence, foundKid, heal,
-  hourOf, isNight, loadZoo, markSeen, minuteOfDay, money, nameBaby, newZoo, play as playSim, question, saveZoo, todos, unseen, upgrade,
+  hourOf, isNight, loadZoo, markSeen, minuteOfDay, money, nameBaby, newZoo, play as playSim, question, saveZoo, setCoach, setPlayer, todos, unseen, upgrade,
   type Animal, type Question, type Zoo, type ZooEvent,
 } from '@/lib/kan/zoo/sim';
 import { choose, startStory } from '@/lib/kan/zoo/stories';
@@ -38,6 +40,7 @@ type Open =
   | { kind: 'baby'; id: string; names: string[] }
   | { kind: 'vet'; id: string }
   | { kind: 'map' }
+  | { kind: 'players' }
   | null;
 
 const SPEEDS = [
@@ -63,6 +66,18 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
   const [floor, setFloor] = useState<string | null>(null);
   const floorRef = useRef<string | null>(null);
   const zoo = useRef<Zoo | null>(null);
+  // Whoever's playing: she walks the zoo as herself, and the math is sized for her.
+  const players = usePlayers();
+  const me = playing(players);
+  const look = me ? JSON.stringify([me.id, me.style, me.shirt, me.age]) : 'kan';
+  useEffect(() => { setCoach(me?.coach ?? null); setPlayer(me?.name ?? null); }, [me]);
+  const firstLook = useRef(look);
+  useEffect(() => {
+    if (look === firstLook.current) return;
+    firstLook.current = look;
+    sc.current?.restyleYou();
+    inside.current?.restyleYou();
+  }, [look]);
   const keys = useRef(new Set<string>());
   const stick = useRef({ x: 0, y: 0 });
   const [, setTick] = useState(0);
@@ -129,7 +144,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
     s.sync(z);
     // For testing in a background tab, where frames barely come: step it by hand.
     if (process.env.NODE_ENV !== 'production') Object.assign(window, {
-      __zoo: s, __zooState: () => zoo.current, __zooInside: () => inside.current,
+      __zoo: s, __zooState: () => zoo.current, __zooInside: () => inside.current, __zooVisit: () => visit.current,
       __zooStory: (id: string) => { const ok = startStory(zoo.current!, id, Math.random); s.sync(zoo.current!); refresh(); return ok; },
       __zooInfo: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries }),
       __zooLineup:(ids: string[], baby = false) => { speedRef.current = 0; s.lineup(ids, baby); renderer.render(s.scene, s.camera); },
@@ -468,6 +483,9 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       {z && (
         <div className="absolute inset-x-2 top-2 z-30 flex flex-wrap items-center gap-1.5">
           <button onClick={onExit} className="flex items-center gap-1 rounded-full bg-neutral-950/70 px-3 py-2 text-[13px] font-semibold shadow-lg backdrop-blur hover:bg-neutral-900"><ArrowLeft className="h-4 w-4" /><span className="hidden sm:inline">Kan City</span></button>
+          <button onClick={() => setOpen({ kind: 'players' })} title="Who’s playing?" className="flex items-center gap-1.5 rounded-full bg-neutral-950/70 py-1 pl-1 pr-3 text-[13px] font-semibold shadow-lg backdrop-blur hover:bg-neutral-900">
+            <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-white/90"><Portrait kid={me} size={32} /></span>{me?.name ?? 'Kan'}
+          </button>
           <div className="flex items-center gap-2 rounded-full bg-neutral-950/70 px-3 py-2 text-[13px] font-semibold shadow-lg backdrop-blur">
             <span>Day {day(z.clock)}</span>
             <span className="tabular-nums">{night ? '🌙' : '☀️'} {clockText(z.clock)}</span>
@@ -630,6 +648,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       )}
       {z && open?.kind === 'plans' && <PlansSheet zoo={z} onClose={() => setOpen(null)} onBuy={doBuy} onGoal={doGoal} />}
       {z && open?.kind === 'money' && <MoneySheet zoo={z} onClose={() => setOpen(null)} onPrice={(p) => { z.price = p; changed(); }} onQuiz={() => setOpen({ kind: 'quiz', q: question(z, Math.random) })} />}
+      {open?.kind === 'players' && <PlayerSheet onClose={() => setOpen(null)} />}
       {z && open?.kind === 'quiz' && <QuizSheet q={open.q} onClose={() => setOpen(null)} onAnswer={(right) => { answered(z, right); changed(); }} />}
       {z && open?.kind === 'baby' && (() => {
         const a = z.animals.find((x) => x.id === open.id);

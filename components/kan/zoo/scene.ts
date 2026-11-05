@@ -301,8 +301,10 @@ export class ZooScene {
     p.y += (g - p.y) * Math.min(1, dt * 14);
     // Inside a hall, the camera comes in close so the roof isn't in the way.
     const indoors = this.hallAt(p.x, p.z);
-    const back = walking ? (indoors ? 6.5 : 8.5) : riding ? 9.5 : 12;
-    const up = walking ? (indoors ? 3.4 : 4.4) : riding ? 4.2 : 5.6;
+    // A girl is smaller than the mushroom, so the camera comes in closer behind her.
+    const k = walking ? (p.obj.userData.cam as number | undefined) ?? 1 : 1;
+    const back = (walking ? (indoors ? 6.5 : 8.5) : riding ? 9.5 : 12) * k;
+    const up = (walking ? (indoors ? 3.4 : 4.4) : riding ? 4.2 : 5.6) * k;
     if (walking) {
       const moving = Math.abs(p.speed) > 0.3;
       this.walkT += dt * Math.abs(p.speed);
@@ -330,7 +332,7 @@ export class ZooScene {
     // Don't let the camera dip under a hill.
     want.y = Math.max(want.y, W.groundAt(want.x, want.z) + 1.5);
     this.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
-    this.camera.lookAt(p.x + lf.x * 5, p.y + (walking ? 1.8 : 1.4), p.z + lf.z * 5);
+    this.camera.lookAt(p.x + lf.x * 5, p.y + (walking ? 1.8 * k : 1.4), p.z + lf.z * 5);
   }
   private hallAt(x: number, z: number): HallFrame | null {
     for (const h of this.world.halls) if (h.kind !== 'house' && Math.hypot(x - h.x, z - h.z) < h.r) return h;
@@ -899,6 +901,23 @@ export class ZooScene {
     o.visible = true;
     this.scene.add(o);
   }
+  /** Someone else is playing now: swap who's walking (or driving), right where they are. */
+  restyleYou() {
+    const p = this.player;
+    if (this.chute) return;
+    if (this.mode === 'walk') {
+      const w = this.kit.walker();
+      w.position.copy(p.obj.position);
+      w.rotation.copy(p.obj.rotation);
+      p.obj.removeFromParent();
+      this.scene.add(w);
+      p.obj = w;
+    } else if (this.mode === 'drive' || this.mode === 'ride') {
+      (p.obj.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
+      this.kit.seat(p.obj);
+    }
+  }
+
   /** Jump: out of the plane, or off the Skyfari, and the parachute opens. */
   jump() {
     const r = this.ride;

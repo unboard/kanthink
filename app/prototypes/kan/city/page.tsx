@@ -15,6 +15,8 @@ import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from 
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { Census } from '@/components/kan/city/Census';
+import { PlayerSheet, Portrait, usePlayers } from '@/components/kan/city/PlayerSheet';
+import { onPlayers, playing as whoIsPlaying } from '@/lib/kan/players';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
 import { BotChat } from '@/components/kan/city/BotChat';
 import { Redecorate } from '@/components/kan/city/Redecorate';
@@ -156,6 +158,10 @@ export default function CityPage() {
   const [side, setSide] = useState<Side>(null);
   const [menu, setMenu] = useState(false);
   const [census, setCensus] = useState(false);
+  // Who's playing: Kan the mushroom, or one of the girls as herself.
+  const [who, setWho] = useState(false);
+  const me = whoIsPlaying(usePlayers());
+  useEffect(() => onPlayers(() => engine.current?.restyleYou()), []);
   const [sky, setSky] = useState<Sky>(() => skyFor(new Date().getHours()));
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -607,6 +613,7 @@ export default function CityPage() {
                 ))}
               </div>
               <MenuItem onClick={() => { setMenu(false); setPick(null); setBoard(null); engine.current?.frameAll(); }}><Maximize2 className="h-4 w-4" /> See the whole city</MenuItem>
+              <MenuItem onClick={() => { setMenu(false); setWho(true); }}><span className="flex h-4 w-4 items-center justify-center"><Portrait kid={me} size={18} /></span> Who’s playing: {me?.name ?? 'Kan'}</MenuItem>
               <MenuItem onClick={() => { setMenu(false); setCensus(true); }}><Users className="h-4 w-4" /> Census: everyone who works for you</MenuItem>
               <MenuItem onClick={() => { setMenu(false); setGather({ name: '', ids: [] }); setPick(null); setBoard(null); }}><Plus className="h-4 w-4" /> New neighborhood</MenuItem>
               <MenuItem href={preview ? '/prototypes/kan/city' : '/prototypes/kan/city?preview'}><Play className="h-4 w-4" /> {preview ? 'Show the real city' : 'Preview with pretend bots'}</MenuItem>
@@ -858,6 +865,7 @@ export default function CityPage() {
       </div>
 
       {/* Left: the neighborhoods and who lives in them. */}
+      {who && <PlayerSheet onClose={() => setWho(false)} />}
       {census && (
         <Census
           onClose={() => setCensus(false)}

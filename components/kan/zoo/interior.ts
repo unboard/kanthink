@@ -1036,6 +1036,17 @@ export class ZooInterior {
     ding();
   }
 
+  /** Someone else is playing now: swap who's walking, right where they are. */
+  restyleYou() {
+    const p = this.player;
+    const w = this.kit.walker();
+    w.position.copy(p.obj.position);
+    w.rotation.copy(p.obj.rotation);
+    p.obj.removeFromParent();
+    this.scene.add(w);
+    p.obj = w;
+  }
+
   step(dt: number, input: { steer: number; push: number; boost: boolean }, hour: number) {
     if (this.disposed) return;
     this.time += dt;
@@ -1088,8 +1099,10 @@ export class ZooInterior {
 
     // The camera: behind you, closer than outside, and never through a wall.
     const yaw = p.heading + this.look;
-    const head = new THREE.Vector3(p.x, p.y + 1.6, p.z);
-    const want = new THREE.Vector3(p.x - Math.sin(yaw) * 8, p.y + 3.8, p.z - Math.cos(yaw) * 8);
+    // Closer in behind a girl, who's smaller than the mushroom.
+    const k = (p.obj.userData.cam as number | undefined) ?? 1;
+    const head = new THREE.Vector3(p.x, p.y + 1.6 * k, p.z);
+    const want = new THREE.Vector3(p.x - Math.sin(yaw) * 8 * k, p.y + 3.8 * k, p.z - Math.cos(yaw) * 8 * k);
     const dir = want.clone().sub(head);
     const full = dir.length();
     dir.normalize();
@@ -1105,9 +1118,9 @@ export class ZooInterior {
     const c = this.camBounds(want.x, want.y, want.z, p.y);
     want.set(c.x, c.y, c.z);
     // Too close to see past yourself: fade you out.
-    p.obj.visible = this.camera.position.distanceTo(head) > 1.8;
+    p.obj.visible = this.camera.position.distanceTo(head) > 1.8 * k;
     this.camera.position.lerp(want, 1 - Math.exp(-dt * 8));
-    this.camera.lookAt(p.x + Math.sin(yaw) * 4, p.y + 1.4, p.z + Math.cos(yaw) * 4);
+    this.camera.lookAt(p.x + Math.sin(yaw) * 4, p.y + 1.4 * k, p.z + Math.cos(yaw) * 4);
 
     // The sky through the glass, and the mood of the level you're on.
     if (this.sky) {

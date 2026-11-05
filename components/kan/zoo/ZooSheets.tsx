@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
+import { QuizHelp } from '../city/PlayerSheet';
 import { BOUNDARY, EXHIBITS, PATHS, PLACES, TRAIN, type Px } from '@/lib/kan/zoo/map';
 import { species, awake } from '@/lib/kan/zoo/species';
 import { FAME, remembered } from '@/lib/kan/zoo/stories';
@@ -117,6 +118,7 @@ function BigCard({ e, money: have, onAct, onChoose, onQuiz }: { e: ZooEvent; mon
         <div className="mt-4 rounded-3xl bg-amber-50 px-4 py-4">
           <p className="text-[13px] font-bold uppercase tracking-wider text-amber-700">🧮 Bonus question · win {money(q.reward)}</p>
           <p className="mt-1.5 font-mono text-[22px] font-bold text-amber-950">{q.q}</p>
+          <QuizHelp text={q.q} sum={q.q.replace(/ = \?$/, '')} />
           <div className="mt-3 grid grid-cols-2 gap-2">
             {q.options.map((o) => (
               <button key={o} onClick={() => { const r = onQuiz(e, o); setSaid(r ? 'right' : 'wrong'); }} className="rounded-2xl bg-white py-3 text-[20px] font-bold text-amber-950 shadow-sm ring-1 ring-amber-200 active:scale-95">
@@ -339,6 +341,7 @@ export function QuizSheet({ q, onClose, onAnswer }: { q: Question; onClose: () =
   return (
     <Sheet title="Math helper" emoji="⭐" onClose={onClose}>
       <p className="text-[18px] font-semibold leading-snug">{q.q}</p>
+      {picked === null && <QuizHelp text={q.q} sum={q.why.split(' = ')[0]} />}
       <div className="mt-4 grid grid-cols-2 gap-2">
         {q.options.map((o) => (
           <button key={o} disabled={picked !== null} onClick={() => { setPicked(o); onAnswer(o === q.answer); }}

@@ -1,6 +1,7 @@
 import { EXHIBITS, HABITATS, habitat } from './map';
 import { awake, species } from './species';
 import { startPregnancy, stepPregnancies } from './care';
+import { fits, type Coach } from '../players';
 import { addFame, drawBoost, escape, learnFromEscape, moment, storyHour, type Arc, type Happening, type Memory } from './stories';
 
 /**
@@ -247,21 +248,37 @@ export function note(z: Zoo, e: Omit<ZooEvent, 'id' | 'at'>) {
 }
 
 /**
- * A times (or divide) line in the news, turned into a question: "9 kids × $8 = ?". The
- * kids work it out for a bonus, and only then see the answer.
+ * Whose turn it is, for sizing questions: whoever's playing, set by the view. With no
+ * one set, every times and divide line becomes a question, as it always has.
+ */
+let coach: Coach | null = null;
+export function setCoach(c: Coach | null) { coach = c; }
+/** Who's playing, for saying their name when they get one right. */
+let player: string | null = null;
+export function setPlayer(name: string | null) { player = name; }
+
+/**
+ * A line of math in the news, turned into a question: "9 kids × $8 = ?". The kids work
+ * it out for a bonus, and only then see the answer. With a coach, it's the first line
+ * that's the right size for whoever's playing (adding and taking away count too), or
+ * none at all, so a 7-year-old isn't handed 37 × $12.
  */
 function quizFrom(math: string[] | undefined): ZooEvent['quiz'] {
   if (!math) return undefined;
   for (let i = 0; i < math.length; i++) {
-    const m = math[i].match(/^(.*[×÷].*?) = (\$?)([\d,]+)(.*)$/);
+    const m = math[i].match(coach ? /^([^=→]*[×÷+−][^=→]*?) = (\$?)([\d,]+)(.*)$/ : /^(.*[×÷].*?) = (\$?)([\d,]+)(.*)$/);
     if (!m) continue;
     const nums = (m[1].match(/[\d,]+/g) ?? []).map((x) => Number(x.replace(/,/g, '')));
     const answer = Number(m[3].replace(/,/g, ''));
-    if (nums.length < 2 || !Number.isFinite(answer)) continue;
+    if (nums.length < 2 || (coach && nums.length !== 2) || !Number.isFinite(answer)) continue;
     const [a, b] = nums;
-    const times = m[1].includes('×');
+    const op = m[1].includes('×') ? '×' : m[1].includes('÷') ? '÷' : m[1].includes('+') ? '+' : '−';
+    if (coach && !fits(coach, op, a, b, answer)) continue;
     // The mistakes people really make: one too many or too few groups, adding instead of multiplying.
-    const near = times ? [a * (b + 1), a * Math.max(1, b - 1), (a + 1) * b, a + b, answer + 10] : [answer + 1, Math.max(1, answer - 1), answer * 2, answer + 5];
+    const near = op === '×' ? [a * (b + 1), a * Math.max(1, b - 1), (a + 1) * b, a + b, answer + 10]
+      : op === '÷' ? [answer + 1, Math.max(1, answer - 1), answer * 2, answer + 5]
+      : op === '+' ? [answer + 10, Math.max(1, answer - 10), answer + 1, Math.max(1, answer - 1)]
+      : [a + b, answer + 10, Math.max(1, answer - 10), answer + 1];
     const options = [answer];
     for (const n of near) if (n > 0 && !options.includes(n) && options.length < 4) options.push(n);
     while (options.length < 4) options.push(answer + options.length * 3);
@@ -637,51 +654,60 @@ export function plan(z: Zoo, cost: number) {
 
 export interface Question { q: string; options: number[]; answer: number; unit: '$' | ''; why: string }
 
-/** A question made of today's real numbers. Right answers earn a gold star and a little donation. */
+/**
+ * A question made of today's real numbers. Right answers earn a gold star and a little
+ * donation. With a coach, only the kinds she's working on, with numbers her size.
+ */
 export function question(z: Zoo, r: () => number): Question {
-  const kinds = ['tickets', 'food', 'save', 'visitors', 'snacks', 'change'] as const;
-  const k = kinds[Math.floor(r() * kinds.length)];
   const p = z.price;
-  const mk = (q: string, answer: number, unit: '$' | '', why: string, near: number[]): Question => {
-    const opts = new Set<number>([answer]);
-    for (const n of near) if (n > 0 && opts.size < 4) opts.add(n);
-    while (opts.size < 4) opts.add(Math.max(1, answer + (Math.floor(r() * 7) - 3) * Math.max(1, Math.round(answer / 10))));
-    return { q, answer, unit, why, options: [...opts].sort(() => r() - 0.5) };
-  };
-  if (k === 'tickets') {
-    const n = [10, 20, 30, 40, 50, 100][Math.floor(r() * 6)];
-    return mk(`${n} visitors come in. Each ticket is ${money(p)}. How much money is that?`, n * p, '$', `${n} × ${money(p)} = ${money(n * p)}`, [n + p, n * (p + 1), n * (p - 1)]);
-  }
-  if (k === 'food') {
-    const sp = pick(z.animals, r)?.species ?? 'penguin';
-    const n = Math.max(2, z.animals.filter((a) => a.species === sp).length);
-    const each = [2, 3, 4, 5][Math.floor(r() * 4)];
-    return mk(`We have ${n} ${species(sp).many}. Each one eats ${money(each)} of food a day. How much is breakfast?`, n * each, '$', `${n} × ${money(each)} = ${money(n * each)}`, [n + each, n * each + each, n * each - each]);
-  }
-  if (k === 'save') {
-    const perDay = [100, 200, 250, 500][Math.floor(r() * 4)];
-    const days = 2 + Math.floor(r() * 3);
-    return mk(`We make ${money(perDay)} a day. How much after ${days} days?`, perDay * days, '$', `${money(perDay)} × ${days} = ${money(perDay * days)}`, [perDay + days, perDay * (days + 1), perDay * (days - 1)]);
-  }
-  if (k === 'visitors') {
-    const goal = [50, 100, 200, 500][Math.floor(r() * 4)];
-    const price = [5, 10][Math.floor(r() * 2)];
-    return mk(`We need ${money(goal)}. Tickets are ${money(price)}. How many visitors do we need?`, goal / price, '', `${money(goal)} ÷ ${money(price)} = ${goal / price} visitors`, [goal / price + 5, goal / price * 2, goal - price]);
-  }
-  if (k === 'snacks') {
-    const a = [3, 4, 5, 6][Math.floor(r() * 4)], b = [2, 3, 4][Math.floor(r() * 3)];
-    return mk(`A family buys ${a} ice creams at ${money(b)} each. How much?`, a * b, '$', `${a} × ${money(b)} = ${money(a * b)}`, [a + b, a * b + 1, a * b - 2]);
-  }
-  const have = [20, 50, 100][Math.floor(r() * 3)], cost = [5, 8, 12, 15, 30][Math.floor(r() * 5)];
-  const c = Math.min(cost, have - 1);
-  return mk(`A visitor pays ${money(have)} for something that costs ${money(c)}. How much change do they get?`, have - c, '$', `${money(have)} − ${money(c)} = ${money(have - c)}`, [have + c, have - c + 10, c]);
+  const one = <T,>(list: T[]) => list[Math.floor(r() * list.length)];
+  type Made = { q: string; answer: number; unit: '$' | ''; why: string; near: number[]; op: '+' | '−' | '×' | '÷'; a: number; b: number; skill?: 'money' };
+  const kinds: (() => Made)[] = [
+    () => { const n = one([10, 20, 30, 40, 50, 100]); return { q: `${n} visitors come in. Each ticket is ${money(p)}. How much money is that?`, answer: n * p, unit: '$', why: `${n} × ${money(p)} = ${money(n * p)}`, near: [n + p, n * (p + 1), n * (p - 1)], op: '×', a: n, b: p }; },
+    () => {
+      const sp = pick(z.animals, r)?.species ?? 'penguin';
+      const n = Math.max(2, z.animals.filter((a) => a.species === sp).length), each = one([2, 3, 4, 5]);
+      return { q: `We have ${n} ${species(sp).many}. Each one eats ${money(each)} of food a day. How much is breakfast?`, answer: n * each, unit: '$', why: `${n} × ${money(each)} = ${money(n * each)}`, near: [n + each, n * each + each, n * each - each], op: '×', a: n, b: each };
+    },
+    () => { const perDay = one([100, 200, 250, 500]), days = 2 + Math.floor(r() * 3); return { q: `We make ${money(perDay)} a day. How much after ${days} days?`, answer: perDay * days, unit: '$', why: `${money(perDay)} × ${days} = ${money(perDay * days)}`, near: [perDay + days, perDay * (days + 1), perDay * (days - 1)], op: '×', a: perDay, b: days }; },
+    () => { const goal = one([20, 50, 100, 200, 500]), price = one([2, 5, 10]); return { q: `We need ${money(goal)}. Tickets are ${money(price)}. How many visitors do we need?`, answer: goal / price, unit: '', why: `${money(goal)} ÷ ${money(price)} = ${goal / price} visitors`, near: [goal / price + 5, goal / price * 2, goal - price], op: '÷', a: goal, b: price }; },
+    () => { const a = one([2, 3, 4, 5, 6]), b = one([2, 3, 4, 5]); return { q: `A family buys ${a} ice creams at ${money(b)} each. How much?`, answer: a * b, unit: '$', why: `${a} × ${money(b)} = ${money(a * b)}`, near: [a + b, a * b + 1, a * b - 2], op: '×', a, b }; },
+    () => {
+      const have = one([10, 20, 50, 100]), c = Math.min(one([3, 5, 8, 12, 15, 30]), have - 1);
+      return { q: `A visitor pays ${money(have)} for something that costs ${money(c)}. How much change do they get?`, answer: have - c, unit: '$', why: `${money(have)} − ${money(c)} = ${money(have - c)}`, near: [have + c, have - c + 10, c], op: '−', a: have, b: c, skill: 'money' };
+    },
+    () => {
+      // Adding, sized to how big her numbers go.
+      const top = coach ? Math.min(coach.max, 1000) : 100;
+      const a = 1 + Math.floor(r() * top * 0.5), b = 1 + Math.floor(r() * top * 0.45);
+      const what = one([['visitors came in the morning', 'in the afternoon', 'visitors'], ['penguins dove in', 'more jumped in after them', 'penguins'], ['kids got balloons', 'grown-ups got balloons', 'balloons']]);
+      return { q: `${a} ${what[0]}, and ${b} ${what[1]}. How many ${what[2]} is that?`, answer: a + b, unit: '', why: `${a} + ${b} = ${a + b} ${what[2]}`, near: [a + b + 10, Math.max(1, a + b - 10), a + b + 1], op: '+', a, b };
+    },
+    () => {
+      // Taking away: the fish bucket or the hay going down.
+      const top = coach ? Math.min(coach.max, 1000) : 100;
+      const a = Math.max(5, Math.floor(r() * top)), b = 1 + Math.floor(r() * (a - 1));
+      const what = one([['fish in the bucket', 'The sea lions ate', 'fish'], ['hay bales in the barn', 'The giraffes got', 'bales'], ['bananas in the box', 'The gorillas ate', 'bananas']]);
+      return { q: `There were ${a} ${what[0]}. ${what[1]} ${b}. How many ${what[2]} are left?`, answer: a - b, unit: '', why: `${a} − ${b} = ${a - b} ${what[2]} left`, near: [a + b, a - b + 10, Math.max(1, a - b - 1)], op: '−', a, b };
+    },
+  ];
+  // Without a coach, the money questions it always asked.
+  const pool = coach ? kinds : kinds.slice(0, 6);
+  const ok = (m: Made) => !coach || (fits(coach, m.op, m.a, m.b, m.answer) && (!m.skill || coach.skills.includes(m.skill)));
+  let m = pool[Math.floor(r() * pool.length)]();
+  for (let i = 0; i < 60 && !ok(m); i++) m = pool[Math.floor(r() * pool.length)]();
+  if (!ok(m)) { const a = 1 + Math.floor(r() * 9), b = 1 + Math.floor(r() * 9); m = { q: `${a} ducks are on the pond, and ${b} more fly in. How many ducks now?`, answer: a + b, unit: '', why: `${a} + ${b} = ${a + b} ducks`, near: [a + b + 1, Math.max(1, a + b - 1), a + b + 2], op: '+', a, b }; }
+  const opts = new Set<number>([m.answer]);
+  for (const n of m.near) if (n > 0 && opts.size < 4) opts.add(n);
+  while (opts.size < 4) opts.add(Math.max(1, m.answer + (Math.floor(r() * 7) - 3) * Math.max(1, Math.round(m.answer / 10))));
+  return { q: m.q, answer: m.answer, unit: m.unit, why: m.why, options: [...opts].sort(() => r() - 0.5) };
 }
 export const STAR_GIFT = 25;
 export function answered(z: Zoo, right: boolean) {
   if (!right) return;
   z.stars += 1;
   z.money += STAR_GIFT;
-  note(z, { kind: 'math', emoji: '⭐', title: 'Math whiz!', text: `A visitor heard you work that out and gave the zoo ${money(STAR_GIFT)}. Gold stars: ${z.stars}.` });
+  note(z, { kind: 'math', emoji: '⭐', title: player ? `${player} is a math whiz!` : 'Math whiz!', text: `A visitor heard ${player ?? 'you'} work that out and gave the zoo ${money(STAR_GIFT)}. Gold stars: ${z.stars}.` });
 }
 
 /** The newest things you haven't seen yet, for "What happened at the zoo". */
