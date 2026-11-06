@@ -599,7 +599,8 @@ export default function CityPage() {
       {state === 'loading' && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-white/70" /></div>}
 
       {/* Top: who you are, what's happening, in one row of glass. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start gap-2 px-3 pt-[max(10px,env(safe-area-inset-top))]">
+      {/* While the menu is open the row rises above the side panels, or its dropdown opens behind them. */}
+      <div className={`pointer-events-none absolute inset-x-0 top-0 ${menu ? 'z-[45]' : 'z-20'} flex items-start gap-2 px-3 pt-[max(10px,env(safe-area-inset-top))]`}>
         <div className="pointer-events-auto relative flex-shrink-0">
           <button onClick={() => setMenu((m) => !m)} className="flex items-center gap-1.5 rounded-full border border-white/10 bg-neutral-950/75 py-1.5 pl-2 pr-3 shadow-lg backdrop-blur-xl hover:bg-neutral-900/90">
             <KanthinkIcon size={18} className="text-violet-300" />
