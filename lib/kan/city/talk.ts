@@ -69,7 +69,9 @@ export async function channelBrief(channelId: string): Promise<string> {
   ])
   if (!channel) return ''
   const board = await Promise.all(cols.map(async (c) => {
-    const rows = await db.query.cards.findMany({ where: inColumnBucket(c.id, 'active'), orderBy: [desc(cards.updatedAt)], limit: 6, columns: { title: true } })
+    // Chats are conversations, not the work: a bot reading its own old hello as a task is how a greeting invents a plan.
+    const rows = (await db.query.cards.findMany({ where: inColumnBucket(c.id, 'active'), orderBy: [desc(cards.updatedAt)], limit: 16, columns: { title: true } }))
+      .filter((r) => !r.title.startsWith('Chat with ')).slice(0, 6)
     return `- ${c.name}: ${rows.length ? rows.map((r) => r.title).join(' · ') : '(empty)'}`
   }))
   return [
@@ -146,13 +148,13 @@ async function openChatNow(ownerId: string, channelId: string, opts: { fresh?: b
   const found = await owned(ownerId, channelId)
   if (!found) return { error: 'No such bot.' }
   const { channel, bot, resident } = found
-  if (!opts.fresh && bot.chatCardId) {
-    const card = await db.query.cards.findFirst({
-      where: and(eq(cards.id, bot.chatCardId), eq(cards.channelId, channelId), inBucket('active')),
-      columns: { id: true, title: true, messages: true, updatedAt: true },
-    })
-    if (card && Date.now() - +(card.updatedAt ?? 0) < STALE_MS) return view(resident, channel.name, card as never, ownerId)
-  }
+  const last = bot.chatCardId ? await db.query.cards.findFirst({
+    where: and(eq(cards.id, bot.chatCardId), eq(cards.channelId, channelId), inBucket('active')),
+    columns: { id: true, title: true, messages: true, updatedAt: true },
+  }) : undefined
+  if (!opts.fresh && last && Date.now() - +(last.updatedAt ?? 0) < STALE_MS) return view(resident, channel.name, last as never, ownerId)
+  // A chat that was only ever the bot's hello gets the new hello, rather than leaving an empty card behind.
+  const unanswered = last && !((last.messages ?? []) as Msg[]).some((m) => m.type !== 'ai_response') ? last.id : null
 
   const owner = await db.query.users.findFirst({ where: eq(users.id, ownerId), columns: { name: true } })
   const boss = callName(owner)
@@ -166,9 +168,9 @@ async function openChatNow(ownerId: string, channelId: string, opts: { fresh?: b
       const res = await client.complete([{
         role: 'user',
         content: [
-          `You are ${resident.name}, a little mushroom bot in Kan City who runs this channel for ${boss}. ${resident.personality}`,
+          `You are ${resident.name}, a little mushroom bot in Kan City who runs this channel for ${boss}. Your personality (let it show in how you talk; never describe it): ${resident.personality}`,
           `${boss} is the boss and just stopped by your plot. Start an impromptu chat: greet ${boss} by name in a few words, then ask ONE question.`,
-          'Make it a question whose answer would genuinely help you grow this channel or its apps, grounded in something specific on the board below. Curious and warm, never a status report. Under 45 words, spoken style.',
+          'Make it a question that helps you understand what they want from this channel, about something real on the board below, and easy to answer in a sentence. Don’t assume the answer is an app, and don’t invent plans, firsts or events the board doesn’t show (an empty board is just empty). Plain everyday words, no mushroom puns. Curious and warm, never a status report. Under 35 words, spoken style.',
           bot.memory ? `\nYour notes from before (don't ask what you already know):\n${bot.memory.slice(-1500)}` : '',
           `\n${brief}`,
           '\nAnswer with JSON only: {"topic": "3 to 6 words naming what the chat is about", "line": "what you say"}',
@@ -182,7 +184,9 @@ async function openChatNow(ownerId: string, channelId: string, opts: { fresh?: b
     }
   }
   const msgs = [botMsg(resident.name, opener)]
-  const cardId = await addCard(channelId, `Chat with ${resident.name}: ${topic}`, msgs)
+  let cardId = unanswered
+  if (cardId) await db.update(cards).set({ title: `Chat with ${resident.name}: ${topic}`.slice(0, 120), messages: msgs as never, updatedAt: new Date() }).where(eq(cards.id, cardId))
+  else cardId = await addCard(channelId, `Chat with ${resident.name}: ${topic}`, msgs)
   if (!cardId) return { error: `${channel.name} has no columns to put a chat in.` }
   await db.update(channelBots).set({ chatCardId: cardId, updatedAt: new Date() }).where(eq(channelBots.channelId, channelId))
   return view(resident, channel.name, { id: cardId, title: `Chat with ${resident.name}: ${topic}`, messages: msgs }, ownerId)
@@ -242,21 +246,22 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     .filter((t) => keep.has(t.area) || t.name === 'app_numbers')
   const tools: BotTool[] = [
     ...guardTools(base, ctx), noteTool(channelId), scheduleTool(ownerId, channelId), jobTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
-    buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made }),
+    buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made, said: [...before, mine] }),
   ]
 
   const system = [
-    `You are ${resident.name}, a little mushroom bot who lives in Kan City and runs the "${channel.name}" channel. ${resident.personality}`,
+    `You are ${resident.name}, a little mushroom bot who lives in Kan City and runs the "${channel.name}" channel. Your personality (let it show in how you talk; never describe it): ${resident.personality}`,
     `You're talking with ${boss}, the owner. ${boss} is the boss: they set the direction, you do the work. Call them ${boss}.`,
     '',
     'How you talk:',
     '- This is a real conversation, often spoken aloud. Short turns: one to three sentences. No lists, no headings, no markdown.',
-    '- Warm, curious, a little playful, with your own personality. Ask one question at a time, and only when the answer would help you do the job better.',
+    '- Warm, curious, a little playful, in plain everyday words (no mushroom puns). Ask one question at a time, and only when the answer would help you do the job better.',
     `- The aim is that all three of you grow: ${boss} thinks something through, you learn what ${boss} wants, and the channel and its apps move forward.`,
     `- When ${boss} tells you something worth keeping (a preference, a goal, a decision), save it with note_to_self.`,
     `- When ${boss} asks for something you can do with your tools, do it, then say what you did in a few words. Never claim you did something you didn't.`,
     `- If ${boss} asks you to go talk to another bot, use visit_bot, then tell ${boss} what came of it.`,
-    `- When ${boss} says yes to trying an app idea ("let's try it", "build it", "go for it", "make it"), build it right away with build_app and a full brief. Don't just write the idea on a card: ${boss} wants something to open. Say it's building and that you'll tell them when it's ready.`,
+    `- Build an app only when ${boss} has said yes to a specific one you already described in this chat, by name, in a sentence (what it is and what it does), or asked for one in their own words. A "yes" to an open question is not a yes to an app you haven't described yet: describe it and ask. Once they've said yes to it, build it right away with build_app and a full brief, by the same name. Don't just write the idea on a card: ${boss} wants something to open. Say it's building and that you'll tell them when it's ready.`,
+    `- An app is one standalone screen. It can't change Kanthink itself, sign anyone in, or reach the board's real data. When a card asks for that kind of work (accounts, servers, presence, the product's own plumbing), say it's work for Claude Code, not an app. Never build a stand-in that pretends to do it.`,
     neighborBots.length
       ? `- You live in the ${hood.name} neighborhood. Your neighbors: ${neighborBots.map((b) => `${b.name} (runs ${neighborRows[0].find((c) => c.id === b.channelId)?.name})`).join(', ')}. Bots never leave their neighborhood.`
       : '- You live Downtown, with no neighbors to visit. Bots never leave their neighborhood; Kan can carry messages between neighborhoods.',
@@ -313,7 +318,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
  * once; the build itself runs after the reply, and when it lands the bot says so in
  * the thread. Building from the idea's card when there is one, so the app lives on it.
  */
-function buildTool(o: { ownerId: string; channelId: string; resident: Resident; chatCardId: string; made: Required<Made> }): BotTool {
+function buildTool(o: { ownerId: string; channelId: string; resident: Resident; chatCardId: string; made: Required<Made>; said: Msg[] }): BotTool {
   return {
     name: 'build_app',
     area: 'build',
@@ -334,6 +339,7 @@ function buildTool(o: { ownerId: string; channelId: string; resident: Resident; 
       const title = String(i.title ?? '').trim().slice(0, 80) || 'New app'
       const brief = String(i.brief ?? '').trim().slice(0, 6000)
       if (!brief) return { content: 'Write a brief first.', isError: true }
+      if (!agreedTo(title, o.said)) return { content: `They haven't said yes to "${title}" yet. Describe it to them by that name in a sentence (what it is, what it does) and ask if they want it. Don't build until they say yes.`, isError: true }
       // The idea's card: by id, else by title, else a new one holding the brief.
       const ref = String(i.card ?? '').trim()
       let card = ref ? await db.query.cards.findFirst({ where: and(eq(cards.id, ref), eq(cards.channelId, o.channelId)), columns: { id: true, title: true } }) : undefined
@@ -360,6 +366,21 @@ function buildTool(o: { ownerId: string; channelId: string; resident: Resident; 
       return { content: `The build of "${title}" has started on the card "${card.title}". It takes a minute or two; you'll announce it in the chat when it's ready.`, label: `Building ${title}`, cardId: card.id }
     },
   }
+}
+
+const plain = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `
+
+/**
+ * Whether the boss agreed to this app: the bot named it to them earlier in the
+ * chat, or their latest message asks for an app in their own words. A bare "yes"
+ * to an open question is neither, so it doesn't start a build of something they
+ * never heard about.
+ */
+export function agreedTo(title: string, said: { type: string; content: string }[]): boolean {
+  const name = plain(title)
+  const latest = said.at(-1)
+  if (latest && latest.type !== 'ai_response' && /\b(build|make|create)\b/i.test(latest.content) && latest.content.trim().split(/\s+/).length >= 4) return true
+  return name.trim().length > 0 && said.slice(0, -1).some((m) => m.type === 'ai_response' && plain(m.content).includes(name))
 }
 
 /** The build itself, after the reply: charged to the bot, and announced in the chat when done. */

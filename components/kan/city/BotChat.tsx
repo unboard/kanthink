@@ -224,10 +224,11 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp 
 
       {/* Send it to a neighbor. */}
       {neighbors.length > 0 && chat && (
-        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 text-[12px]">
+        <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1 text-[12px]">
+          <span className="flex-shrink-0 pr-0.5 text-neutral-500">Send to a neighbor:</span>
           {neighbors.slice(0, 8).map((n) => (
             <button key={n.channelId} onClick={() => setDraft(`Go talk to ${n.resident.name} about `)} className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-white/10 py-1 pl-1 pr-2.5 text-neutral-300 hover:border-violet-400/50">
-              <ShroomBot seed={hash(n.channelId)} size={18} /> Talk to {n.resident.name}
+              <ShroomBot seed={hash(n.channelId)} size={18} /> {n.resident.name}
             </button>
           ))}
         </div>
