@@ -6,6 +6,7 @@ import { callAction, type ToolContext } from '@/lib/kan/agent/tools'
 import { ensureBot } from '@/lib/kan/bots/run'
 import { gatherAreas, gatherInputs } from './inputs'
 import { fitDecisions, isAbout, listTopics } from './topics'
+import { planCards } from './plan'
 
 /**
  * Carry out a pass's decisions. The rules that keep this safe live here, in code,
@@ -52,43 +53,8 @@ export async function applyAttentionPass(passId: string, ownerId: string): Promi
 
   // 1. Areas: start, reshape, and attention.
   for (const a of d.areas) {
-    try {
-      let channelId = a.channelId
-      if (a.change === 'start' || !channelId) {
-        channelId = await startArea(ownerId, a.name, a.purpose ?? '', a.columns?.length ? a.columns : ['Inbox', 'Doing', 'Done'])
-        started.set(a.name.toLowerCase(), channelId)
-        log.push(`Started “${a.name}”: ${a.why}`)
-      } else {
-        const area = areaOf.get(channelId)
-        if (!area) { log.push(`Skipped “${a.name}”: it’s gone.`); continue }
-        if (area.fixed && (a.change === 'quiet' || a.change === 'mute')) { log.push(`Left “${a.name}” as it is: ${area.fixed}.`); continue }
-        if (a.change === 'reshape' && !area.fixed) {
-          const added = await addMissingColumns(channelId, a.columns ?? [])
-          if (a.purpose) await db.update(channels).set({ description: a.purpose, updatedAt: new Date() }).where(eq(channels.id, channelId))
-          log.push(`Reshaped “${a.name}”${added.length ? ` (added ${added.join(', ')})` : ''}: ${a.why}`)
-        }
-      }
-
-      const bot = await ensureBot(channelId, ownerId)
-      const fixed = areaOf.get(channelId)?.fixed
-      const set: Partial<typeof channelBots.$inferInsert> = {
-        attention: a.attention, attentionWhy: a.why, attentionAt: new Date(), updatedAt: new Date(),
-        ...(a.change === 'start' ? { startedByKan: true } : {}),
-      }
-      if (!fixed) {
-        if (a.attention === 'muted') set.enabled = false
-        else if (a.bot) {
-          set.enabled = a.bot.on
-          if (a.bot.on && !bot.enabled) set.nextRunAt = new Date()
-          if (a.bot.everyHours) set.everyHours = Math.min(168, Math.max(1, Math.round(a.bot.everyHours)))
-        }
-      }
-      await db.update(channelBots).set(set).where(eq(channelBots.channelId, channelId))
-      if (a.change === 'mute' || a.change === 'quiet' || a.change === 'wake') log.push(`${a.change === 'wake' ? 'Woke' : a.change === 'mute' ? 'Muted' : 'Quieted'} “${a.name}”: ${a.why}`)
-      if (!fixed && set.enabled !== undefined && set.enabled !== Boolean(bot.enabled)) log.push(`${set.enabled ? 'Started' : 'Stopped'} the bot for “${a.name}”.`)
-    } catch (err) {
-      log.push(`Couldn’t update “${a.name}”: ${err instanceof Error ? err.message : 'error'}`)
-    }
+    const id = await doArea(a, ownerId, areaOf, log)
+    if (id && a.change === 'start') started.set(a.name.toLowerCase(), id)
   }
 
   // 2. Filings.
@@ -105,6 +71,114 @@ export async function applyAttentionPass(passId: string, ownerId: string): Promi
 
   await db.update(attentionPasses).set({ appliedLog: log }).where(eq(attentionPasses.id, passId))
   return { log }
+}
+
+type Area = AttentionDecisionJson['areas'][number]
+type AreaInfo = Awaited<ReturnType<typeof gatherAreas>>[number]
+
+/** Carry out one area's change and its attention. Returns its channel, when there is one. */
+async function doArea(a: Area, ownerId: string, areaOf: Map<string, AreaInfo>, log: string[]): Promise<string | null> {
+  try {
+    let channelId = a.channelId
+    if (a.change === 'start' || !channelId) {
+      channelId = await startArea(ownerId, a.name, a.purpose ?? '', a.columns?.length ? a.columns : ['Inbox', 'Doing', 'Done'])
+      log.push(`Started “${a.name}”: ${a.why}`)
+    } else {
+      const area = areaOf.get(channelId)
+      if (!area) { log.push(`Skipped “${a.name}”: it’s gone.`); return null }
+      if (area.fixed && (a.change === 'quiet' || a.change === 'mute')) { log.push(`Left “${a.name}” as it is: ${area.fixed}.`); return channelId }
+      if (a.change === 'reshape' && !area.fixed) {
+        const added = await addMissingColumns(channelId, a.columns ?? [])
+        if (a.purpose) await db.update(channels).set({ description: a.purpose, updatedAt: new Date() }).where(eq(channels.id, channelId))
+        log.push(`Reshaped “${a.name}”${added.length ? ` (added ${added.join(', ')})` : ''}: ${a.why}`)
+      }
+    }
+
+    const bot = await ensureBot(channelId, ownerId)
+    const fixed = areaOf.get(channelId)?.fixed
+    const set: Partial<typeof channelBots.$inferInsert> = {
+      attention: a.attention, attentionWhy: a.why, attentionAt: new Date(), updatedAt: new Date(),
+      ...(a.change === 'start' ? { startedByKan: true } : {}),
+    }
+    if (!fixed) {
+      if (a.attention === 'muted') set.enabled = false
+      else if (a.bot) {
+        set.enabled = a.bot.on
+        if (a.bot.on && !bot.enabled) set.nextRunAt = new Date()
+        if (a.bot.everyHours) set.everyHours = Math.min(168, Math.max(1, Math.round(a.bot.everyHours)))
+      }
+    }
+    await db.update(channelBots).set(set).where(eq(channelBots.channelId, channelId))
+    if (a.change === 'mute' || a.change === 'quiet' || a.change === 'wake') log.push(`${a.change === 'wake' ? 'Woke' : a.change === 'mute' ? 'Muted' : 'Quieted'} “${a.name}”: ${a.why}`)
+    if (!fixed && set.enabled !== undefined && set.enabled !== Boolean(bot.enabled)) log.push(`${set.enabled ? 'Started' : 'Stopped'} the bot for “${a.name}”.`)
+    return channelId
+  } catch (err) {
+    log.push(`Couldn’t update “${a.name}”: ${err instanceof Error ? err.message : 'error'}`)
+    return null
+  }
+}
+
+/**
+ * Answer one card of the plan: one area's change (a new space brings along what Kan
+ * meant to file into it), or everything Kan meant to file into one place. Yes does
+ * it; no sets it aside. Either way it leaves the plan, and when no cards are left
+ * the plan is done, with the attention-only lines carried out alongside the last one.
+ */
+export async function decidePlanStep(passId: string, ownerId: string, step: { kind: 'area' | 'filing'; key: string }, ok: boolean): Promise<{ log: string[]; left: number } | { error: string }> {
+  const pass = await db.query.attentionPasses.findFirst({ where: eq(attentionPasses.id, passId) })
+  if (!pass || pass.ownerId !== ownerId) return { error: 'Not found' }
+  if (pass.appliedAt || pass.decisions?.dismissed) return { error: 'That plan is already done' }
+  const raw = pass.decisions as AttentionDecisionJson | null
+  if (!raw) return { error: 'Nothing to apply' }
+  const d = fitDecisions(raw, await listTopics(ownerId)).decisions
+  const key = step.key.trim().toLowerCase()
+  const area = step.kind === 'area' ? d.areas.find((x) => x.name.trim().toLowerCase() === key) : undefined
+  if (step.kind === 'area' && !area) return { error: 'Kan isn’t proposing that one any more' }
+  // Filings into a space that doesn't exist yet go with the card that starts it.
+  const files = step.kind === 'filing' ? d.filings.filter((f) => f.area.trim().toLowerCase() === key)
+    : area?.change === 'start' ? d.filings.filter((f) => f.area.trim().toLowerCase() === key) : []
+  if (step.kind === 'filing' && !files.length) return { error: 'Kan isn’t proposing that one any more' }
+
+  const rest: AttentionDecisionJson = {
+    ...d,
+    areas: d.areas.filter((x) => x !== area),
+    filings: d.filings.filter((f) => !files.includes(f)),
+    setAside: ok ? d.setAside : [...(d.setAside ?? []), { name: area?.name ?? `filing into ${step.key}`, why: 'You skipped it.' }],
+  }
+  const bots = await db.query.channelBots.findMany({ where: eq(channelBots.ownerId, ownerId), columns: { channelId: true, enabled: true, everyHours: true } })
+  const left = planCards(rest, new Map(bots.map((b) => [b.channelId, b])), new Map()).length
+  // Take it out of the plan first, so two taps can't do it twice.
+  const [claimed] = await db.update(attentionPasses).set({ decisions: rest, ...(left ? {} : { appliedAt: new Date() }) })
+    .where(and(eq(attentionPasses.id, passId), sql`${attentionPasses.appliedAt} IS NULL`)).returning({ id: attentionPasses.id })
+  if (!claimed) return { error: 'That plan is already done' }
+
+  const log: string[] = []
+  const quiet = left ? [] : rest.areas
+  if (ok || quiet.length) {
+    const since = new Date((pass.startedAt?.getTime() ?? Date.now()) - 30 * 86400_000)
+    const [areas, inputs] = await Promise.all([gatherAreas(ownerId, since), gatherInputs(ownerId, since)])
+    const areaOf = new Map(areas.map((a) => [a.channelId, a]))
+    if (ok) {
+      const channelId = area ? await doArea(area, ownerId, areaOf, log) : areaOf.has(files[0].area) ? files[0].area : null
+      if (files.length) {
+        const name = area?.name ?? areaOf.get(channelId ?? '')?.name ?? files[0].area
+        if (!channelId) log.push(`Skipped filing into ${name}: no such area.`)
+        else if (areaOf.get(channelId)?.fixed) log.push(`Left those where they were: ${name} isn’t filed into.`)
+        else {
+          const owner = await db.query.users.findFirst({ where: eq(users.id, ownerId), columns: { name: true, email: true } })
+          const { isAdmin } = await import('@/lib/auth')
+          const ctx: ToolContext = { userId: ownerId, isAdmin: isAdmin(owner?.email), name: owner?.name, readable: [channelId], scope: [channelId], sessionCardIds: [], recentTurns: [] }
+          const inputOf = new Map(inputs.map((i) => [i.id, i]))
+          for (const f of files) {
+            try { log.push(await fileOne(f, channelId, name, inputOf, ctx)) } catch (err) { log.push(`Couldn’t file “${f.title}”: ${err instanceof Error ? err.message : 'error'}`) }
+          }
+        }
+      }
+    }
+    for (const a of quiet) await doArea(a, ownerId, areaOf, [])
+  }
+  if (log.length) await db.update(attentionPasses).set({ appliedLog: [...(pass.appliedLog ?? []), ...log] }).where(eq(attentionPasses.id, passId))
+  return { log, left }
 }
 
 type Filing = AttentionDecisionJson['filings'][number]

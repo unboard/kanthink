@@ -534,7 +534,8 @@ export default function CityPage() {
     act('apply', () => fetch('/api/prototypes/kan/city/build', json('POST', { passId, name })), `Putting up ${name}. Watch it rise.`, 'townhall');
   const remember = (name: string, role: TopicRole, note: string) =>
     act(`topic:${name}`, () => fetch('/api/prototypes/kan/city/topic', json('POST', { name, role, note })), role === 'help' ? `Got it. I’ll help with ${name}.` : role === 'aware' ? `Got it. I’ll keep ${name} in mind and leave the building to you.` : `Got it. I’ll leave ${name} alone.`, 'townhall');
-  const applyPass = (id: string) => act('apply', () => fetch(`/api/prototypes/kan/attention/${id}/apply`, { method: 'POST' }), 'Done. I rearranged the city.', 'townhall');
+  const stepPass = (id: string, kind: 'area' | 'filing', key: string, ok: boolean) =>
+    act('step', () => fetch(`/api/prototypes/kan/attention/${id}/step`, json('POST', { kind, key, ok })), ok ? 'Done.' : undefined, ok ? 'townhall' : undefined);
   const dismissPass = (id: string) => act('dismiss', () => fetch(`/api/prototypes/kan/attention/${id}/dismiss`, { method: 'POST' }), 'Okay, I’ll leave things as they are.', 'townhall');
   const moveTo = (channelId: string, folderId: string | null) =>
     act(`mv:${channelId}`, () => fetch('/api/prototypes/kan/city/neighborhoods', json('POST', { action: 'move', channelId, folderId })), folderId ? 'Moved. Its bot has new neighbors.' : 'Moved Downtown. Its bot keeps to itself now.');
@@ -956,7 +957,7 @@ export default function CityPage() {
               onEnter={() => void enterBuilding(selectedPlot.channelId)}
             />
           ) : pick.kind === 'townhall' ? (
-            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
+            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onStep={(id, kind, key, ok) => void stepPass(id, kind, key, ok)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
           ) : pick.kind === 'proposal' ? (
@@ -1521,95 +1522,86 @@ function TopicReply({ name, busy, onSave, onCancel, choices, compact }: {
   );
 }
 
-function PlanItem({ item, busy, onRemember }: { item: { name: string; change: keyof typeof CHANGE_TITLE; what: string; why: string }; busy: string | null; onRemember: (name: string, role: TopicRole, note: string) => void }) {
-  const [open, setOpen] = useState(false);
-  // Pushing back fits the changes that would build something; the rest are for the chat.
-  const builds = item.change === 'start' || item.change === 'reshape';
-  return (
-    <li className="py-2">
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
-          <p className="text-[13px] font-medium leading-snug text-neutral-100">{CHANGE_TITLE[item.change] ? `${CHANGE_TITLE[item.change]} ` : ''}{item.name}</p>
-          <p className="mt-0.5 text-[12.5px] leading-snug text-neutral-300">{item.what}</p>
-          <p className="mt-0.5 text-[12px] leading-snug text-neutral-500">Why: {item.why}</p>
-        </div>
-        {builds && !open && <button onClick={() => setOpen(true)} className="flex-shrink-0 rounded-full px-2 py-0.5 text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200">Not this</button>}
-      </div>
-      {open && (
-        <TopicReply compact name={item.name} busy={busy !== null} onCancel={() => setOpen(false)} onSave={(role, note) => onRemember(item.name, role, note)}
-          choices={[{ role: 'aware', label: 'I build it elsewhere' }, { role: 'hands_off', label: 'Leave it out' }]} />
-      )}
-    </li>
-  );
-}
-
-/** What Kan noticed, what saying yes would do, and the three ways to answer. */
-function PlanCard({ pass, busy, onApply, onDismiss, onRemember, onAsk }: {
+/** What Kan noticed, then its plan one card at a time: each says what yes does, and why. */
+function PlanCard({ pass, busy, onStep, onDismiss, onRemember, onAsk }: {
   pass: NonNullable<CityData['townHall']['pass']>;
   busy: string | null;
-  onApply: (id: string) => void;
+  onStep: (id: string, kind: 'area' | 'filing', key: string, ok: boolean) => void;
   onDismiss: (id: string) => void;
   onRemember: (name: string, role: TopicRole, note: string) => void;
   onAsk: (prompt: string, prefill?: boolean) => void;
 }) {
   const [more, setMore] = useState(false);
-  const [filedOpen, setFiledOpen] = useState(false);
-  const total = pass.items.length + pass.filings;
+  const [pushBack, setPushBack] = useState(false);
+  const [allTitles, setAllTitles] = useState(false);
+  // Answered cards leave the plan, so the one up front is always the next.
+  const card = pass.cards[0];
+  const total = pass.cards.length;
+  const titles = !card ? [] : card.kind === 'area' ? card.files : card.titles;
+  const shown = allTitles ? titles : titles.slice(0, 5);
+  const name = !card ? '' : card.kind === 'area' ? card.name : card.to;
+  const builds = card?.kind === 'area' && (card.change === 'start' || card.change === 'reshape');
+  const mine = busy === 'step';
   return (
     <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/5 p-3">
       <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan noticed{pass.at ? <span className="font-normal normal-case tracking-normal text-neutral-500"> · {ago(pass.at)}</span> : null}</p>
-      <p className={`mt-1.5 text-[13px] leading-relaxed text-neutral-300 ${more ? '' : 'line-clamp-3'}`}>{pass.note}</p>
-      {pass.note.length > 180 && <button onClick={() => setMore(!more)} className="mt-0.5 text-[12px] text-violet-300 hover:text-violet-200">{more ? 'Less' : 'Read all'}</button>}
-      {pass.setAside.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5">
-          {pass.setAside.map((x, i) => <li key={i} className="text-[12px] text-neutral-500">Set aside {x.name}: {x.why}</li>)}
-        </ul>
-      )}
+      <p className={`mt-1.5 text-[13px] leading-relaxed text-neutral-300 ${more ? '' : 'line-clamp-2'}`}>{pass.note}</p>
+      {pass.note.length > 120 && <button onClick={() => setMore(!more)} className="mt-0.5 text-[12px] text-violet-300 hover:text-violet-200">{more ? 'Less' : 'Read all'}</button>}
 
-      {total > 0 && (
-        <>
-          <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">If you say yes</p>
-          <ul className="mt-0.5 divide-y divide-white/5">
-            {pass.items.map((it, i) => <PlanItem key={`${it.name}:${i}`} item={it} busy={busy} onRemember={onRemember} />)}
-            {pass.filings > 0 && (
-              <li className="py-2">
-                <button onClick={() => setFiledOpen(!filedOpen)} className="w-full text-left">
-                  <p className="text-[13px] font-medium leading-snug text-neutral-100">Turn {pass.filings} thing{pass.filings === 1 ? '' : 's'} you shared or read into cards <span className="font-normal text-violet-300">{filedOpen ? 'Hide' : 'See them'}</span></p>
-                  <p className="mt-0.5 text-[12.5px] leading-snug text-neutral-300">Into {pass.filed.map((g) => g.to).join(', ')}.</p>
-                </button>
-                {filedOpen && pass.filed.map((g) => (
-                  <div key={g.to} className="mt-1.5">
-                    <p className="text-[12px] text-neutral-400">{g.to}</p>
-                    <ul className="ml-3 list-disc text-[12px] leading-snug text-neutral-500">{g.titles.map((t, i) => <li key={i}>{t}</li>)}</ul>
-                  </div>
-                ))}
-              </li>
-            )}
-          </ul>
-        </>
-      )}
+      {card ? (
+        <div key={`${card.kind}:${card.key}`} className="mt-3 rounded-xl border border-white/10 bg-neutral-900/80 p-3.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">{total === 1 ? 'One thing' : `1 of ${total}`}</p>
+            {total > 1 && <div className="flex gap-1">{pass.cards.slice(0, 12).map((_, i) => <span key={i} className={`h-1.5 w-1.5 rounded-full ${i === 0 ? 'bg-violet-400' : 'bg-white/15'}`} />)}</div>}
+          </div>
+          {card.kind === 'area' ? (
+            <>
+              <p className="mt-1.5 text-[16px] font-semibold leading-snug text-neutral-50">{CHANGE_TITLE[card.change] ? `${CHANGE_TITLE[card.change]} ` : ''}{card.name}</p>
+              <p className="mt-1 text-[13.5px] leading-snug text-neutral-200">{card.what}{card.files.length ? ` And files ${card.files.length === 1 ? 'one thing' : `${card.files.length} things`} into it:` : ''}</p>
+            </>
+          ) : (
+            <>
+              <p className="mt-1.5 text-[16px] font-semibold leading-snug text-neutral-50">File {titles.length === 1 ? 'this' : `these ${titles.length}`} into {card.to}</p>
+              <p className="mt-1 text-[13.5px] leading-snug text-neutral-200">Things you shared or read, turned into cards there.</p>
+            </>
+          )}
+          {titles.length > 0 && (
+            <ul className="mt-1.5 space-y-1">
+              {shown.map((t, i) => <li key={i} className="rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-[12.5px] leading-snug text-neutral-300">{t}</li>)}
+              {titles.length > shown.length && <li><button onClick={() => setAllTitles(true)} className="text-[12px] text-violet-300 hover:text-violet-200">And {titles.length - shown.length} more</button></li>}
+            </ul>
+          )}
+          {card.kind === 'area' && <p className="mt-2 text-[12px] leading-snug text-neutral-500">Why: {card.why}</p>}
 
-      <p className="mt-2 text-[12px] text-neutral-500">Nothing has changed yet. You can ask Kan to drop or change any one of these first.</p>
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        {total > 0 && (
-          <button disabled={busy !== null} onClick={() => onApply(pass.id)} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
-            {busy === 'apply' ? 'Doing it…' : total === 1 ? 'Yes, do this' : `Yes, do all ${total}`}
-          </button>
-        )}
-        <button onClick={() => onAsk('About your plan for the city: ', true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Change something</button>
-        <button disabled={busy !== null} onClick={() => onDismiss(pass.id)} className="rounded-full px-3 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-neutral-200 disabled:opacity-50">{busy === 'dismiss' ? 'Okay…' : 'No thanks'}</button>
+          {pushBack ? (
+            <TopicReply compact name={name} busy={busy !== null} onCancel={() => setPushBack(false)} onSave={(role, note) => { setPushBack(false); onRemember(name, role, note); }}
+              choices={[{ role: 'aware', label: 'I build it elsewhere' }, { role: 'hands_off', label: 'Leave it out' }]} />
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button disabled={busy !== null} onClick={() => onStep(pass.id, card.kind, card.key, true)} className="rounded-full bg-violet-600 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-violet-500 disabled:opacity-50">{mine ? 'One sec…' : 'Yes'}</button>
+              <button disabled={busy !== null} onClick={() => onStep(pass.id, card.kind, card.key, false)} className="rounded-full border border-white/15 px-4 py-1.5 text-[13px] text-neutral-200 hover:bg-white/5 disabled:opacity-50">Skip</button>
+              {builds && <button onClick={() => setPushBack(true)} className="px-1.5 text-[12px] text-neutral-400 hover:text-neutral-200">Not mine to build</button>}
+              <button onClick={() => onAsk(`About “${name}” in your plan: `, true)} className="px-1.5 text-[12px] text-neutral-400 hover:text-neutral-200">Change it</button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <div className="mt-2 flex items-center justify-between">
+        <p className="text-[12px] text-neutral-500">{total ? 'Nothing changes until you say yes.' : 'Nothing left to decide.'}</p>
+        <button disabled={busy !== null} onClick={() => onDismiss(pass.id)} className="text-[12px] text-neutral-500 hover:text-neutral-300 disabled:opacity-50">{busy === 'dismiss' ? 'Okay…' : total > 1 ? 'Skip them all' : 'Not now'}</button>
       </div>
     </div>
   );
 }
 
-function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onDismiss, onRemember, onGo, onAsk }: {
+function TownHallPanel({ data, approvals, busy, onDecide, onLook, onStep, onDismiss, onRemember, onGo, onAsk }: {
   data: CityData;
   approvals: Approval[];
   busy: string | null;
   onDecide: (id: string, ok: boolean, extra?: { reason?: string; modelId?: string }) => void;
   onLook: () => void;
-  onApply: (id: string) => void;
+  onStep: (id: string, kind: 'area' | 'filing', key: string, ok: boolean) => void;
   onDismiss: (id: string) => void;
   onRemember: (name: string, role: TopicRole, note: string) => void;
   onGo: (id: string) => void;
@@ -1622,7 +1614,7 @@ function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onDis
       <p className="text-[11px] uppercase tracking-wider text-neutral-500">Town Hall · Kan’s office</p>
       <h3 className="mt-0.5 pr-8 text-[19px] font-semibold text-neutral-50">{nothing ? 'Nothing’s waiting on you' : 'Waiting on you'}</h3>
 
-      {th.pass && <PlanCard pass={th.pass} busy={busy} onApply={onApply} onDismiss={onDismiss} onRemember={onRemember} onAsk={onAsk} />}
+      {th.pass && <PlanCard pass={th.pass} busy={busy} onStep={onStep} onDismiss={onDismiss} onRemember={onRemember} onAsk={onAsk} />}
 
       {th.pass?.questions.map((q) => (
         <div key={q.topic} className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
