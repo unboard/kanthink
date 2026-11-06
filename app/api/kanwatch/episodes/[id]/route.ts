@@ -59,8 +59,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let channelId: string | null = null;
   let cardId: string | null = null;
   if (verdict === 'confirmed') {
-    channelId = ep.guessChannelId;
-    cardId = ep.guessCardId;
+    // A guess made before its channel was deleted confirms as the time, not the channel.
+    channelId = ep.guessChannelId && access.readable.includes(ep.guessChannelId) ? ep.guessChannelId : null;
+    cardId = channelId ? ep.guessCardId : null;
   } else if (verdict === 'corrected') {
     if (typeof body.cardId === 'string') {
       const card = await db.query.cards.findFirst({ where: eq(cards.id, body.cardId), columns: { id: true, channelId: true } });

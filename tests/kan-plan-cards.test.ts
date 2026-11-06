@@ -9,14 +9,17 @@ describe('Town Hall plan cards', () => {
         { channelId: null, name: 'Garden', attention: 'active', why: 'you keep sharing seeds', change: 'start' },
         // A keep that changes nothing they'd see isn't a card.
         { channelId: 'ui', name: 'UI Inspiration', attention: 'active', why: 'busy', change: 'keep' },
+        // Deleted since the plan was made: not asked about.
+        { channelId: 'old', name: 'Work', attention: 'muted', why: 'quiet', change: 'mute' },
       ],
       filings: [
         { input: 'a', area: 'Garden', as: 'card', title: 'Tomato seeds' },
         { input: 'b', area: 'ui', as: 'card', title: 'Nice button' },
         { input: 'c', area: 'ui', as: 'card', title: 'Nice card' },
         { input: 'd', area: 'grok', as: 'card', title: 'Grok 5' },
+        { input: 'e', area: 'old', as: 'card', title: 'Gone' },
       ],
-    }, new Map(), new Map([['ui', 'UI Inspiration'], ['grok', 'Grok']]))
+    }, new Map(), new Map([['gh', 'GitHub Library Hub'], ['ui', 'UI Inspiration'], ['grok', 'Grok']]))
     expect(cards.map((c) => c.kind === 'area' ? c.name : c.to)).toEqual(['GitHub Library Hub', 'Garden', 'UI Inspiration', 'Grok'])
     const garden = cards[1]
     expect(garden.kind === 'area' && garden.files).toEqual(['Tomato seeds'])

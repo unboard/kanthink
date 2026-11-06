@@ -222,7 +222,7 @@ const suggestTool: AgentTool = {
 
 export const claudeCodeTool: AgentTool = {
   name: 'hand_to_claude_code',
-  description: 'Hand work to Claude Code by putting a card in the Work channel\'s "Do these" column, where Claude Code picks it up. Use this for anything bigger than the app playground can do well: a real multi-screen product, 3D, a game, a change to Kanthink itself, an integration, anything needing a server, a database or many files. (The /mow, /catlife, /print and /wildwood "super apps" were all built this way because the playground would have struggled.) Use build_app only for a single-screen tool or a quick prototype. Write the brief so Claude Code can start without asking: the goal, who it is for, what done looks like, and every requirement the user gave. Only when the user asks for it to be built or handed off.',
+  description: 'Hand work to Claude Code by putting a card in the Work channel\'s "Do these" column, where Claude Code picks it up. Use this for anything bigger than the app playground can do well: a real multi-screen product, 3D, a game, a change to Kanthink itself, an integration, anything needing a server, a database or many files. (The /mow, /catlife and /print "super apps" were all built this way because the playground would have struggled.) Use build_app only for a single-screen tool or a quick prototype. Write the brief so Claude Code can start without asking: the goal, who it is for, what done looks like, and every requirement the user gave. Only when the user asks for it to be built or handed off.',
   input_schema: {
     type: 'object',
     properties: {

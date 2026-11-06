@@ -12,7 +12,9 @@ const lower = (s: string) => s.trim().toLowerCase()
  * knowing what “reshape” means. A keep that switches a bot on or off is a change
  * too, so it gets a card rather than slipping in; a keep that changes nothing they'd
  * see doesn't. What Kan would file into a new space rides on the card that starts it;
- * the rest is one card per place it would go, with every title on it.
+ * the rest is one card per place it would go, with every title on it. A plan is
+ * made from the board as it was, so anything about a channel deleted since (one
+ * missing from areaName) is left out rather than asked about.
  */
 export function planCards(d: Pick<AttentionDecisionJson, 'areas' | 'filings'>, botOf: Map<string, BotState>, areaName: Map<string, string>) {
   const cards: (
@@ -21,6 +23,7 @@ export function planCards(d: Pick<AttentionDecisionJson, 'areas' | 'filings'>, b
   )[] = []
   const starts = new Set(d.areas.filter((a) => a.change === 'start').map((a) => lower(a.name)))
   for (const a of d.areas) {
+    if (a.channelId && !areaName.has(a.channelId)) continue
     const bot = a.channelId ? botOf.get(a.channelId) : undefined
     const wasOn = Boolean(bot?.enabled)
     const willOn = a.attention === 'muted' ? false : a.bot ? a.bot.on : wasOn
@@ -37,7 +40,7 @@ export function planCards(d: Pick<AttentionDecisionJson, 'areas' | 'filings'>, b
   }
   const by = new Map<string, { key: string; to: string; titles: string[] }>()
   for (const f of d.filings) {
-    if (starts.has(lower(f.area))) continue
+    if (starts.has(lower(f.area)) || !areaName.has(f.area)) continue
     const g = by.get(lower(f.area)) ?? { key: f.area, to: areaName.get(f.area) ?? f.area, titles: [] }
     g.titles.push(f.title)
     by.set(lower(f.area), g)

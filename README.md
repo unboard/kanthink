@@ -85,7 +85,7 @@ scripts/       operational one-offs and the /kan driver
 .claude/       agent commands (see kan.md)
 ```
 
-`app/prototypes` holds UI experiments that don't ship. `/catlife`, `/wildwood`, and `/rescue`
+`app/prototypes` holds UI experiments that don't ship. `/catlife` and `/rescue`
 are standalone personal games that share the codebase but none of Kanthink's domain model.
 
 See `CLAUDE.md` for working conventions, including the mobile drag-and-drop constraints and the

@@ -26,7 +26,6 @@ export function MainContent({ children }: MainContentProps) {
   const isFullViewport =
     pathname.startsWith('/watch') ||
     pathname.startsWith('/play') ||
-    pathname.startsWith('/wildwood') ||
     pathname.startsWith('/rescue') ||
     pathname.startsWith('/print') ||
     pathname.startsWith('/proof') ||

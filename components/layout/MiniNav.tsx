@@ -424,7 +424,6 @@ export function MiniNav() {
     pathname.startsWith('/play') ||  // public playground apps own the full viewport
     pathname.startsWith('/apps/u') ||  // a publisher's public shelf is for strangers
     pathname.startsWith('/watch') ||  // the recording watch page owns the full viewport
-    pathname.startsWith('/wildwood') ||  // the Wildwood game owns the full viewport
     pathname.startsWith('/rescue') ||  // Paws & Found game owns the full viewport
     pathname.startsWith('/print') ||  // the print studio owns the full viewport
     pathname.startsWith('/proof') ||  // a printer's customer page: their brand, not ours

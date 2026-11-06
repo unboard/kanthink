@@ -146,7 +146,8 @@ export async function decidePlanStep(passId: string, ownerId: string, step: { ki
     setAside: ok ? d.setAside : [...(d.setAside ?? []), { name: area?.name ?? `filing into ${step.key}`, why: 'You skipped it.' }],
   }
   const bots = await db.query.channelBots.findMany({ where: eq(channelBots.ownerId, ownerId), columns: { channelId: true, enabled: true, everyHours: true } })
-  const left = planCards(rest, new Map(bots.map((b) => [b.channelId, b])), new Map()).length
+  const names = await db.query.channels.findMany({ where: and(eq(channels.ownerId, ownerId), eq(channels.status, 'active')), columns: { id: true, name: true } })
+  const left = planCards(rest, new Map(bots.map((b) => [b.channelId, b])), new Map(names.map((c) => [c.id, c.name]))).length
   // Take it out of the plan first, so two taps can't do it twice.
   const [claimed] = await db.update(attentionPasses).set({ decisions: rest, ...(left ? {} : { appliedAt: new Date() }) })
     .where(and(eq(attentionPasses.id, passId), sql`${attentionPasses.appliedAt} IS NULL`)).returning({ id: attentionPasses.id })
