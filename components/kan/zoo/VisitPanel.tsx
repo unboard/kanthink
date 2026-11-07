@@ -19,11 +19,15 @@ import type { VisitAct } from './visit';
 /** Keepers never go in with these: they work with them through the fence, with a target stick and treats. */
 const TRAINED = new Set(['lion', 'tiger', 'cheetah', 'snowleopard', 'slothbear', 'gorilla', 'orangutan', 'fossa', 'bobcat', 'alligator', 'elephant', 'rhino', 'indianrhino', 'hog', 'pygmyhippo', 'spidermonkey', 'siamang']);
 const SCALE_BONUS = 15;
+/** How you take each one out: birds ride on your shoulder, penguins and goats walk on a leash. */
+const WALK_LABEL: Record<string, string> = { macaw: '🦜 Carry', budgie: '🦜 Carry', owl: '🦉 Carry', penguin: '🦮 Walk', goat: '🦮 Walk' };
 
 const pick = <T,>(l: T[]) => l[Math.floor(Math.random() * l.length)];
 
-export function VisitPanel({ zoo, a, onClose, onDo, onVet, onName, onScale }: {
+export function VisitPanel({ zoo, a, onClose, onDo, onVet, onName, onScale, onWalk }: {
   zoo: Zoo; a: Animal; onClose: () => void;
+  /** Take it out to meet visitors; says why not when it can't go. */
+  onWalk?: () => string | null;
   /** Play it out, and count it; true when it was the first time today (a little more bond). */
   onDo: (show: VisitAct, extra?: string, care?: { action: CareAction; right: boolean }) => boolean;
   onVet: (a: Animal) => void; onName: (a: Animal) => void;
@@ -168,6 +172,11 @@ export function VisitPanel({ zoo, a, onClose, onDo, onVet, onName, onScale }: {
               <Act emoji={c.toy[0]} label="Play" onClick={doPlay} disabled={!up} />
               <Act emoji="⚖️" label="Check-up" onClick={doCheck} disabled={!up} />
             </div>
+            {onWalk && up && (
+              <button onClick={() => { const no = onWalk(); if (no) say(no, false); }} className="mt-2 w-full rounded-full bg-amber-500 py-3 text-[15px] font-bold text-white shadow-xl active:scale-95">
+                {WALK_LABEL[a.species] ?? '🤲 Carry'} {a.name} to meet visitors
+              </button>
+            )}
             {!up && <button onClick={doNight} className="mt-2 w-full rounded-full bg-indigo-500 py-3 text-[15px] font-bold text-white shadow-xl active:scale-95">🌙 Whisper goodnight</button>}
             <button onClick={() => setAbout(!about)} className="mt-2 w-full text-center text-[13px] font-semibold text-white drop-shadow">{about ? 'Less' : `More about ${a.name || 'the baby'}`}</button>
             {about && (

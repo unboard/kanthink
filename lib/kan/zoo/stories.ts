@@ -384,7 +384,7 @@ const RECIPES: Recipe[] = [
       (c) => {
         c.z.weather = 'sunny'; c.z.weatherUntil = c.z.clock + 36 * 60;
         const n = c.z.animals.length;
-        c.say({ emoji: '🥵', title: 'A heat wave is coming!', text: `It’s going to be super hot for two days. Ice pops would keep the animals cool. Should we make them?`, math: [`${n} animals × $1 = ${money(n)}`], todo: true, choices: [{ label: `Make ice pops (${money(n)})`, cost: n }, { label: 'They’ll be okay' }] });
+        c.say({ emoji: '🥵', title: 'A heat wave is coming!', text: `It’s going to be super hot for two days. Ice pops would keep the animals cool, at $2 each. Should we make one for every animal?`, math: [`${n} animals × $2 = ${money(n * 2)}`], todo: true, choices: [{ label: `Make ice pops (${money(n * 2)})`, cost: n * 2 }, { label: 'They’ll be okay' }] });
       },
       (c, _v, ch) => {
         if (ch === 0) {
@@ -591,7 +591,7 @@ const RECIPES: Recipe[] = [
       (c, v) => {
         const a = c.get(v.a)!;
         const steps = (2 + Math.floor(c.r() * 9)) * 1000;
-        c.say({ emoji: '📊', title: `${a.name} walked ${steps.toLocaleString('en-US')} steps yesterday!`, text: `${species(a.species).fact}`, math: [`${steps.toLocaleString('en-US')} steps ÷ 1,000 = ${steps / 1000} thousand steps`], animal: a.id });
+        c.say({ emoji: '📊', title: `${a.name} walked ${steps.toLocaleString('en-US')} steps yesterday!`, text: `${species(a.species).fact}`, animal: a.id });
         return { end: true };
       },
     ],

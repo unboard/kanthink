@@ -2,6 +2,7 @@ import { EXHIBITS, HABITATS, habitat } from './map';
 import { awake, species } from './species';
 import { startPregnancy, stepPregnancies } from './care';
 import { fits, type Coach } from '../players';
+import { fanDraw, fansReturn } from './meet';
 import { addFame, drawBoost, escape, learnFromEscape, moment, storyHour, type Arc, type Happening, type Memory } from './stories';
 
 /**
@@ -57,7 +58,7 @@ export interface Animal {
   lb?: number;
 }
 
-export type EventKind = 'baby' | 'escape' | 'sick' | 'storm' | 'fieldtrip' | 'funny' | 'report' | 'bills' | 'fixed' | 'fence' | 'lost' | 'vip' | 'bought' | 'math' | 'caught' | 'healed' | 'fog' | 'night' | 'arrival' | 'welcome' | 'story' | 'fame' | 'learned';
+export type EventKind = 'baby' | 'escape' | 'sick' | 'storm' | 'fieldtrip' | 'funny' | 'report' | 'bills' | 'fixed' | 'fence' | 'lost' | 'vip' | 'bought' | 'math' | 'caught' | 'healed' | 'fog' | 'night' | 'arrival' | 'welcome' | 'story' | 'fame' | 'learned' | 'meet';
 export interface ZooEvent {
   id: string;
   at: number;
@@ -116,6 +117,8 @@ export interface Zoo {
   happening?: Happening | null;
   /** A rush (or a dip) in visitors for a while, and why. */
   buzz?: { k: number; until: number; why: string };
+  /** People who met an animal on a walk: how many are still to come back, and how many meetings in all. */
+  fans?: { back: number; total: number };
 }
 
 export const day = (clock: number) => Math.floor(clock / DAY) + 1;
@@ -320,7 +323,7 @@ export function dailyDraw(z: Zoo) {
   const joy = 0.55 + (happiness(z) / 100) * 0.6;
   // Higher prices bring fewer people: at $5 everyone who wants to come, comes.
   const priceK = Math.max(0.15, Math.min(1.35, 1.25 - (z.price - 3) * 0.075));
-  return Math.round(stars * 0.22 * (1 + bonus) * joy * priceK * drawBoost(z));
+  return Math.round(stars * 0.22 * (1 + bonus + fanDraw(z)) * joy * priceK * drawBoost(z));
 }
 const WEATHER_DRAW: Record<Weather, number> = { sunny: 1, cloudy: 0.85, fog: 0.7, rain: 0.45, storm: 0.15, snow: 0.5 };
 export const WEATHER_WORD: Record<Weather, string> = { sunny: '☀️ Sunny', cloudy: '⛅ Cloudy', fog: '🌫️ Foggy', rain: '🌧️ Rainy', storm: '⛈️ Stormy', snow: '🌨️ Snowy' };
@@ -376,6 +379,9 @@ function tick(z: Zoo, m: number, r: () => number, away: boolean) {
 
   // A new day: last night's report waits, then breakfast for everyone, and the bill for it.
   if (day(z.clock) !== day(was)) newDay(z, r);
+
+  // The gates open: anyone coming back to see an animal they met is first in line.
+  if (h0 < OPEN / 60 && h >= OPEN / 60) fansReturn(z);
 
   // Visitors.
   const share = arrivals(h, afterDark) * (m / 60);
@@ -648,7 +654,10 @@ export function plan(z: Zoo, cost: number) {
   }
   lines.push(days <= 1 ? `One good day of visitors is enough!` : `${days} days × ${money(perDay)} = ${money(days * perDay)}. That covers it!`);
   const visitors = Math.ceil(need / z.price);
-  lines.push(`Or: ${money(need)} ÷ ${money(z.price)} = ${visitors} more visitors.`);
+  // Only a sum that comes out even; otherwise say what's left over and why that means one more.
+  lines.push(need % z.price === 0
+    ? `Or: ${money(need)} ÷ ${money(z.price)} = ${visitors} more visitors.`
+    : `Or: ${money(need)} ÷ ${money(z.price)} is ${visitors - 1} with ${money(need % z.price)} left over, so ${visitors} more visitors.`);
   return { need, days, perDay, visitors, lines };
 }
 

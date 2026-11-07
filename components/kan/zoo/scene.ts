@@ -8,6 +8,7 @@ import { animalFigure, type AnimalFig, type AnimalState } from './animals';
 import { ZooWorld, flat, type HabitatFrame, type HallFrame, type PlaceFrame } from './world';
 import { ZooSky } from './sky';
 import { Crowd } from './crowd';
+import { MEET_MAX, type HoldStyle } from '@/lib/kan/zoo/meet';
 
 /**
  * Omaha's zoo, to walk around in: every exhibit from the zoo's own map, the animals
@@ -31,7 +32,9 @@ export type ZooNear =
   | { kind: 'kid'; name: string }
   | { kind: 'parent'; name: string }
   | { kind: 'exit' }
-  | { kind: 'car'; name: string };
+  | { kind: 'car'; name: string }
+  /** Back at the home of the animal you're walking. */
+  | { kind: 'putback'; id: string; name: string };
 export type ZooPick = { kind: 'animal'; id: string } | { kind: 'exhibit'; id: string } | { kind: 'habitat'; id: string };
 export type Ride = { kind: 'train'; stopped: string | null; next: string } | { kind: 'skyfari'; to: string } | null;
 
@@ -48,6 +51,8 @@ export interface ZooCallbacks {
   onLanded?(where: string | null): void;
   /** Where you are, in map pixels, for the minimap. */
   onWhere?(px: Px, heading: number): void;
+  /** A guest met the animal you're walking. */
+  onMeet?(who: { kind: string }): void;
 }
 
 interface Critter {
@@ -122,6 +127,10 @@ export class ZooScene {
   private hapOn = false;
   private ray = new THREE.Raycaster();
   private v3 = new THREE.Vector3();
+  /** The animal you're walking, how, how many it's met, and a pause between meetings. */
+  private carry: { id: string; style: HoldStyle; met: number; wait: number } | null = null;
+  /** Hearts and stars that pop up over someone who just met it. */
+  private pops: { el: HTMLDivElement; x: number; y: number; z: number; t: number }[] = [];
 
   constructor(labels: HTMLDivElement, private cb: ZooCallbacks, private kit: PlayerKit) {
     this.layer = document.createElement('div');
@@ -447,6 +456,7 @@ export class ZooScene {
     const p = this.player;
     const W = this.world;
     for (const c of this.critters.values()) {
+      if (this.carry?.id === c.a.id) { this.stepHeld(c, dt, t); continue; }
       if (c.hidden && !c.a.loose) { c.label.style.display = 'none'; continue; }
       const dCam = Math.hypot(c.x - cam.x, c.z - cam.z);
       const far = dCam > 115;
@@ -634,6 +644,98 @@ export class ZooScene {
       y.obj.rotation.x += y.vz * dt;
       y.obj.rotation.z -= y.vx * dt;
     }
+  }
+
+  // ---------- Walking an animal ----------
+
+  /** Take an animal out of its home: in your arms, on your shoulder, or on a leash. */
+  carryAnimal(id: string, style: HoldStyle) {
+    const c = this.critters.get(id);
+    // One that lives indoors comes out too: the keeper brings it out the door.
+    if (!c || c.a.loose) return false;
+    if (this.mode !== 'walk') this.setMode('walk');
+    this.carry = { id, style, met: 0, wait: 1.5 };
+    // A little bigger while held, so you can see who you've got from behind.
+    if (style !== 'leash') c.fig.group.scale.multiplyScalar(1.6);
+    c.climb = null;
+    c.to = null;
+    // Out the keeper gate, right to you.
+    c.x = this.player.x + Math.sin(this.player.heading) * 0.6;
+    c.z = this.player.z + Math.cos(this.player.heading) * 0.6;
+    return true;
+  }
+  carrying() { return this.carry ? { id: this.carry.id, met: this.carry.met } : null; }
+  /** Back home, inside the fence. */
+  putBack() {
+    const k = this.carry;
+    this.carry = null;
+    const c = k ? this.critters.get(k.id) : undefined;
+    if (!c) return;
+    if (k!.style !== 'leash') c.fig.group.scale.divideScalar(1.6);
+    const at = this.spotIn(c.frame, c.sp);
+    c.x = at.x; c.z = at.z;
+    c.to = null;
+    c.wait = 2;
+    if (c.hidden) { c.fig.group.removeFromParent(); c.label.style.display = 'none'; }
+  }
+  /** How far you are from handing it back: the fence, or the door of the house it lives in. */
+  private homeD(c: Critter, x: number, z: number) {
+    if (c.hidden) {
+      const h = this.world.halls.find((e) => e.exhibit.id === c.frame.def.exhibit);
+      if (h) return Math.hypot(h.door.x - x, h.door.z - z) - 2;
+    }
+    return (this.world.habitatD(c.frame, x, z) - (c.frame.def.moat ? 1.36 : 1)) * Math.min(c.frame.rx, c.frame.rz);
+  }
+  private stepHeld(c: Critter, dt: number, t: number) {
+    const p = this.player, k = this.carry!;
+    const s = (p.obj.userData.cam as number | undefined) ?? 1;
+    const f = { x: Math.sin(p.heading), z: Math.cos(p.heading) };
+    let state: AnimalState = 'sit', speed = 0;
+    if (k.style === 'leash') {
+      // Beside you, a step behind, trotting to keep up.
+      const tx = p.x - f.x * 0.9 + f.z * 1.1, tz = p.z - f.z * 0.9 - f.x * 1.1;
+      const dx = tx - c.x, dz = tz - c.z, d = Math.hypot(dx, dz);
+      if (d > 0.2) {
+        speed = Math.min(9, Math.max(c.sp.speed, d * 3));
+        const mv = Math.min(d, speed * dt);
+        c.x += (dx / d) * mv; c.z += (dz / d) * mv;
+        c.heading = turn(c.heading, Math.atan2(dx, dz), Math.min(1, dt * 8));
+        state = speed > 3.2 ? 'run' : 'walk';
+      } else { c.heading = turn(c.heading, p.heading, Math.min(1, dt * 3)); state = 'stand'; }
+      c.y = this.world.groundAt(c.x, c.z);
+    } else if (k.style === 'shoulder') {
+      c.x = p.x + f.z * 0.32 * s; c.z = p.z - f.x * 0.32 * s;
+      c.y = p.y + 1.45 * s;
+      c.heading = p.heading;
+      state = 'stand';
+    } else {
+      // On your hip, to the side so you can see them from behind, looking where you're going.
+      c.x = p.x + f.x * 0.2 * s + f.z * 0.95 * s; c.z = p.z + f.z * 0.2 * s - f.x * 0.95 * s;
+      c.y = p.y + 0.7 * s + Math.abs(Math.sin(this.walkT * 1.4)) * 0.05;
+      c.heading = p.heading;
+    }
+    c.state = state;
+    c.fig.group.visible = true;
+    if (!c.fig.group.parent) this.scene.add(c.fig.group);
+    c.fig.group.position.set(c.x, c.y, c.z);
+    c.fig.group.rotation.y = c.heading;
+    c.fig.pose(state, t, c.phase, speed);
+  }
+  /** Anyone close enough to meet the animal you're walking. */
+  private stepMeets(dt: number) {
+    for (const o of this.pops) o.t += dt;
+    const k = this.carry, p = this.player;
+    if (!k || this.mode !== 'walk' || k.met >= MEET_MAX) return;
+    k.wait -= dt;
+    if (k.wait > 0) return;
+    const g = this.crowd.meetNear(p.x, p.z, 3.4);
+    if (!g) return;
+    this.crowd.wow(g, p.x, p.z);
+    k.met++;
+    k.wait = 3;
+    const el = this.label(g.kind === 'kid' ? '🤩' : '😍', 'kz-pop');
+    this.pops.push({ el, x: g.x, y: this.world.groundAt(g.x, g.z) + (g.kind === 'kid' ? 1.9 : 2.5), z: g.z, t: 0 });
+    this.cb.onMeet?.({ kind: g.kind });
   }
 
   /** Coax an escaped animal: it follows you home. */
@@ -1057,6 +1159,15 @@ export class ZooScene {
     this.player.heading = Math.atan2(h.door.x - h.x, h.door.z - h.z);
     this.look = 0;
   }
+  /** Out of a restaurant, on its doorstep, facing away from it. */
+  outsidePlace(placeId: string) {
+    const pf = this.world.places.get(placeId);
+    if (!pf) return;
+    const dx = pf.door.x - pf.x, dz = pf.door.z - pf.z, d = Math.hypot(dx, dz) || 1;
+    this.jumpTo(toPx(pf.door.x + (dx / d) * 1.5, pf.door.z + (dz / d) * 1.5));
+    this.player.heading = Math.atan2(dx, dz);
+    this.look = 0;
+  }
   /** Drag to look around: on foot, on the train, in a Skyfari chair, under the parachute. */
   turn(dx: number) { this.look = Math.atan2(Math.sin(this.look + dx), Math.cos(this.look + dx)); }
 
@@ -1080,6 +1191,7 @@ export class ZooScene {
     this.stepCritters(dt, t);
     this.stepThings(dt);
     this.stepKid(dt, t);
+    this.stepMeets(dt);
     this.stepTrain(dt, t, people.trainCars);
     this.stepChairs(dt);
     const keepers = dark > 0.5 && !people.afterDark ? 6 : 4;
@@ -1138,6 +1250,12 @@ export class ZooScene {
         const d = this.placeD(pf, p.x, p.z);
         if (d < 6) consider({ kind: 'place', id: pl.id, name: pl.name, emoji: pl.emoji, placeKind: pl.kind }, d + 0.5);
       }
+      if (this.carry) {
+        const c = this.critters.get(this.carry.id);
+        if (c) {
+          if (this.homeD(c, p.x, p.z) < 7) consider({ kind: 'putback', id: c.a.id, name: c.a.name }, -4);
+        }
+      }
       if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) consider({ kind: 'car', name: this.parked.kind === 'ride' ? 'your scooter' : 'your cart' }, -5);
     }
     this.setNear(near);
@@ -1192,6 +1310,12 @@ export class ZooScene {
       c.label.classList.toggle('kz-loose', loose);
       pos.set(c.x, c.y + c.fig.height + 0.6, c.z);
       place(c.label, pos, loose ? 40 : 60);
+    }
+    for (let i = this.pops.length - 1; i >= 0; i--) {
+      const o = this.pops[i];
+      if (o.t > 2.4) { o.el.remove(); this.pops.splice(i, 1); continue; }
+      place(o.el, pos.set(o.x, o.y + o.t * 0.6, o.z), 60);
+      o.el.style.opacity = String(Math.min(1, 2.4 - o.t));
     }
     if (this.kid) {
       const k = this.kid;

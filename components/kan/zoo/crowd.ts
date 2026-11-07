@@ -40,7 +40,11 @@ interface Person {
   /** 0 plain, 1 stripes, 2 a logo on the front. */
   deco: 0 | 1 | 2;
   glasses: boolean; pack: boolean; stroller: boolean; balloon: number;
+  /** Already met an animal you were walking: once is the memory. */
+  met?: boolean;
 }
+/** A guest, as the scene sees one: where they are and who they are. */
+export type Guest = { readonly x: number; readonly z: number; readonly kind: Kind };
 interface Slot { im: THREE.InstancedMesh; n: number }
 
 const SHIRTS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f5f5f4', '#1f2937', '#a3e635', '#14b8a6', '#fb7185', '#fde047', '#60a5fa', '#9ca3af', '#0f766e', '#b91c1c'];
@@ -489,6 +493,31 @@ export class Crowd {
   }
 
   /** Where people are, for the minimap. */
+  /** The nearest guest who hasn't met an animal yet, kids first; nobody leaving, nobody working. */
+  meetNear(x: number, z: number, r: number): Guest | null {
+    let best: Person | null = null, bd = Infinity;
+    for (const p of this.people) {
+      if (p.kind === 'keeper' || p.leaving || p.met || p.fade < 0.9) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d > r) continue;
+      const score = d - (p.kind === 'kid' ? 1.5 : 0);
+      if (score < bd) { bd = score; best = p; }
+    }
+    return best;
+  }
+  /** They stop, turn to look at what you're holding, and a kid hops and points. Their family stops too. */
+  wow(g: Guest, x: number, z: number) {
+    const p = g as Person;
+    const family = this.people.filter((q) => q === p || q === p.lead || (p.lead ? q.lead === p.lead : q.lead === p));
+    for (const q of family) {
+      q.met = true;
+      const at = q.lead ?? q;
+      at.pause = Math.max(at.pause, 6);
+      at.look = Math.atan2(x - at.x, z - at.z);
+    }
+    p.point = 3;
+    if (p.kind === 'kid') p.hop = 2.5;
+  }
   dots() { return this.people.map((p) => ({ x: p.x, z: p.z, keeper: p.kind === 'keeper' })); }
 
   dispose() {

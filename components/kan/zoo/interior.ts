@@ -7,6 +7,7 @@ import { species, awake, type Species } from '@/lib/kan/zoo/species';
 import type { Animal, Zoo } from '@/lib/kan/zoo/sim';
 import { animalFigure, type AnimalFig, type AnimalState } from './animals';
 import { flat, signTexture } from './world';
+import { MENUS } from '@/lib/kan/zoo/meet';
 
 /**
  * Inside the zoo's big buildings, to walk around in: the Desert Dome with Kingdoms of
@@ -24,7 +25,7 @@ import { flat, signTexture } from './world';
  * Kingdoms of the Night, which is lit backwards so its animals are up by day.
  */
 
-export type InteriorId = 'desert' | 'jungle' | 'aquarium' | 'butterflies';
+export type InteriorId = 'desert' | 'jungle' | 'aquarium' | 'butterflies' | 'diner';
 /** Which interior an outside door leads into, and where inside you start: 'night' starts you down in Kingdoms of the Night. */
 export const INTERIOR_FOR: Record<string, { id: InteriorId; start: 'main' | 'night' }> = {
   desert: { id: 'desert', start: 'main' },
@@ -33,8 +34,14 @@ export const INTERIOR_FOR: Record<string, { id: InteriorId; start: 'main' | 'nig
   aquarium: { id: 'aquarium', start: 'main' },
   butterflies: { id: 'butterflies', start: 'main' },
 };
-export type InteriorNear = { kind: 'habitat'; id: string; name: string } | { kind: 'exit' } | { kind: 'elevator'; label: string };
-export interface InteriorCallbacks { onNear(n: InteriorNear | null): void; onPick(p: { kind: 'animal'; id: string }): void; onFloor?(name: string): void }
+export type InteriorNear = { kind: 'habitat'; id: string; name: string } | { kind: 'exit' } | { kind: 'elevator'; label: string } | { kind: 'counter'; name: string } | { kind: 'seat' };
+export interface InteriorCallbacks {
+  onNear(n: InteriorNear | null): void;
+  onPick(p: { kind: 'animal'; id: string }): void;
+  onFloor?(name: string): void;
+  /** Every bite of lunch is gone. */
+  onAte?(): void;
+}
 
 // ---------- Shapes, floors and walls ----------
 
@@ -204,7 +211,13 @@ export class ZooInterior {
   /** Where the camera may go, beyond the colliders: keeps it in the room. */
   private camBounds: (x: number, y: number, z: number, py: number) => { x: number; y: number; z: number };
 
-  constructor(readonly id: InteriorId, start: 'main' | 'night', labels: HTMLDivElement, private cb: InteriorCallbacks, private kit: PlayerKit) {
+  /** In a restaurant: the seats, the counter, your tray, and where you're sitting. */
+  private seats: { x: number; z: number; heading: number; taken: boolean }[] = [];
+  private counter: { x: number; z: number; name: string } | null = null;
+  private tray: { obj: THREE.Group; food: THREE.Sprite[] } | null = null;
+  private seated: { seat: number; bite: number } | null = null;
+
+  constructor(readonly id: InteriorId, start: 'main' | 'night', labels: HTMLDivElement, private cb: InteriorCallbacks, private kit: PlayerKit, opts: { place?: string; busy?: number } = {}) {
     this.layer = document.createElement('div');
     this.layer.className = 'kz-labels';
     labels.appendChild(this.layer);
@@ -216,6 +229,7 @@ export class ZooInterior {
     if (id === 'desert') spawn = this.buildDesert(merge, start);
     else if (id === 'jungle') spawn = this.buildJungle(merge);
     else if (id === 'aquarium') spawn = this.buildAquarium(merge);
+    else if (id === 'diner') spawn = this.buildDiner(merge, opts.place ?? 'treetops', opts.busy ?? 0);
     else spawn = this.buildButterflies(merge);
     merge.build(this.scene);
     const obj = kit.walker();
@@ -981,6 +995,183 @@ export class ZooInterior {
     return { x: 15.5, y: 0, z: 0, h: -Math.PI / 2 };
   }
 
+  // ---------- A restaurant ----------
+
+  /** Order at the counter, carry your tray to a free seat, and eat, among other families having lunch. */
+  private buildDiner(merge: Merge, placeId: string, busy: number) {
+    const look = DINER_LOOK[placeId] ?? DINER_LOOK.treetops;
+    const W = 12, D = 8, H = 5;
+    this.moods = [{ bg: look.wall, fog: [look.wall, 40, 120], hemi: 1.15, sun: 0.8 }];
+    this.hemi.color.set('#fff4e0');
+    this.ground(rect(-W, W, -D, D), 0, look.floor);
+    this.floors.push(areaFloor(look.name, rect(-W, W, -D, D), 0));
+    // Walls, with the door in the middle of the front one, and a ceiling of lights.
+    const wall = (x: number, z: number, w: number, d: number) => {
+      const m = new THREE.Mesh(GEO.box, flat(look.wall));
+      m.position.set(x, H / 2, z);
+      m.scale.set(w, H, d);
+      this.scene.add(m);
+      this.collider(m);
+    };
+    wall(0, -D - 0.2, W * 2 + 0.8, 0.4);
+    wall(-W - 0.2, 0, 0.4, D * 2);
+    wall(W + 0.2, 0, 0.4, D * 2);
+    wall(-(W + 2) / 2 - 0.4, D + 0.2, W - 1.2, 0.4);
+    wall((W + 2) / 2 + 0.4, D + 0.2, W - 1.2, 0.4);
+    merge.add(GEO.box, flat(look.trim), at(0, 0.5, -D + 0.05, 0, W * 2, 1, 0.1));
+    merge.add(GEO.box, flat(look.trim), at(-W + 0.05, 0.5, 0, 0, 0.1, 1, D * 2));
+    merge.add(GEO.box, flat(look.trim), at(W - 0.05, 0.5, 0, 0, 0.1, 1, D * 2));
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W * 2 + 1, D * 2 + 1), new THREE.MeshStandardMaterial({ color: look.ceiling, roughness: 0.9, side: THREE.DoubleSide }));
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.y = H;
+    this.scene.add(ceil);
+    for (const x of [-8, 0, 8]) for (const z of [-3, 3]) merge.add(GEO.cyl, glow('#fff3c4', 1.4), at(x, H - 0.12, z, 0, 1.4, 0.2, 1.4));
+    this.walls.push((x, z) => Math.abs(x) > W - 0.5 || z < -D + 0.5 || (z > D - 0.5 && Math.abs(x) > 1.6));
+    // The counter across the back, the menu board over it, and the cooks behind.
+    merge.add(GEO.box, flat(look.trim), at(0, 0.55, -5.6, 0, 12, 1.1, 1.2));
+    merge.add(GEO.box, flat('#f5f5f4'), at(0, 1.13, -5.6, 0, 12.2, 0.06, 1.3));
+    this.walls.push((x, z) => Math.abs(x) < 6.4 && z < -4.7);
+    merge.add(GEO.box, flat('#9ca3af', { metal: 0.5, rough: 0.4 }), at(-3, 1.2, -6.9, 0, 3, 2.4, 0.9));
+    merge.add(GEO.box, glow('#f97316', 0.5), at(-3, 1.6, -6.4, 0, 2.4, 0.5, 0.05));
+    this.sign(look.name, look.sign, 0, 3.9, -7.75, 0, 9, look.emoji);
+    const menu = MENUS[placeId] ?? [];
+    this.sign(menu.map((m) => `${m.emoji} $${m.price}`).join('   '), '#1f2937', 0, 2.75, -7.75, 0, 10);
+    for (const x of [-4.5, 1.5, 4.5]) this.diner(merge, x, -6.6, 0, '#ffffff', 'cook');
+    this.counter = { x: 0, z: -4.4, name: look.name };
+    this.area('🧾 Order here', 0, 2.2, -5);
+    // Tables and chairs, with other people having lunch: more when the zoo's busy.
+    let n = Math.round(Math.min(1, busy / 80) * 12) + 3;
+    for (const tx of [-8, -3, 3, 8]) for (const tz of [-0.5, 4.5]) {
+      merge.add(GEO.cyl, flat(look.table), at(tx, 0.8, tz, 0, 2.2, 0.08, 2.2));
+      merge.add(GEO.cyl6, flat('#3a3a42'), at(tx, 0.4, tz, 0, 0.15, 0.8, 0.15));
+      this.walls.push((x, z) => Math.hypot(x - tx, z - tz) < 1.25);
+      for (let side = 0; side < 4; side++) {
+        const a = (side * Math.PI) / 2;
+        const cx = tx + Math.sin(a) * 1.6, cz = tz + Math.cos(a) * 1.6;
+        merge.add(GEO.box, flat(look.chair), at(cx, 0.45, cz, a, 0.6, 0.08, 0.6));
+        merge.add(GEO.box, flat(look.chair), at(cx + Math.sin(a) * 0.28, 0.85, cz + Math.cos(a) * 0.28, a, 0.6, 0.8, 0.08));
+        for (const [ox, oz] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) merge.add(GEO.cyl6, flat('#3a3a42'), at(cx + ox, 0.22, cz + oz, 0, 0.05, 0.44, 0.05));
+        const k = Math.abs(Math.round(tx * 3 + tz)) + side;
+        const taken = n > 0 && k % 3 !== 0;
+        if (taken) {
+          n--;
+          this.diner(merge, cx, cz, a + Math.PI, DINER_SHIRTS[k % DINER_SHIRTS.length], 'sit');
+          this.food(tx + Math.sin(a) * 0.6, 0.98, tz + Math.cos(a) * 0.6, menu[k % Math.max(1, menu.length)]?.emoji ?? '🍽️', 0.45);
+        }
+        this.seats.push({ x: cx, z: cz, heading: a + Math.PI, taken });
+      }
+    }
+    // Plants in the corners, and the animals on the walls.
+    for (const [x, z] of [[-11, -7], [11, -7], [-11, 7], [11, 7]] as const) {
+      merge.add(GEO.cyl, flat('#a0522d'), at(x, 0.35, z, 0, 0.8, 0.7, 0.8));
+      merge.add(GEO.sph, flat('#3f8f3a'), at(x, 1.3, z, 0, 1.3, 1.5, 1.3));
+    }
+    look.pics.forEach((e, i) => this.food(-W + 0.3, 2.8, -4 + i * 4, e, 1.4));
+    this.exit(merge, 0, 0, D - 0.2, Math.PI);
+    this.camBounds = (x, y, z) => ({ x: THREE.MathUtils.clamp(x, -W + 0.6, W - 0.6), y: THREE.MathUtils.clamp(y, 0.8, H - 0.4), z: THREE.MathUtils.clamp(z, -D + 0.6, D - 0.4) });
+    return { x: 0, y: 0, z: D - 0.6, h: Math.PI };
+  }
+  /** Someone in the restaurant: a cook behind the counter, or a diner sitting down. */
+  private diner(merge: Merge, x: number, z: number, heading: number, shirt: string, as: 'cook' | 'sit') {
+    const y0 = as === 'sit' ? 0.42 : 0;
+    const k = Math.abs(Math.round(x * 7 + z * 3));
+    merge.add(GEO.cyl, flat(shirt), at(x, y0 + 0.75, z, heading, 0.6, 0.8, 0.45));
+    merge.add(GEO.sph, flat(DINER_SKIN[k % DINER_SKIN.length]), at(x, y0 + 1.4, z, heading, 0.42, 0.46, 0.42));
+    if (as === 'cook') {
+      merge.add(GEO.cyl, flat('#ffffff'), at(x, 1.78, z, 0, 0.42, 0.38, 0.42));
+      merge.add(GEO.cyl, flat('#334155'), at(x, 0.2, z, heading, 0.5, 0.4, 0.4));
+    } else merge.add(GEO.sph, flat(DINER_HAIR[k % DINER_HAIR.length]), at(x, y0 + 1.52, z, heading, 0.45, 0.3, 0.45));
+  }
+  /** A food (or a picture) as a little emoji standing in the room. */
+  private food(x: number, y: number, z: number, e: string, size: number) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.emojiTex(e), transparent: true }));
+    sp.position.set(x, y, z);
+    sp.scale.setScalar(size);
+    this.scene.add(sp);
+    return sp;
+  }
+  private emojiTex(e: string) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d')!;
+    x.font = '96px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(e, 64, 72);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this.textures.push(t);
+    return t;
+  }
+
+  /** Lunch, bought at the counter: on a tray in your hands. */
+  holdTray(food: string[]) {
+    this.tray?.obj.removeFromParent();
+    const obj = new THREE.Group();
+    const board = new THREE.Mesh(GEO.box, flat('#b45309'));
+    board.scale.set(0.9, 0.05, 0.6);
+    obj.add(board);
+    const sprites = food.slice(0, 6).map((e, i) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.emojiTex(e), transparent: true }));
+      sp.position.set(-0.27 + (i % 3) * 0.27, 0.2, i < 3 ? -0.12 : 0.14);
+      sp.scale.setScalar(0.32);
+      obj.add(sp);
+      return sp;
+    });
+    this.scene.add(obj);
+    this.tray = { obj, food: sprites };
+  }
+  /** Sit at the nearest free seat, put the tray down, and start eating. */
+  sit() {
+    const p = this.player;
+    if (!this.tray) return;
+    let best = -1, bd = 2.2;
+    this.seats.forEach((s, i) => { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!s.taken && d < bd) { bd = d; best = i; } });
+    if (best < 0) return;
+    const s = this.seats[best];
+    p.x = s.x; p.z = s.z; p.heading = s.heading; p.speed = 0;
+    // The camera comes round to the far side of the table, so you see yourself and your lunch.
+    this.look = Math.PI;
+    this.seated = { seat: best, bite: 1.5 };
+    this.tray.obj.position.set(s.x + Math.sin(s.heading) * 0.95, 0.88, s.z + Math.cos(s.heading) * 0.95);
+    this.tray.obj.rotation.y = s.heading;
+    for (const f of this.tray.food) { f.position.y = 0.25; f.scale.setScalar(0.42); }
+  }
+  private stepLunch(dt: number, input: { push: number }) {
+    const p = this.player;
+    if (this.seated) {
+      // Walk away to stand up; otherwise a bite every second and a half, until it's all gone.
+      if (Math.abs(input.push) > 0.3) { this.standUp(); return; }
+      const tray = this.tray;
+      if (!tray) return;
+      this.seated.bite -= dt;
+      const left = tray.food.filter((f) => f.visible);
+      if (this.seated.bite < 0 && left.length) {
+        const f = left[0];
+        const s = f.scale.x * 0.62;
+        if (s < 0.12) f.visible = false; else f.scale.setScalar(s);
+        this.seated.bite = 1.5;
+        if (!f.visible && left.length === 1) { tray.obj.removeFromParent(); this.tray = null; this.standUp(); this.cb.onAte?.(); }
+      }
+    } else if (this.tray) {
+      const f = { x: Math.sin(p.heading), z: Math.cos(p.heading) };
+      const k = (p.obj.userData.cam as number | undefined) ?? 1;
+      this.tray.obj.position.set(p.x + f.x * 0.55 * k, p.y + 0.85 * k, p.z + f.z * 0.55 * k);
+      this.tray.obj.rotation.y = p.heading;
+    }
+  }
+  private standUp() {
+    const s = this.seated ? this.seats[this.seated.seat] : null;
+    this.seated = null;
+    if (!s) return;
+    const p = this.player;
+    // A step back from the table; what's left of lunch stays there.
+    p.x = s.x - Math.sin(s.heading) * 0.8;
+    p.z = s.z - Math.cos(s.heading) * 0.8;
+    this.tray = null;
+    this.look = 0;
+  }
+
   // ---------- Walking ----------
 
   /** The floor under you: the highest one within a step of your feet. */
@@ -1065,7 +1256,8 @@ export class ZooInterior {
       if (on) { p.y = e.y; riding = true; }
       if (e.t >= 1) { e.moving = false; ding(); }
     }
-    if (!riding) {
+    this.stepLunch(dt, input);
+    if (!riding && !this.seated) {
       p.speed += ((input.boost ? 10 : 5.5) * input.push - p.speed) * Math.min(1, dt * 10);
       p.heading -= input.steer * 2.6 * dt;
       const f = { x: Math.sin(p.heading), z: Math.cos(p.heading) };
@@ -1148,6 +1340,8 @@ export class ZooInterior {
         // The door always wins over an exhibit next to it.
         if (d < 4 && Math.abs(x.y - p.y) < 1.5 && d < best + 3) { near = { kind: 'exit' }; best = -0.5; }
       }
+      if (this.counter && !this.tray && Math.hypot(this.counter.x - p.x, this.counter.z - p.z) < 3 && best > 0) { near = { kind: 'counter', name: this.counter.name }; best = 0; }
+      if (this.tray && !this.seated && this.seats.some((s) => !s.taken && Math.hypot(s.x - p.x, s.z - p.z) < 2.2)) { near = { kind: 'seat' }; best = -1; }
       for (const pen of this.pens) {
         if (Math.abs(pen.y - p.y) > 3.5 && !(pen.box && p.y < pen.box.y1 && p.y > pen.box.y0 - 1)) continue;
         if (!this.critterList(pen).length) continue;
@@ -1462,6 +1656,7 @@ export const INTERIOR_EXHIBITS: Record<InteriorId, string[]> = {
   jungle: ['jungle'],
   aquarium: ['aquarium'],
   butterflies: ['butterflies'],
+  diner: [],
 };
 void EXHIBITS;
 
@@ -1480,3 +1675,14 @@ function softDot() {
   dot = new THREE.CanvasTexture(c);
   return dot;
 }
+
+/** How each restaurant looks inside. */
+const DINER_LOOK: Record<string, { name: string; emoji: string; wall: string; floor: string; trim: string; ceiling: string; table: string; chair: string; sign: string; pics: string[] }> = {
+  lodge: { name: 'African Lodge', emoji: '🍔', wall: '#e9d3a8', floor: '#8a5a32', trim: '#6b3f1f', ceiling: '#c9a36a', table: '#a87943', chair: '#5a3a1f', sign: '#b45309', pics: ['🦁', '🦒', '🐘'] },
+  treetops: { name: 'TreeTops Restaurant', emoji: '🍕', wall: '#d9edc8', floor: '#7a5636', trim: '#3f6f2a', ceiling: '#a7c98a', table: '#c8a26e', chair: '#2f5a24', sign: '#15803d', pics: ['🦍', '🦧', '🦜'] },
+  'plaza-cafe': { name: 'Plaza Café', emoji: '🥪', wall: '#f4f1ea', floor: '#9ca3af', trim: '#1d4ed8', ceiling: '#ffffff', table: '#f5f5f4', chair: '#2563eb', sign: '#1d4ed8', pics: ['🐧', '🦋', '🐢'] },
+  glacier: { name: 'Glacier Bay Landing', emoji: '🌭', wall: '#dbeafe', floor: '#64748b', trim: '#0e7490', ceiling: '#eff6ff', table: '#e0f2fe', chair: '#0369a1', sign: '#0e7490', pics: ['🐻‍❄️', '🦭', '🐧'] },
+};
+const DINER_SHIRTS = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#ec4899', '#8b5cf6', '#f97316', '#14b8a6'];
+const DINER_SKIN = ['#f6d7c3', '#e3ad88', '#bb8058', '#7d4e32', '#d29a72'];
+const DINER_HAIR = ['#1a1412', '#4a3020', '#a87943', '#e2c27f', '#8e3b1f'];

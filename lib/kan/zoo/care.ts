@@ -137,14 +137,12 @@ export function startPregnancy(z: Zoo, r: () => number) {
     note(z, {
       kind: 'baby', emoji: '🥚', title: n > 1 ? `${mom.name} laid ${n} eggs!` : `${mom.name} laid an egg!`,
       text: `${mom.name} the ${sp.name.toLowerCase()} laid ${n > 1 ? `${n} eggs` : 'an egg'} at ${home}. The keepers are keeping ${n > 1 ? 'them' : 'it'} warm. In the wild, ${sp.many} eggs take about ${howLong(c.days)} to hatch. Here, it’s only ${wait} ${wait > 1 ? 'days' : 'day'}!`,
-      math: [`${wait} ${wait > 1 ? 'days' : 'day'} × 24 hours = ${wait * 24} hours until ${n > 1 ? 'they hatch' : 'it hatches'}`],
       animal: mom.id, habitat: mom.habitat,
     });
   } else {
     note(z, {
       kind: 'baby', emoji: '💕', title: pick([`Big news: ${mom.name} is going to have a baby!`, `${mom.name} is expecting!`, `A baby is on the way for ${mom.name}!`], r),
       text: `Dr. Paws checked ${mom.name} the ${sp.name.toLowerCase()} and there’s a baby on the way! In the wild, ${sp.many} carry a baby for about ${howLong(c.days)}. Here, it’s due in just ${wait} days. Visit ${mom.name} to listen for the heartbeat, and give extra snacks: she’s eating for two.`,
-      math: [`${wait} days × 24 hours = ${wait * 24} hours until the baby comes`],
       animal: mom.id, habitat: mom.habitat,
     });
   }
