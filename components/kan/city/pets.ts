@@ -59,13 +59,22 @@ function pale(hex: string) {
   return '#' + new THREE.Color(hex).lerp(new THREE.Color('#fff8ee'), 0.6).getHexString();
 }
 
-/** Markings on top of the fur: patches of a second color, white socks, tabby stripes. */
-export interface PetMarks { patch?: string; socks?: boolean; tabby?: boolean }
+/**
+ * Markings on top of the fur: patches of a second (and third) color, white socks, a white
+ * bib, tabby stripes, darker points on the face, ears, paws and tail; and the shape of the
+ * cat itself: fluffy, folded ears, a bobtail, a bit round, and its eye color (one per eye).
+ */
+export interface PetMarks {
+  patch?: string; patch2?: string; socks?: boolean; tabby?: boolean; chest?: boolean; points?: string;
+  fluffy?: boolean; fold?: boolean; bob?: boolean; chonk?: boolean; eyes?: string; eye2?: string;
+}
 
 export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): PetFig {
   const dog = kind === 'dog' || kind === 'puppy', bunny = kind === 'bunny', cat = !dog && !bunny;
   const fur = mat(color, { rough: 0.95 });
   const light = mat(pale(color), { rough: 0.95 });
+  const white = mat('#fbf8f2', { rough: 0.95 });
+  const point = marks.points ? mat(marks.points, { rough: 0.95 }) : fur;
   const dark = mat('#1b1430');
   const pink = mat('#ff9fb8');
   const group = new THREE.Group();
@@ -73,13 +82,23 @@ export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): P
   group.add(rig);
 
   // Body, with a paler belly.
+  const round = marks.chonk ? 1.22 : 1, puff = marks.fluffy ? 1.1 : 1;
   const body = add(rig, sphere(0.26), fur, 0, 0.36, 0);
-  body.scale.set(0.9, 0.8, bunny ? 1.05 : 1.35);
-  add(rig, sphere(0.2), light, 0, 0.3, 0.06).scale.set(0.85, 0.7, 1.2);
+  body.scale.set(0.9 * round * puff, 0.8 * round * puff, (bunny ? 1.05 : 1.35) * puff);
+  add(rig, sphere(0.2), marks.chest ? white : light, 0, 0.3, 0.06).scale.set(0.85 * round, 0.7 * round, 1.2);
+  if (marks.chest) add(rig, sphere(0.15), white, 0, 0.4, 0.24).scale.set(0.95, 1.15, 0.6);
+  if (marks.fluffy) {
+    // A big soft ruff round the neck.
+    add(rig, sphere(0.2), marks.chest ? white : light, 0, 0.5, 0.22).scale.set(1.25, 1, 0.8);
+  }
 
   if (marks.patch) {
     const pm = mat(marks.patch, { rough: 0.95 });
-    for (const [x, y, z, r] of [[0.12, 0.44, -0.1, 0.13], [-0.1, 0.42, 0.12, 0.11], [0.0, 0.5, -0.22, 0.1]]) add(rig, sphere(r), pm, x, y, z).scale.set(1, 0.55, 1.2);
+    for (const [x, y, z, r] of [[0.12, 0.44, -0.1, 0.13], [-0.1, 0.42, 0.12, 0.11], [0.0, 0.5, -0.22, 0.1]]) add(rig, sphere(r * round), pm, x * round, y, z).scale.set(1, 0.55, 1.2);
+  }
+  if (marks.patch2) {
+    const pm = mat(marks.patch2, { rough: 0.95 });
+    for (const [x, y, z, r] of [[-0.13, 0.43, -0.16, 0.12], [0.11, 0.45, 0.14, 0.09], [-0.04, 0.5, 0.0, 0.08]]) add(rig, sphere(r * round), pm, x * round, y, z).scale.set(1, 0.55, 1.2);
   }
   if (marks.tabby) {
     const sm = mat(new THREE.Color(color).multiplyScalar(0.55).getStyle(), { rough: 0.95 });
@@ -96,7 +115,8 @@ export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): P
     const hip = new THREE.Group();
     hip.position.set(x, 0.3, bunny ? z * 0.7 : z);
     add(hip, new THREE.CylinderGeometry(0.05, 0.045, 0.28, 8), fur, 0, -0.15, 0);
-    add(hip, sphere(0.055), marks.socks ? mat('#ffffff', { rough: 0.95 }) : light, 0, -0.29, 0.02).scale.set(1, 0.6, 1.3);
+    if (marks.points) add(hip, new THREE.CylinderGeometry(0.052, 0.05, 0.12, 8), point, 0, -0.23, 0);
+    add(hip, sphere(0.055), marks.socks ? mat('#ffffff', { rough: 0.95 }) : marks.points ? point : light, 0, -0.29, 0.02).scale.set(1, 0.6, 1.3);
     if (marks.socks) add(hip, new THREE.CylinderGeometry(0.052, 0.05, 0.1, 8), mat('#ffffff', { rough: 0.95 }), 0, -0.24, 0);
     rig.add(hip);
     legs.push(hip);
@@ -106,15 +126,18 @@ export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): P
   const head = new THREE.Group();
   head.position.set(0, bunny ? 0.56 : 0.6, bunny ? 0.24 : 0.32);
   rig.add(head);
-  add(head, sphere(dog ? 0.2 : 0.19), fur, 0, 0, 0).scale.set(1.05, 0.95, 1);
-  add(head, sphere(0.09), light, 0, -0.05, dog ? 0.16 : 0.14).scale.set(1.25, 0.8, dog ? 1.2 : 0.85);
+  add(head, sphere(dog ? 0.2 : 0.19), fur, 0, 0, 0).scale.set(1.05 * (marks.chonk ? 1.08 : 1), 0.95, 1);
+  // A darker mask over the face, like a Siamese.
+  if (marks.points) add(head, sphere(0.13), point, 0, -0.02, 0.09).scale.set(1.1, 1, 0.8);
+  add(head, sphere(0.09), marks.chest ? white : marks.points ? point : light, 0, -0.05, dog ? 0.16 : 0.14).scale.set(1.25, 0.8, dog ? 1.2 : 0.85);
+  if (marks.fluffy && cat) for (const s of [-1, 1]) add(head, sphere(0.07), fur, s * 0.17, -0.06, 0.02).scale.set(1, 0.8, 0.9);
   add(head, sphere(dog ? 0.04 : 0.028), dog ? dark : pink, 0, dog ? -0.01 : -0.02, dog ? 0.26 : 0.215);
   const eyes: THREE.Group[] = [];
   for (const s of [-1, 1]) {
     const eye = new THREE.Group();
     eye.position.set(s * 0.075, 0.045, 0.155);
     add(eye, sphere(0.045), mat('#ffffff', { rough: 0.3 }));
-    add(eye, sphere(0.032), mat(cat ? '#3f8a3c' : '#4a2c1c', { rough: 0.3 }), 0, 0, 0.018);
+    add(eye, sphere(0.032), mat(cat ? (s > 0 && marks.eye2) || marks.eyes || '#3f8a3c' : '#4a2c1c', { rough: 0.3 }), 0, 0, 0.018);
     add(eye, sphere(0.02), dark, 0, 0, 0.035);
     add(eye, sphere(0.009), mat('#ffffff', { emissive: '#ffffff', intensity: 0.6 }), s * 0.008, 0.012, 0.05);
     head.add(eye);
@@ -136,10 +159,15 @@ export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): P
   // Ears.
   for (const s of [-1, 1]) {
     if (cat) {
-      const ear = add(head, new THREE.ConeGeometry(0.075, 0.15, 4), fur, s * 0.11, 0.16, -0.01);
+      // Folded ears tip forward and sit low and round.
+      const ear = add(head, new THREE.ConeGeometry(0.075, 0.15, 4), point, s * 0.11, marks.fold ? 0.13 : 0.16, -0.01);
       ear.rotation.z = -s * 0.3;
-      const inner = add(head, new THREE.ConeGeometry(0.04, 0.09, 4), pink, s * 0.105, 0.155, 0.02);
-      inner.rotation.z = -s * 0.3;
+      if (marks.fold) { ear.rotation.x = 1.0; ear.scale.set(1, 0.6, 1); }
+      else {
+        const inner = add(head, new THREE.ConeGeometry(0.04, 0.09, 4), pink, s * 0.105, 0.155, 0.02);
+        inner.rotation.z = -s * 0.3;
+      }
+      if (marks.fluffy && !marks.fold) add(head, new THREE.ConeGeometry(0.012, 0.06, 4), point, s * 0.135, 0.255, -0.01).rotation.z = -s * 0.3;
     } else if (dog) {
       const ear = add(head, sphere(0.08), mat(new THREE.Color(color).multiplyScalar(0.7).getStyle()), s * 0.18, 0.0, -0.02);
       ear.scale.set(0.5, 1.4, 0.8);
@@ -160,11 +188,12 @@ export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): P
   rig.add(tail);
   if (bunny) add(tail, sphere(0.09), mat('#ffffff', { rough: 1 }), 0, 0, -0.02);
   else {
-    const len = cat ? 0.42 : 0.26;
-    const t = add(tail, new THREE.CylinderGeometry(0.03, cat ? 0.04 : 0.045, len, 8), fur, 0, len / 2, 0);
+    const len = cat ? (marks.bob ? 0.1 : 0.42) : 0.26;
+    const thick = marks.fluffy ? 1.9 : 1;
+    const tm = cat ? point : fur;
+    add(tail, new THREE.CylinderGeometry(0.03 * thick, (cat ? 0.04 : 0.045) * thick, len, 8), tm, 0, len / 2, 0);
     tail.rotation.x = cat ? -0.5 : -0.9;
-    if (cat) add(tail, sphere(0.04), fur, 0, len, 0);
-    void t;
+    if (cat) add(tail, sphere(marks.bob ? 0.075 : 0.04 * thick), tm, 0, len, 0);
   }
 
   const scale = SIZE[kind];

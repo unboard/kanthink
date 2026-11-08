@@ -18,7 +18,7 @@ import type { PetMarks } from '../city/pets';
 export type CatKind = 'cat' | 'kitten';
 export type Energy = 'sleepy' | 'curious' | 'shy' | 'zoomy';
 export type VetNeed = 'sniffles' | 'paw' | 'checkup';
-export interface Stray { id: string; name: string; kind: CatKind; color: string; seed: number; date: string; energy: Energy; hidden: boolean; marks: PetMarks }
+export interface Stray { id: string; name: string; kind: CatKind; color: string; seed: number; date: string; energy: Energy; hidden: boolean; marks: PetMarks; coat?: string }
 export interface RescuedCat extends Stray {
   /** What it needs before it can go home, and what's been done. */
   needs?: { bath?: boolean; vet?: VetNeed };
@@ -34,40 +34,78 @@ export interface RescuedCat extends Stray {
 
 const KEY = 'kanwatch-freeway-rescue';
 
-const NAMES = ['Pip', 'Mittens', 'Waffles', 'Pumpkin', 'Socks', 'Clementine', 'Marshmallow', 'Ziggy', 'Pebble', 'Noodle', 'Biscuit', 'Juniper', 'Toast', 'Maple', 'Sprinkles', 'Ollie', 'Hazel', 'Peanut', 'Luna', 'Domino', 'Butterscotch', 'Cricket', 'Tater Tot', 'Mango', 'Fig', 'Pepper', 'Cinnamon', 'Button', 'Smudge', 'Pickles', 'Comet', 'Honey', 'Sardine', 'Jellybean', 'Nugget', 'Moose', 'Daisy', 'Snickers', 'Winnie', 'Gizmo'];
-const FUR = ['#f2a65a', '#3a3a3a', '#e8e1d6', '#9a9aa2', '#c8783c', '#f5d6a8', '#f5f0e6', '#7a5236', '#1f1f24', '#d97a2b', '#b9b2c8', '#6b6f7a', '#e9c79a', '#8a5a3c', '#fbf7f0', '#a0522d'];
-const PATCH = ['#1f1f24', '#f5f0e6', '#d97a2b', '#7a5236'];
+const NAMES = ['Pip', 'Mittens', 'Waffles', 'Pumpkin', 'Socks', 'Clementine', 'Marshmallow', 'Ziggy', 'Pebble', 'Noodle', 'Biscuit', 'Juniper', 'Toast', 'Maple', 'Sprinkles', 'Ollie', 'Hazel', 'Peanut', 'Luna', 'Domino', 'Butterscotch', 'Cricket', 'Tater Tot', 'Mango', 'Fig', 'Pepper', 'Cinnamon', 'Button', 'Smudge', 'Pickles', 'Comet', 'Honey', 'Sardine', 'Jellybean', 'Nugget', 'Moose', 'Daisy', 'Snickers', 'Winnie', 'Gizmo',
+  'Acorn', 'Bubbles', 'Cupcake', 'Dumpling', 'Ember', 'Fuzzball', 'Gumdrop', 'Hiccup', 'Inky', 'Jasper', 'Kiwi', 'Lollipop', 'Meatball', 'Nutmeg', 'Oreo', 'Pudding', 'Quilt', 'Rascal', 'Snowball', 'Twinkle', 'Velvet', 'Wiggles', 'Yam', 'Zuzu', 'Bean', 'Cloud', 'Dusty', 'Fudge', 'Ginger', 'Muffin', 'Pancake', 'Raisin', 'Shortcake', 'Sushi', 'Tinsel', 'Truffle', 'Whiskers', 'Bramble', 'Puddle', 'Starla'];
 const ENERGIES: Energy[] = ['sleepy', 'curious', 'shy', 'zoomy'];
 export const ENERGY_WORD: Record<Energy, string> = { sleepy: 'Sleepy', curious: 'Curious', shy: 'Shy', zoomy: 'Zoomy' };
 export const VET_WORD: Record<VetNeed, string> = { sniffles: 'has the sniffles', paw: 'has a sore paw', checkup: 'needs a checkup' };
 
-function marksFor(seed: number, color: string): PetMarks {
-  const k = (seed >>> 17) % 6;
-  const patch = PATCH.find((c) => c !== color && (seed >>> 20) % 2 === 0) ?? PATCH[(seed >>> 21) % PATCH.length];
-  if (k === 0) return { patch };
-  if (k === 1) return { socks: true };
-  if (k === 2) return { tabby: true };
-  if (k === 3) return { patch, socks: true };
-  if (k === 4) return { tabby: true, socks: true };
-  return {};
+const GOLD = '#d9a520', GREEN = '#4f9a3c', BLUE = '#4f8fd8', COPPER = '#c4702a', HAZEL = '#9a8a3a';
+/** Every coat a stray can turn up in: its fur, its markings and the eyes that usually go with it. */
+const COATS: { name: string; color: string; marks: PetMarks; eyes: string[] }[] = [
+  { name: 'orange tabby', color: '#e58a3a', marks: { tabby: true }, eyes: [GOLD, GREEN] },
+  { name: 'gray tabby', color: '#9a9aa2', marks: { tabby: true }, eyes: [GREEN, GOLD] },
+  { name: 'brown tabby', color: '#8a6a4a', marks: { tabby: true }, eyes: [GREEN, HAZEL] },
+  { name: 'silver tabby', color: '#c9cdd4', marks: { tabby: true, chest: true }, eyes: [GREEN] },
+  { name: 'black', color: '#1f1f24', marks: {}, eyes: [GOLD, COPPER] },
+  { name: 'snow white', color: '#fbf7f0', marks: {}, eyes: [BLUE, GOLD, 'odd'] },
+  { name: 'tuxedo', color: '#1f1f24', marks: { chest: true, socks: true }, eyes: [GOLD, GREEN] },
+  { name: 'calico', color: '#f5f0e6', marks: { patch: '#e58a3a', patch2: '#2a2a2e' }, eyes: [GOLD, GREEN, COPPER] },
+  { name: 'tortie', color: '#3a2a24', marks: { patch: '#c8783c', patch2: '#7a4a2a' }, eyes: [GOLD, COPPER] },
+  { name: 'Siamese', color: '#f1e4cc', marks: { points: '#5a4334' }, eyes: [BLUE] },
+  { name: 'snowshoe', color: '#efe2c8', marks: { points: '#6a5444', socks: true }, eyes: [BLUE] },
+  { name: 'Russian blue', color: '#7d8796', marks: {}, eyes: [GREEN] },
+  { name: 'cream', color: '#f3dbb0', marks: {}, eyes: [GOLD, COPPER] },
+  { name: 'orange and white', color: '#e58a3a', marks: { chest: true, socks: true }, eyes: [GOLD] },
+  { name: 'cow-spotted', color: '#fbf7f0', marks: { patch: '#1f1f24' }, eyes: [GREEN, GOLD] },
+  { name: 'gray and white', color: '#8e939c', marks: { chest: true, socks: true }, eyes: [GOLD, GREEN] },
+  { name: 'chocolate', color: '#5a3a2a', marks: {}, eyes: [GOLD, COPPER] },
+  { name: 'smoky', color: '#4a4c55', marks: { chest: true }, eyes: [COPPER, GOLD] },
+  { name: 'flame point', color: '#f6e9d4', marks: { points: '#e58a3a' }, eyes: [BLUE] },
+  { name: 'lilac', color: '#c8b8c8', marks: {}, eyes: [GREEN, GOLD] },
+];
+
+/** Its coat, and the shape of it: some are fluffy, some round, some have folded ears or a bobtail. */
+function coatFor(seed: number, kind: CatKind) {
+  const c = COATS[(seed >>> 17) % COATS.length];
+  const fluffy = (seed >>> 22) % 4 === 0, fold = (seed >>> 24) % 9 === 0, bob = (seed >>> 26) % 10 === 0, chonk = (seed >>> 27) % 6 === 0;
+  let eyes = c.eyes[(seed >>> 20) % c.eyes.length], eye2: string | undefined;
+  if (eyes === 'odd') { eyes = BLUE; eye2 = GOLD; }
+  const marks: PetMarks = { ...c.marks, eyes, ...(eye2 ? { eye2 } : {}), ...(fluffy ? { fluffy } : {}), ...(fold ? { fold } : {}), ...(bob ? { bob } : {}), ...(chonk ? { chonk } : {}) };
+  // "a chubby, fluffy calico kitten with folded ears"
+  const looks = [chonk && 'chubby', fluffy && 'fluffy'].filter(Boolean).join(', ');
+  const extras = [fold && 'folded ears', bob && 'a bobtail', eye2 && 'one blue eye and one gold'].filter(Boolean) as string[];
+  const coat = `${looks ? `${looks} ` : ''}${c.name} ${kind}${extras.length ? ` with ${extras.length > 1 ? `${extras.slice(0, -1).join(', ')} and ${extras.at(-1)}` : extras[0]}` : ''}`;
+  return { color: c.color, marks, coat };
 }
 
-/** Every third day or so has a stray waiting by it; the same ones every time. */
-export function straysFor(days: FreewayDay[], rescued: RescuedCat[]): Stray[] {
-  const taken = new Set(rescued.map((c) => c.id));
+/** A new stray turns up at a spot a few hours after the last one there was brought in. */
+export const REFILL_MS = 3 * 3_600_000;
+
+/** Most days have a stray waiting by them, and some have two; when one's rescued, another turns up later. */
+export function straysFor(days: FreewayDay[], rescued: RescuedCat[], now = Date.now()): Stray[] {
+  const byId = new Map(rescued.map((c) => [c.id, c]));
   const out: Stray[] = [];
   days.forEach((d, i) => {
-    const seed = hash(`stray:${d.date}`) >>> 0;
-    if (seed % 3 !== 0 && i !== days.length - 2) return;
-    const id = `stray:${d.date}`;
-    if (taken.has(id)) return;
+    const seed0 = hash(`stray:${d.date}`) >>> 0;
     // The one by yesterday is always an easy one, so there's a first catch close by.
     const easy = i === days.length - 2;
-    const color = FUR[(seed >>> 11) % FUR.length];
-    out.push({
-      id, date: d.date, seed, name: NAMES[(seed >>> 3) % NAMES.length], kind: (seed >>> 7) % 3 === 0 ? 'kitten' : 'cat', color,
-      energy: easy ? 'curious' : ENERGIES[(seed >>> 9) % 4], hidden: !easy && (seed >>> 13) % 3 === 0, marks: marksFor(seed, color),
-    });
+    const spots = [`stray:${d.date}`, `stray:${d.date}:2`].filter((_, k) => (k === 0 ? seed0 % 3 !== 2 || easy : (seed0 >>> 2) % 3 === 0));
+    for (const base of spots) {
+      // Which stray is at this spot now: the first, or whoever came after the last was rescued.
+      let gen = 0, last: RescuedCat | undefined;
+      for (let id = base; byId.has(id); id = `${base}#${++gen}`) last = byId.get(id);
+      if (last && now - last.at < REFILL_MS) continue;
+      const id = gen ? `${base}#${gen}` : base;
+      const seed = gen || base !== `stray:${d.date}` ? hash(id) >>> 0 : seed0;
+      const first = easy && gen === 0 && base === `stray:${d.date}`;
+      const kind: CatKind = (seed >>> 7) % 3 === 0 ? 'kitten' : 'cat';
+      const { color, marks, coat } = coatFor(seed, kind);
+      out.push({
+        id, date: d.date, seed, name: NAMES[(seed >>> 3) % NAMES.length], kind, color, coat,
+        energy: first ? 'curious' : ENERGIES[(seed >>> 9) % 4], hidden: !first && (seed >>> 13) % 3 === 0, marks,
+      });
+    }
   });
   return out;
 }

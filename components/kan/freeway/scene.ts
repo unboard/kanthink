@@ -76,12 +76,16 @@ type Block = Pick<DayView, 's' | 'pos' | 'rot' | 'w' | 'd' | 'top'>;
 interface StrayCat {
   s: Stray; fig: PetFig; at: number; x: number; z: number; home: { x: number; z: number }; to: { x: number; z: number } | null;
   heading: number; wait: number; phase: number; label: HTMLDivElement;
-  /** What it's up to: about its business, bolting, heading for a treat, or eating one. */
-  state: 'idle' | 'walk' | 'flee' | 'treat' | 'eat';
+  /** What it's up to: about its business, bolting, heading for a treat, eating one, or chasing the feather. */
+  state: 'idle' | 'walk' | 'flee' | 'treat' | 'eat' | 'play';
   eatUntil: number;
   run: number;
 }
-interface Follower { fig: PetFig; x: number; z: number; heading: number; phase: number }
+/** A cat you've caught: following along behind, or up on your shoulder purring. */
+interface Follower { id: string; fig: PetFig; x: number; z: number; heading: number; phase: number; held: boolean }
+
+/** A held cat rides on top of you (Kan's cap, or a kid's head), a little back and to one side, and shrinks to fit. */
+const PERCH = { sink: 0.18, side: 0.2, back: 0.15, scale: 0.7 };
 
 const PALETTE = ['#8b5cf6', '#f472b6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#818cf8', '#2dd4bf', '#f97316', '#a3e635', '#60a5fa', '#e879f9'];
 export function tierColor(key: string) {
@@ -184,6 +188,10 @@ export class Freeway {
   private trail: { x: number; z: number }[] = [];
   private treats: { x: number; z: number; obj: THREE.Group; until: number; taken: string | null }[] = [];
   private meow: string | null = null;
+  /** The feather wand, while it's out: the stick, the string and the feather on the end. */
+  private wand: { stick: THREE.Mesh; line: THREE.Line; feather: THREE.Group; x: number; y: number; z: number; side: number } | null = null;
+  /** A pet makes the cat on your shoulder purr harder for a moment. */
+  private pettedAt = -10;
   /** Running (Shift) on foot, which sends shy cats off. */
   private rushing = false;
 
@@ -1281,6 +1289,7 @@ export class Freeway {
     }
     for (const v of this.views) if (v.group.visible && v.star.visible) v.star.rotation.y = t * 0.8;
     for (const f of this.ticks) f(t, dt);
+    this.stepWand(dt, t);
     this.stepCats(dt, t);
     this.stepFall(dt);
 
@@ -1481,7 +1490,7 @@ export class Freeway {
 
   /** Whether it'll let you pick it up right now. */
   private ready(c: StrayCat) {
-    if (c.state === 'eat') return true;
+    if (c.state === 'eat' || c.state === 'play') return true;
     if (c.state === 'flee') return false;
     const e = c.s.energy ?? 'curious';
     if (e === 'zoomy') return false;
@@ -1497,8 +1506,110 @@ export class Freeway {
     c.label.remove();
     const proxy = c.fig.group.children.find((o) => o.userData.pick);
     if (proxy) { this.pickables = this.pickables.filter((x) => x !== proxy); proxy.removeFromParent(); }
-    this.followers.push({ fig: c.fig, x: c.x, z: c.z, heading: c.heading, phase: 0 });
+    // Straight up onto your shoulder (when you're on foot), purring.
+    const held = this.mode === 'walk' && !this.followers.some((f) => f.held);
+    const f: Follower = { id, fig: c.fig, x: c.x, z: c.z, heading: c.heading, phase: 0, held: false };
+    this.followers.push(f);
+    if (held) this.settle(f, true);
     return true;
+  }
+
+  /** Who's on your shoulder, if anyone. */
+  holding() { return this.followers.find((f) => f.held)?.id ?? null; }
+
+  /** Pick up the nearest cat that's following you, or put down the one you're holding. */
+  hold() {
+    if (this.mode !== 'walk' || this.chute) return null;
+    const cur = this.followers.find((f) => f.held);
+    if (cur) { this.settle(cur, false); return null; }
+    const p = this.player;
+    const pick = [...this.followers].sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+    if (!pick) return null;
+    this.settle(pick, true);
+    return pick.id;
+  }
+
+  /** How tall the walker is (Kan's cap, or the top of a kid's head), measured once. */
+  private topOf(obj: THREE.Object3D) {
+    if (typeof obj.userData.top === 'number') return obj.userData.top as number;
+    obj.updateMatrixWorld(true);
+    const body = obj.userData.body as THREE.Object3D | undefined;
+    const top = new THREE.Box3().setFromObject(obj).max.y - (body ? body.position.y - 0.8 : 0);
+    obj.userData.top = top;
+    return top;
+  }
+
+  /** Give the cat on your shoulder a pet. */
+  pet() { if (this.followers.some((f) => f.held)) this.pettedAt = this.time; }
+
+  private settle(f: Follower, held: boolean) {
+    f.held = held;
+    f.fig.group.scale.setScalar(f.fig.scale * 1.6 * (held ? PERCH.scale : 1));
+    if (!held) { f.x = this.player.x; f.z = this.player.z; }
+  }
+
+  /** Take out the feather wand, or put it away. Null if you need to be on foot first. */
+  toggleWand(): boolean | null {
+    if (this.wand) { this.dropWand(); return false; }
+    if (this.mode !== 'walk' || this.chute) return null;
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 1, 6), new THREE.MeshStandardMaterial({ color: '#c9925a', roughness: 0.7 }));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 10 }, () => new THREE.Vector3())), new THREE.LineBasicMaterial({ color: '#ffffff' }));
+    line.frustumCulled = false;
+    const feather = new THREE.Group();
+    feather.add(new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshStandardMaterial({ color: '#facc15', roughness: 0.4 })));
+    ([['#f472b6', 0], ['#2dd4bf', 0.7], ['#a78bfa', -0.7], ['#fb923c', 1.4]] as const).forEach(([color, a]) => {
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.55, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
+      plume.position.set(Math.sin(a) * 0.12, -0.3, Math.cos(a) * 0.05);
+      plume.rotation.set(Math.PI + Math.cos(a) * 0.2, 0, a * 0.35);
+      plume.scale.set(1, 1, 0.35);
+      feather.add(plume);
+    });
+    feather.scale.setScalar(1.7);
+    this.scene.add(stick, line, feather);
+    const p = this.player;
+    this.wand = { stick, line, feather, x: p.x, y: 1, z: p.z, side: 1 };
+    return true;
+  }
+  wandOut() { return Boolean(this.wand); }
+  private dropWand() {
+    if (!this.wand) return;
+    this.wand.stick.removeFromParent(); this.wand.line.removeFromParent(); this.wand.feather.removeFromParent();
+    this.wand = null;
+  }
+
+  /** The wand in your hand, and the feather dancing along the ground in front of you. */
+  private stepWand(dt: number, t: number) {
+    const w = this.wand;
+    if (!w) return;
+    if (this.mode !== 'walk' || this.chute) { this.dropWand(); return; }
+    const p = this.player;
+    const f = this.forward(p.heading), r = { x: -f.z, z: f.x };
+    const hand = new THREE.Vector3(p.x + r.x * 0.5 * w.side + f.x * 0.3, GROUND_Y + 1.05, p.z + r.z * 0.5 * w.side + f.z * 0.3);
+    const sway = Math.sin(t * 2.3) * 0.35;
+    const tip = new THREE.Vector3(hand.x + f.x * 3 + r.x * (2.2 + sway) * w.side, GROUND_Y + 2.8 + Math.sin(t * 3.1) * 0.15, hand.z + f.z * 3 + r.z * (2.2 + sway) * w.side);
+    // The feather skitters side to side and hops, like something worth pouncing on.
+    // Out on whichever side is further from the road, so the cats aren't chasing it into traffic.
+    const off = (sg: number) => Math.abs(this.nearRoad(p.x + f.x * 5 + r.x * 3.4 * sg, p.z + f.z * 5 + r.z * 3.4 * sg).d);
+    if (off(-w.side) > off(w.side) + 2) w.side = -w.side;
+    const side = (3.4 + Math.sin(t * 1.5) * 1.3 + Math.sin(t * 4.3) * 0.2) * w.side;
+    const goal = { x: p.x + f.x * 5 + r.x * side, y: GROUND_Y - 0.2 + Math.abs(Math.sin(t * 4.2)) * 0.6, z: p.z + f.z * 5 + r.z * side };
+    const k = 1 - Math.exp(-dt * 7);
+    w.x += (goal.x - w.x) * k; w.y += (goal.y - w.y) * k; w.z += (goal.z - w.z) * k;
+    w.feather.position.set(w.x, w.y + 0.75, w.z);
+    w.feather.rotation.set(Math.sin(t * 5) * 0.4, t * 1.5, Math.cos(t * 4) * 0.3);
+    const dir = tip.clone().sub(hand);
+    w.stick.position.copy(hand).addScaledVector(dir, 0.5);
+    w.stick.scale.set(1, dir.length(), 1);
+    w.stick.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    // The string sags a little between the tip and the feather.
+    const end = new THREE.Vector3(w.x, w.y + 0.85, w.z), mid = tip.clone().lerp(end, 0.5);
+    mid.y -= 0.3;
+    const pos = w.line.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const u = i / (pos.count - 1), a = (1 - u) * (1 - u), b = 2 * u * (1 - u), c = u * u;
+      pos.setXYZ(i, tip.x * a + mid.x * b + end.x * c, tip.y * a + mid.y * b + end.y * c, tip.z * a + mid.z * b + end.z * c);
+    }
+    pos.needsUpdate = true;
   }
 
   /** A fish treat in a little dish, set down in front of you: any cat that smells it comes over to eat. */
@@ -1527,6 +1638,7 @@ export class Freeway {
   /** Into the rescue they go. */
   dropOff() {
     const n = this.followers.length;
+    this.pettedAt = -10;
     for (const f of this.followers) f.fig.group.removeFromParent();
     this.followers = [];
     return n;
@@ -1576,6 +1688,13 @@ export class Freeway {
         const tr = this.treats.find((x) => !x.taken && Math.hypot(x.x - c.x, x.z - c.z) < (e === 'sleepy' ? 7 : 24));
         if (tr) { tr.taken = c.s.id; c.state = 'treat'; c.to = { x: tr.x - 0.6, z: tr.z - 0.6 }; c.run = e === 'zoomy' ? 6 : 3.5; }
       }
+      // The feather: any cat close enough comes to chase it (a sleepy one only if it lands right by them).
+      const w = this.wand;
+      const wd = w ? Math.hypot(w.x - c.x, w.z - c.z) : Infinity;
+      if (c.state === 'idle' || c.state === 'walk' || c.state === 'play') {
+        if (wd < (c.state === 'play' ? 16 : e === 'sleepy' ? 4.5 : 13)) { c.state = 'play'; c.to = null; }
+        else if (c.state === 'play') { c.state = 'idle'; c.home = { x: c.x, z: c.z }; c.wait = 2; }
+      }
       // Rushed or crowded, the shy and the zoomy bolt.
       if (c.state === 'idle' || c.state === 'walk') {
         if (e === 'zoomy' && dp < 6.5) this.flee(c, p);
@@ -1586,8 +1705,19 @@ export class Freeway {
         c.to = { x: p.x + (c.x - p.x) / dp * 1.6, z: p.z + (c.z - p.z) / dp * 1.6 };
         c.state = 'walk';
       }
-      let walking = false;
-      if (c.state === 'eat') {
+      let walking = false, pounce = false;
+      if (c.state === 'play' && w) {
+        // Right up to the feather, then up on the back legs batting at it.
+        const gx = w.x + (c.x - w.x) / (wd || 1) * 0.6, gz = w.z + (c.z - w.z) / (wd || 1) * 0.6;
+        const dx = gx - c.x, dz = gz - c.z, d = Math.hypot(dx, dz);
+        if (d > 0.8) {
+          const k = Math.min(d, (e === 'zoomy' ? 7 : e === 'sleepy' ? 3 : 5) * dt);
+          const nx = c.x + (dx / d) * k, nz = c.z + (dz / d) * k;
+          if (this.walkable(nx, nz)) { c.x = nx; c.z = nz; walking = true; }
+        }
+        pounce = !walking;
+        c.heading = turn(c.heading, Math.atan2(w.x - c.x, w.z - c.z), dt * 9);
+      } else if (c.state === 'eat') {
         const tr = this.treats.find((x) => x.taken === c.s.id);
         if (tr) c.heading = turn(c.heading, Math.atan2(tr.x - c.x, tr.z - c.z), dt * 6);
         if (this.time > c.eatUntil) {
@@ -1621,7 +1751,7 @@ export class Freeway {
           c.wait = e === 'zoomy' ? 0.8 + Math.random() * 1.5 : e === 'sleepy' ? 12 + Math.random() * 8 : 3 + Math.random() * 5;
         }
       }
-      this.poseCat(c.fig, walking, c, t, dp < 9, c.state === 'eat' ? 'eat' : e === 'sleepy' && !walking ? 'sleep' : 'sit', walking && (c.state === 'flee' || c.state === 'treat'));
+      this.poseCat(c.fig, walking, c, t, dp < 9, pounce ? 'play' : c.state === 'eat' ? 'eat' : e === 'sleepy' && !walking ? 'sleep' : 'sit', walking && (c.state === 'flee' || c.state === 'treat' || c.state === 'play'));
       c.fig.group.position.set(c.x, GROUND_Y - 0.36, c.z);
       c.fig.group.rotation.y = c.heading;
     }
@@ -1633,29 +1763,60 @@ export class Freeway {
       this.trail.push({ x: p.x, z: p.z });
       if (this.trail.length > 120) this.trail.shift();
     }
-    this.followers.forEach((f, i) => {
+    const w = this.wand;
+    const still = Math.abs(p.speed) < 0.5;
+    const pf = this.forward(p.heading), pr = { x: -pf.z, z: pf.x };
+    this.followers.filter((f) => !f.held).forEach((f, i) => {
       f.fig.group.visible = walking;
       if (!walking) { f.x = p.x; f.z = p.z; return; }
-      const goal = this.trail[Math.max(0, this.trail.length - 1 - (i + 1) * 4)] ?? { x: p.x, z: p.z };
+      // With the feather out and you standing still, they gather round it to play.
+      const play = Boolean(w && still);
+      const a = i * 2.1 + 0.6;
+      const goal = play && w ? { x: w.x + Math.sin(a) * 0.75, z: w.z + Math.cos(a) * 0.75 }
+        : this.trail[Math.max(0, this.trail.length - 1 - (i + 1) * 4)] ?? { x: p.x, z: p.z };
       const dx = goal.x - f.x, dz = goal.z - f.z, d = Math.hypot(dx, dz);
       const moving = d > 0.3;
+      if (play && w && !moving) {
+        f.heading = turn(f.heading, Math.atan2(w.x - f.x, w.z - f.z), dt * 9);
+        this.poseCat(f.fig, false, f, t, true, 'play', false);
+        f.fig.group.position.set(f.x, GROUND_Y - 0.36, f.z);
+        f.fig.group.rotation.y = f.heading;
+        return;
+      }
       if (d > 14) { f.x = goal.x; f.z = goal.z; }
       else if (moving) {
         const k = Math.min(d, Math.max(3, d * 3) * dt);
         f.x += (dx / d) * k; f.z += (dz / d) * k;
         f.heading = turn(f.heading, Math.atan2(dx, dz), dt * 8);
       }
-      this.poseCat(f.fig, moving, f, t, false, 'sit', false);
+      this.poseCat(f.fig, moving, f, t, false, 'sit', play && moving);
       f.fig.group.position.set(f.x, GROUND_Y - 0.36, f.z);
       f.fig.group.rotation.y = f.heading;
     });
+    // The one on your shoulder: curled up, eyes half shut, rumbling.
+    const held = this.followers.find((f) => f.held);
+    if (held) {
+      held.fig.group.visible = walking;
+      const body = p.obj.userData.body as THREE.Object3D | undefined;
+      const bob = body ? body.position.y - 0.8 : 0;
+      held.x = p.x; held.z = p.z;
+      const top = this.topOf(p.obj) + bob - PERCH.sink;
+      held.fig.group.position.set(p.x + pr.x * PERCH.side - pf.x * PERCH.back, top, p.z + pr.z * PERCH.side - pf.z * PERCH.back);
+      held.fig.group.rotation.y = p.heading + Math.PI / 2;
+      this.poseCat(held.fig, false, held, t, true, 'purr', false);
+      const petted = t - this.pettedAt < 2.5;
+      held.fig.rig.position.x = Math.sin(t * (petted ? 95 : 70)) * (petted ? 0.012 : 0.006);
+      held.fig.head.rotation.y = -0.5;
+      if (petted) held.fig.head.rotation.z = Math.sin(t * 3) * 0.25;
+    }
   }
 
-  private poseCat(f: PetFig, walking: boolean, c: { phase: number }, t: number, watching: boolean, rest: 'sit' | 'sleep' | 'eat', dash: boolean) {
-    f.rig.position.y = 0;
+  private poseCat(f: PetFig, walking: boolean, c: { phase: number }, t: number, watching: boolean, rest: 'sit' | 'sleep' | 'eat' | 'play' | 'purr', dash: boolean) {
+    f.rig.position.set(0, 0, 0);
     f.rig.rotation.x = 0;
     f.head.rotation.set(0, 0, 0);
     f.tail.rotation.z = Math.sin(t * 2.2 + c.phase) * 0.35;
+    for (const e of f.eyes) e.scale.y = rest === 'purr' ? 0.3 : 1;
     if (walking) {
       c.phase += dash ? 0.5 : 0.25;
       const sw = Math.sin(c.phase) * (dash ? 0.9 : 0.65);
@@ -1666,6 +1827,21 @@ export class Freeway {
       f.rig.position.y = -0.14 + Math.sin(t * 1.5) * 0.008;
       f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -1.35 : 1.35; });
       f.head.rotation.x = watching ? 0 : 0.4;
+    } else if (rest === 'purr') {
+      // A loaf on your shoulder, paws tucked, tail swaying slow.
+      f.rig.position.y = -0.16 + Math.sin(t * 1.4) * 0.01;
+      f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -1.4 : 1.4; });
+      f.tail.rotation.z = Math.sin(t * 0.9 + c.phase) * 0.5;
+    } else if (rest === 'play') {
+      // Up on the back legs, batting at the feather with both front paws.
+      const hop = Math.abs(Math.sin(t * 5 + c.phase));
+      f.rig.rotation.x = -0.55 - hop * 0.35;
+      f.rig.position.y = hop * 0.22;
+      f.legs[0].rotation.x = -1.3 + Math.sin(t * 13 + c.phase) * 0.7;
+      f.legs[1].rotation.x = -1.3 + Math.cos(t * 13 + c.phase) * 0.7;
+      f.legs[2].rotation.x = f.legs[3].rotation.x = 0.5;
+      f.head.rotation.x = -0.35;
+      f.tail.rotation.z = Math.sin(t * 9 + c.phase) * 0.6;
     } else if (rest === 'eat') {
       // Head down in the dish, tail up and happy.
       f.rig.rotation.x = 0.25;

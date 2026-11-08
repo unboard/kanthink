@@ -1,3 +1,4 @@
+import type { PetMarks } from '@/components/kan/city/pets';
 /**
  * Inside a building. Every channel's building has rooms you can walk around: a lobby
  * where its resident works the front desk, a room for each column with the cards up on
@@ -76,6 +77,8 @@ export interface Pet {
   name?: string
   /** Keeps who it is (age, what it loves) the same wherever it lives; never stored. */
   seed?: number
+  /** Coat markings and shape (the rescue's cats); never stored. */
+  marks?: PetMarks
 }
 export const MAX_PETS = 8
 /** Fur colors the panel offers. */

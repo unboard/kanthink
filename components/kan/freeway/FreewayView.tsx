@@ -9,6 +9,7 @@ import { Inside, type InsideNear, type InsidePet, type InsidePick } from '../cit
 import { PET_CSS, PetSheet } from '../city/PetSheet';
 import { careFor, checkIn, ENERGY_WORD, isHome, loadRescue, loadTreats, newsFor, saveRescue, saveTreats, stillNeeds, straysFor, homeStory, postcard, TREATS_FULL, VET_WORD, type RescuedCat, type Stray } from './rescue';
 import { BathGame, VetGame } from './CareGames';
+import { purrHarder, startPurr, stopPurr } from './purr';
 import type { InteriorStyle } from '@/lib/kan/city/interior';
 import { Stick } from '../city/Stick';
 import type { PlayerKit } from '../city/engine';
@@ -70,14 +71,14 @@ function rescueBoard(list: RescuedCat[], now: number): ChannelBoard {
 
 /** Why it won't be caught yet, and what to try. */
 function catHint(name: string, energy: Stray['energy'], mode: FreewayMode) {
-  if (energy === 'zoomy') return `💨 ${name} is too zoomy! Put down a treat 🐟 and catch them while they eat.`;
+  if (energy === 'zoomy') return `💨 ${name} is too zoomy! Wave the feather toy 🪶 or put down a treat 🐟, and catch them while they play or eat.`;
   if (mode !== 'walk') return `🙈 ${name} is shy. Get out and walk over.`;
-  return `🙈 ${name} is shy. Walk slowly (no running), or try a treat.`;
+  return `🙈 ${name} is shy. Walk slowly (no running), or wave the feather toy 🪶.`;
 }
 
 /** Everyone still at the rescue lives in it. */
 function rescueStyle(list: RescuedCat[], now: number): InteriorStyle {
-  return { features: ['cat_tower', 'toys', 'plants', 'sofa', 'lamps'], light: 'warm', pets: list.filter((c) => !isHome(c, now)).slice(-8).map((c) => ({ kind: c.kind, color: c.color, name: c.name, seed: c.seed })) };
+  return { features: ['cat_tower', 'toys', 'plants', 'sofa', 'lamps'], light: 'warm', pets: list.filter((c) => !isHome(c, now)).slice(-8).map((c) => ({ kind: c.kind, color: c.color, name: c.name, seed: c.seed, marks: c.marks })) };
 }
 
 export function FreewayView({ kit, channels, boss, coarse, onExit }: {
@@ -114,6 +115,10 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
   const [clock, setClock] = useState(() => Date.now());
   const [treats, setTreats] = useState(TREATS_FULL);
   const [meow, setMeow] = useState<string | null>(null);
+  /** The cat up on your shoulder, the feather wand, and the hearts from a pet. */
+  const [held, setHeld] = useState<string | null>(null);
+  const [wand, setWand] = useState(false);
+  const [hearts, setHearts] = useState(0);
   const [care, setCare] = useState<{ kind: 'bath' | 'vet'; id: string } | null>(null);
   const indoors = Boolean(inside || rescueIn);
   useEffect(() => {
@@ -165,7 +170,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       onMeow: setMeow,
     }, kit, start);
     fw.current = road;
-    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __freeway: road, __freewayPick: (p: InsidePick) => cb.current.insidePick(p) });
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __freeway: road, __freewayPick: (p: InsidePick) => cb.current.insidePick(p), __freewayStrays: () => straysFor(data.days, loadRescue()) });
     road.setStrays(straysFor(data.days, loadRescue()));
     setCarrying([]);
     const size = () => {
@@ -312,7 +317,11 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     if (!st) return;
     if (!fw.current?.catchCat(id)) { setNote(catHint(st.name, st.energy, fw.current?.getMode() ?? 'walk')); return; }
     setCarrying((c) => [...c, st]);
-    setNote(`You caught ${st.name}, the ${ENERGY_WORD[st.energy].toLowerCase()} one! Bring them to the Kan Cat Rescue at the end of the road.`);
+    const up = fw.current.holding() === id;
+    setHeld(fw.current.holding());
+    // Started right here in the tap, so iPads let the sound play.
+    if (up) startPurr();
+    setNote(`You caught ${st.name}, ${st.coat ? `a ${ENERGY_WORD[st.energy].toLowerCase()} ${st.coat}` : `the ${ENERGY_WORD[st.energy].toLowerCase()} one`}! ${up ? `${st.name} climbed up on top of you and is purring. ` : ''}Bring them to the Kan Cat Rescue at the end of the road.`);
   }, [data, rescued]);
 
   /** Drop off whoever's following you, then go in and visit. */
@@ -322,6 +331,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     const brought = carrying.length;
     if (brought) {
       fw.current?.dropOff();
+      setHeld(null);
       list = [...rescued, ...carrying.map((c) => checkIn(c))];
       saveRescue(list);
       setRescued(list);
@@ -375,6 +385,38 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     const left = c ? stillNeeds(c) : { bath: false, vet: null };
     ins.current?.kanHere(left.bath || left.vet ? `Nice work! ${c?.name} still needs ${left.bath ? 'a bath' : 'the vet'}.` : `${c?.name} is ready for a family! Come back later for good news.`, 6000);
   }, [rescued]);
+
+  /** Pick up a cat that's following you, or put the one on your shoulder down. */
+  const holdCat = useCallback(() => {
+    const id = fw.current?.hold() ?? null;
+    setHeld(id);
+    if (id) startPurr();
+    const c = carrying.find((x) => x.id === id);
+    setNote(c ? `${c.name} climbed up on top of you and is purring. Tap 💗 Pet for a big purr.` : null);
+  }, [carrying]);
+
+  const petCat = useCallback(() => {
+    if (!held) return;
+    fw.current?.pet();
+    purrHarder();
+    setHearts((h) => h + 1);
+  }, [held]);
+
+  /** The feather wand: cats nearby come to chase it, and shy or zoomy ones can be caught while they play. */
+  const toggleWand = useCallback(() => {
+    const out = fw.current?.toggleWand();
+    if (out === null || out === undefined) { setNote('Get out and walk to play with the feather toy.'); return; }
+    setWand(out);
+    setNote(out ? 'Feather toy out! Stand still and wiggle it, and cats nearby will come to play.' : null);
+  }, []);
+
+  // Purring while a cat is on your shoulder and you're out walking.
+  const purring = Boolean(held) && mode === 'walk' && !indoors;
+  useEffect(() => {
+    if (purring) startPurr(); else stopPurr();
+  }, [purring]);
+  useEffect(() => () => stopPurr(), []);
+  useEffect(() => { if (mode !== 'walk') setWand(false); }, [mode]);
 
   /** Set a treat down where you're standing. */
   const putTreat = useCallback(() => {
@@ -445,6 +487,9 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       if (ins.current && key === ']') { ins.current.turn(-Math.PI / 4); return; }
       if (ins.current && key === 't') { ins.current.throwBall(); return; }
       if (!ins.current && key === 't') { putTreat(); return; }
+      if (!ins.current && key === 'g') { toggleWand(); return; }
+      if (!ins.current && key === 'h') { holdCat(); return; }
+      if (!ins.current && key === 'p') { petCat(); return; }
       if ((key === 'e' || key === 'enter') && !card) {
         if (ins.current && inNear) { cb.current.insidePick({ kind: inNear.kind, id: inNear.id } as InsidePick); return; }
         if (!ins.current && near) { goNear(near); return; }
@@ -457,7 +502,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     window.addEventListener('keydown', k);
     window.addEventListener('keyup', k);
     return () => { window.removeEventListener('keydown', k); window.removeEventListener('keyup', k); };
-  }, [card, billboard, near, inNear, goOut, onExit, goNear, petOpen, rescueCard, news, care, putTreat]);
+  }, [card, billboard, near, inNear, goOut, onExit, goNear, petOpen, rescueCard, news, care, putTreat, toggleWand, holdCat, petCat]);
 
   // ---------- A card ----------
 
@@ -604,9 +649,25 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
 
       {/* The timeline: every day on the road, tap one to go there */}
       {!indoors && data && mode === 'walk' && (
-        <button onClick={putTreat} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-orange-400 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-orange-300 active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
-          🐟 Treat · {treats}{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">T</span>}
-        </button>
+        <div className="absolute right-4 z-20 flex flex-col items-end gap-2" style={{ bottom: coarse ? 196 : 112 }}>
+          {held && (
+            <button onClick={petCat} className="relative flex items-center gap-1.5 rounded-full bg-rose-400 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-rose-300 active:scale-95">
+              💗 Pet {carrying.find((c) => c.id === held)?.name}{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">P</span>}
+              {hearts > 0 && <span key={hearts} className="fw-heart pointer-events-none absolute -top-2 left-1/2 text-[22px]">💗</span>}
+            </button>
+          )}
+          {carrying.length > 0 && (
+            <button onClick={holdCat} className="flex items-center gap-1.5 rounded-full bg-pink-500 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-pink-400 active:scale-95">
+              {held ? '⬇️ Put down' : `🤲 Hold ${carrying.length === 1 ? carrying[0].name : 'a cat'}`}{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">H</span>}
+            </button>
+          )}
+          <button onClick={toggleWand} aria-pressed={wand} className={`flex items-center gap-1.5 rounded-full px-4 py-2.5 text-[14px] font-semibold shadow-2xl active:scale-95 ${wand ? 'bg-teal-300 text-neutral-900 ring-2 ring-white hover:bg-teal-200' : 'bg-teal-500 text-white hover:bg-teal-400'}`}>
+            🪶 {wand ? 'Put the feather away' : 'Feather toy'}{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">G</span>}
+          </button>
+          <button onClick={putTreat} className="flex items-center gap-1.5 rounded-full bg-orange-400 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-orange-300 active:scale-95">
+            🐟 Treat · {treats}{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">T</span>}
+          </button>
+        </div>
       )}
       {!indoors && meow && !near && (
         <div className="pointer-events-none absolute left-1/2 top-28 z-20 -translate-x-1/2 rounded-full bg-neutral-950/75 px-4 py-1.5 text-[13px] shadow-xl backdrop-blur">🐾 <i>Mew!</i> You hear {meow} hiding somewhere close by…</div>
@@ -822,6 +883,9 @@ function BillboardSheet({ b, onClose, onGo }: { b: Billboard; onClose: () => voi
 }
 
 const FREEWAY_CSS = `
+.fw-heart { animation: fw-heart 1.1s ease-out forwards; transform: translate(-50%, 0); }
+@keyframes fw-heart { from { opacity: 1; transform: translate(-50%, 0) scale(0.6); } to { opacity: 0; transform: translate(-50%, -60px) scale(1.4); } }
+@media (prefers-reduced-motion: reduce) { .fw-heart { animation-duration: 0.01s; } }
 .kc-fw-labels > * { position: absolute; left: 0; top: 0; will-change: transform; }
 .kc-fw-day { font-size: 12px; }
 .kc-labels.kc-inside > .kc-fw-labels { display: none !important; }

@@ -1136,7 +1136,7 @@ export class Inside {
     this.pets = list.map((pet, i) => {
       const seed = pet.seed ?? petSeed(this.of.channelId, i, pet.kind);
       const color = pet.color ?? petFur(pet.kind, seed);
-      const fig = petFigure(pet.kind, color);
+      const fig = petFigure(pet.kind, color, pet.marks);
       const prev = was[i];
       const at = prev && this.open(prev.x, prev.z) ? prev : this.nearestOpen((lobby.x0 + lobby.x1) / 2 + ((seed % 7) - 3), lobby.z0 + 3 + (seed % 3));
       fig.group.position.set(at.x, 0, at.z);
