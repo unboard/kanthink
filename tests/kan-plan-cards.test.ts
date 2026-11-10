@@ -28,3 +28,27 @@ describe('Town Hall plan cards', () => {
     expect(ui.kind === 'filing' && ui.titles).toEqual(['Nice button', 'Nice card'])
   })
 })
+
+describe('the plan waiting at Town Hall', () => {
+  const pass = (id: string, extra: Record<string, unknown> = {}) => ({ id, status: 'done', appliedAt: null, decisions: null, ...extra })
+
+  it('is only ever the newest one: finishing it never brings back an older plan', async () => {
+    const { waitingPass } = await import('@/lib/kan/attention/plan')
+    expect(waitingPass([pass('new'), pass('old')])?.id).toBe('new')
+    expect(waitingPass([pass('new', { appliedAt: new Date() }), pass('old')])).toBeNull()
+    expect(waitingPass([pass('run', { status: 'running' }), pass('new'), pass('old')])?.id).toBe('new')
+  })
+
+  it('drops cards about a space they told Kan to leave alone, filings included', async () => {
+    const { fitDecisions } = await import('@/lib/kan/attention/topics')
+    const { decisions, removed } = fitDecisions({
+      note: '', questions: [], setAside: [],
+      areas: [{ channelId: 'ts', name: 'Tech Stack', attention: 'active', why: 'Tailscale saves', change: 'wake' }],
+      filings: [{ input: 'i1', area: 'ts', as: 'card', title: 'Tailscale' }],
+    }, [{ id: 'x', ownerId: 'o', name: 'Tech Stack', key: 'tech stack', role: 'hands_off', note: 'Just a reference', createdAt: null, updatedAt: null }])
+    expect(removed).toEqual(['Tech Stack'])
+    expect(decisions.areas).toEqual([])
+    expect(decisions.filings).toEqual([])
+    expect(decisions.setAside).toEqual([{ name: 'Tech Stack', why: 'Just a reference' }])
+  })
+})

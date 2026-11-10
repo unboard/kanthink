@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { attentionPasses, botRuns, channelBots, channels, folders, userChannelOrg } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import type { AgentTool, ToolContext } from '@/lib/kan/agent/tools'
+import { planCards, waitingPass } from '@/lib/kan/attention/plan'
 import { ARCHETYPE_LABEL } from './layout'
 import { cleanStyle, parseStyle, PLOT_BUILDINGS, PLOT_THEMES, type PlotStyle } from './style'
 import { FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, MAX_PETS, parseInterior, PETS, petsOf, ROOM_DISPLAYS, roomKey, type InteriorStyle } from './interior'
@@ -425,7 +426,7 @@ export const cityTools: AgentTool[] = [
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
       })
-      const pass = passes.find((p) => !p.appliedAt && !p.decisions?.dismissed)
+      const pass = waitingPass(passes)
       if (!pass) return { content: 'Kan has nothing proposed right now.', isError: true }
       const { buildProposedArea } = await import('@/lib/kan/attention/apply')
       const r = await buildProposedArea(pass.id, ctx.userId, str(input.name))
@@ -443,13 +444,14 @@ export const cityTools: AgentTool[] = [
     kind: 'read',
     running: () => 'Reading the plan',
     async run(_input, ctx) {
-      const pass = (await db.query.attentionPasses.findMany({
+      const pass = waitingPass(await db.query.attentionPasses.findMany({
         where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
-      })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
-      const d = pass?.decisions
-      if (!pass || !d) return { content: 'There is no plan waiting at Town Hall.' }
+      }))
+      if (!pass?.decisions) return { content: 'There is no plan waiting at Town Hall.' }
+      const { fitDecisions, listTopics } = await import('@/lib/kan/attention/topics')
+      const d = fitDecisions(pass.decisions, await listTopics(ctx.userId)).decisions
       const verb = { start: 'Start', reshape: 'Reshape', quiet: 'Quiet', mute: 'Mute', wake: 'Wake', keep: 'Keep' } as const
       const filed = new Map<string, number>()
       for (const f of d.filings) filed.set(f.area, (filed.get(f.area) ?? 0) + 1)
@@ -463,6 +465,39 @@ export const cityTools: AgentTool[] = [
         ...(d.setAside?.length ? ['', 'They set aside:', ...d.setAside.map((x) => `- ${x.name}: ${x.why}`)] : []),
       ]
       return { content: lines.join('\n'), label: 'Read the plan' }
+    },
+  },
+  {
+    name: 'skip_plan_card',
+    description: 'Take a card out of the plan waiting at Town Hall without doing it, so it leaves Town Hall right away. Use as soon as they disagree with one or tell you how they want it instead (they often come from its “Change it” button), then do what they asked in its place. Name it as Town Hall shows it: the space it changes, or the place it would file into. Every card about that place goes.',
+    input_schema: { type: 'object', properties: { name: { type: 'string', description: 'The space the card is about, e.g. "Tech Stack"' } }, required: ['name'] },
+    kind: 'write',
+    running: (i) => `Taking “${str(i.name).slice(0, 40)}” out of the plan`,
+    async run(input, ctx) {
+      const want = str(input.name).trim()
+      const pass = waitingPass(await db.query.attentionPasses.findMany({
+        where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
+        orderBy: [desc(attentionPasses.startedAt)],
+        limit: 3,
+      }))
+      if (!pass?.decisions) return { content: 'There is no plan waiting at Town Hall.', isError: true }
+      const [{ fitDecisions, isAbout, listTopics }, { decidePlanStep }] = await Promise.all([import('@/lib/kan/attention/topics'), import('@/lib/kan/attention/apply')])
+      const [bots, names, topics] = await Promise.all([
+        db.query.channelBots.findMany({ where: eq(channelBots.ownerId, ctx.userId), columns: { channelId: true, enabled: true, everyHours: true } }),
+        db.query.channels.findMany({ where: and(eq(channels.ownerId, ctx.userId), eq(channels.status, 'active')), columns: { id: true, name: true } }),
+        listTopics(ctx.userId),
+      ])
+      const cards = planCards(fitDecisions(pass.decisions, topics).decisions, new Map(bots.map((b) => [b.channelId, b])), new Map(names.map((c) => [c.id, c.name])))
+      const nameOf = (c: (typeof cards)[number]) => (c.kind === 'area' ? c.name : c.to)
+      const hits = cards.filter((c) => isAbout(nameOf(c), want))
+      if (!hits.length) return { content: `No card about “${want}”. Waiting now: ${cards.map(nameOf).join(', ') || 'nothing'}.`, isError: true }
+      let left = cards.length
+      for (const c of hits) {
+        const r = await decidePlanStep(pass.id, ctx.userId, { kind: c.kind, key: c.key }, false)
+        if ('error' in r) return { content: r.error, isError: true }
+        left = r.left
+      }
+      return { content: `Took ${hits.length === 1 ? 'the card' : `${hits.length} cards`} about “${nameOf(hits[0])}” out of the plan. ${left ? `${left} left at Town Hall.` : 'Nothing is left at Town Hall.'}`, label: `Skipped “${nameOf(hits[0])}”` }
     },
   },
   {
@@ -499,11 +534,11 @@ export const cityTools: AgentTool[] = [
     kind: 'write',
     running: () => 'Rearranging the city',
     async run(_input, ctx) {
-      const pass = (await db.query.attentionPasses.findMany({
+      const pass = waitingPass(await db.query.attentionPasses.findMany({
         where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
-      })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
+      }))
       if (!pass) return { content: 'There is no plan waiting at Town Hall. Offer to have Kan sort what came in first.', isError: true }
       const { applyAttentionPass } = await import('@/lib/kan/attention/apply')
       const r = await applyAttentionPass(pass.id, ctx.userId)
@@ -520,7 +555,7 @@ export function cityPrompt(city: { focus?: { channelId?: string; name?: string; 
     ? `They are inside the ${f.name} building (channelId:${f.channelId}), walking its rooms: each column is a room with its cards on the walls, its apps are arcade cabinets, and its resident works the front desk. "This", "here" and "in here" mean that channel. Anything they want changed in here (a library, a fireplace, different lights, the Done room first, pets that walk around and play, a cat tower, toys) is arrange_interior, and you do it yourself right now; never hand a change inside a building to Claude Code.`
     : f?.channelId
     ? `They are looking at ${f.name} (channelId:${f.channelId}) right now, so "this", "here" and "its bot" mean that channel.`
-    : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait. To talk about the plan, read_plan first.' : 'They are looking at the whole city.'
+    : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait. To talk about the plan, read_plan first. When they push back on a card, skip_plan_card it first, then do what they asked instead (remember_about_work when it’s about your part in something, set_bot, move_cards_to_channel), so Town Hall changes in front of them.' : 'They are looking at the whole city.'
   return `
 
 ## Where they are

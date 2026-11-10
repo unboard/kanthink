@@ -5,7 +5,8 @@ import {
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
-import { planCards } from '@/lib/kan/attention/plan'
+import { planCards, waitingPass } from '@/lib/kan/attention/plan'
+import { fitDecisions, listTopics } from '@/lib/kan/attention/topics'
 import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
 import { residentOf } from './residents'
@@ -283,9 +284,10 @@ export async function cityFor(userId: string) {
   })
 
   // Town Hall: everything waiting on you.
-  const pass = passes.find((p) => p.status === 'done' && !p.appliedAt && !(p.decisions as AttentionDecisionJson | null)?.dismissed) ?? null
+  const pass = waitingPass(passes)
   const passRunning = passes.some((p) => p.status === 'running' && now - +(p.startedAt ?? 0) < 15 * 60_000)
-  const decisions = pass?.decisions as AttentionDecisionJson | null
+  // Shown as it would be carried out: whatever they've told Kan since still wins.
+  const decisions = pass?.decisions ? fitDecisions(pass.decisions as AttentionDecisionJson, await listTopics(userId)).decisions : null
   const proposals = (decisions?.areas ?? []).filter((a) => a.change === 'start').map((a, i) => ({
     name: a.name, why: a.why, columns: a.columns ?? [], lot: layout.free[i] ?? null,
   }))

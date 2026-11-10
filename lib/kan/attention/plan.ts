@@ -4,6 +4,16 @@ type PlanArea = AttentionDecisionJson['areas'][number]
 type PlanChange = PlanArea['change']
 type BotState = { enabled: boolean | null; everyHours: number | null }
 
+/**
+ * The plan waiting at Town Hall: the newest one Kan finished, if it's still
+ * unanswered. An older plan is stale once a newer one exists, so finishing today's
+ * doesn't bring back one from days ago. Passes come newest first.
+ */
+export function waitingPass<P extends { status: string | null; appliedAt: Date | null; decisions: AttentionDecisionJson | null }>(passes: P[]): P | null {
+  const latest = passes.find((p) => p.status === 'done')
+  return latest && !latest.appliedAt && !latest.decisions?.dismissed ? latest : null
+}
+
 const hours = (h: number | undefined) => (!h || h === 24 ? 'once a day' : h === 168 ? 'once a week' : h < 24 ? `every ${h} hours` : `every ${Math.round(h / 24)} days`)
 const lower = (s: string) => s.trim().toLowerCase()
 

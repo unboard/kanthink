@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { attentionPasses, kanTopics, type AttentionDecisionJson } from '@/lib/db/schema'
 import { and, asc, desc, eq } from 'drizzle-orm'
+import { waitingPass } from './plan'
 
 /**
  * What the owner has told Kan about the things on their mind, and the part Kan
@@ -67,15 +68,15 @@ export async function forgetTopic(ownerId: string, name: string): Promise<boolea
 
 /** Drop from the waiting plan whatever goes against what they said about this topic. */
 async function fitPlanToTopic(ownerId: string, topic: Topic): Promise<string[]> {
-  const pass = (await db.query.attentionPasses.findMany({
+  const pass = waitingPass(await db.query.attentionPasses.findMany({
     where: and(eq(attentionPasses.ownerId, ownerId), eq(attentionPasses.status, 'done')),
     orderBy: [desc(attentionPasses.startedAt)],
     limit: 3,
-  })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
+  }))
   const d = pass?.decisions as AttentionDecisionJson | null | undefined
   if (!pass || !d) return []
   const fitted = fitDecisions(d, [topic])
-  if (fitted.removed.length || (d.questions?.length ?? 0) !== (fitted.decisions.questions?.length ?? 0)) {
+  if (fitted.removed.length || fitted.decisions.filings.length !== d.filings.length || (d.questions?.length ?? 0) !== (fitted.decisions.questions?.length ?? 0)) {
     await db.update(attentionPasses).set({ decisions: fitted.decisions }).where(eq(attentionPasses.id, pass.id))
   }
   return fitted.removed
@@ -101,12 +102,21 @@ export function fitDecisions(d: AttentionDecisionJson, topics: Topic[]): { decis
       setAside.push({ name: a.name, why: why(t) })
       return []
     }
+    // Hands off: Kan doesn't wake it or keep it busy. Letting it go quiet is still fine.
+    if (t.role === 'hands_off' && a.change !== 'quiet' && a.change !== 'mute') {
+      removed.push(a.name)
+      setAside.push({ name: a.name, why: why(t) })
+      return []
+    }
     // An area that already exists keeps its place; it just gets no bot.
     return a.bot?.on ? [{ ...a, bot: { on: false } }] : [a]
   })
+  // Filings into an existing space name it by channel id, so match on its name too.
+  const nameOf = new Map(d.areas.filter((a) => a.channelId).map((a) => [a.channelId as string, a.name]))
   const filings = d.filings.filter((f) => {
     if (dropped.has(f.area.trim().toLowerCase())) return false
-    return !limiting.some((t) => t.role === 'hands_off' && isAbout(f.area, t.name))
+    const name = nameOf.get(f.area) ?? f.area
+    return !limiting.some((t) => t.role === 'hands_off' && isAbout(name, t.name))
   })
   const questions = (d.questions ?? []).filter((q) => !topics.some((t) => isAbout(q.topic, t.name)))
   return { decisions: { ...d, areas, filings, questions, setAside }, removed }
