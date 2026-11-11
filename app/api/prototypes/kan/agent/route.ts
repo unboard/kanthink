@@ -34,7 +34,17 @@ export async function POST(request: Request) {
   const userId = session.user.id
 
   const body = (await request.json()) as AgentRequest
-  const history = (body.messages || []).filter((m) => m.content?.trim()).slice(-30)
+  // Kan's thread can have Kan speak twice in a row (something it found, then a plan),
+  // or open with Kan: the models want turns that alternate and start with the user.
+  const history: AgentRequest['messages'] = []
+  for (const m of (body.messages || []).filter((x) => x.content?.trim()).slice(-30)) {
+    const prev = history.at(-1)
+    if (prev && prev.role === m.role) prev.content += `
+
+${m.content}`
+    else history.push({ role: m.role, content: m.content })
+  }
+  if (history[0]?.role === 'assistant') history.unshift({ role: 'user', content: '(Our thread so far.)' })
   if (history.at(-1)?.role !== 'user') return Response.json({ error: 'Say something first' }, { status: 400 })
 
   const { keys, error: keyError, quotaMessage } = await resolveProviderKeys(userId)

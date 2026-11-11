@@ -12,6 +12,8 @@ export type BotStatus = CityPlot['bot']['status'];
 export type Pick =
   | { kind: 'plot'; id: string }
   | { kind: 'townhall' }
+  /** Kan itself: opens its thread. */
+  | { kind: 'kan' }
   | { kind: 'park' }
   /** The door in the park to the Kanwatch Freeway. */
   | { kind: 'portal' }

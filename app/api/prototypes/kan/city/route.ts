@@ -14,6 +14,9 @@ const PILE = 6
 /** And never more often than this: each look costs about 20 cents, so at most 40 cents a day. */
 const EVERY_MS = 12 * 3600_000
 const lastKick = new Map<string, number>()
+/** Kan's look for something worth saying in the thread: rate-limited again inside reachOut. */
+const lastReach = new Map<string, number>()
+const REACH_CHECK_MS = 20 * 60_000
 
 /**
  * GET — your channels as a city, and what's happening in it right now.
@@ -22,6 +25,9 @@ const lastKick = new Map<string, number>()
  * hasn't looked in a while, opening the city sends Kan to sort it. What it decides
  * comes back as construction sites on free lots, waiting for you to say "build it".
  * It only proposes; nothing changes until you do.
+ *
+ * Opening the city is also when Kan looks for something worth telling you, from what
+ * you read and shared, and says it in its thread (lib/kan/thread/reach.ts).
  */
 export async function GET() {
   const session = await auth()
@@ -29,6 +35,11 @@ export async function GET() {
   await ensureSchema()
   const userId = session.user.id
   const city = await cityFor(userId)
+  if (!('empty' in city) && Date.now() - (lastReach.get(userId) ?? 0) > REACH_CHECK_MS) {
+    lastReach.set(userId, Date.now())
+    const { reachOut } = await import('@/lib/kan/thread/reach')
+    afterResponse(() => reachOut(userId).then(() => undefined).catch((err) => console.error('[kan] reach out', err)))
+  }
   // Name any resident who doesn't have a name yet, after the response, so the city never waits on it.
   if (!('empty' in city) && city.plots.some((p) => !p.named)) {
     const { nameResidents } = await import('@/lib/kan/city/residents')

@@ -393,6 +393,8 @@ export default function CityPage() {
     setBoard(null);
     if (p?.kind === 'portal') { setPick(null); setFreeway(true); return; }
     if (p?.kind === 'zoo') { setPick(null); setZoo(true); return; }
+    // Kan is a conversation, not a panel: tapping it opens its thread.
+    if (p?.kind === 'kan') { setPick(null); setSide((s) => (wide ? s : null)); chat.current?.open(); return; }
     setPick(p);
   };
 
@@ -1024,6 +1026,14 @@ export default function CityPage() {
           if (!wide) { setPick(null); setBoard(null); setSide(null); }
         }}
         onTurnEnd={reloadSoon}
+        stamp={data?.kanThread.latestAt}
+        unseen={data?.kanThread.unseen ?? 0}
+        onSeen={reloadSoon}
+        renderPlan={(passId) => {
+          const pass = data?.townHall.pass;
+          if (!pass || pass.id !== passId) return <p className="text-[12px] text-neutral-500">Answered.</p>;
+          return <PlanCard pass={pass} busy={busy} onStep={(id, kind, key, ok) => void stepPass(id, kind, key, ok)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onAsk={ask} />;
+        }}
         starters={starters}
         leftInset={leftW}
         rightInset={rightW}

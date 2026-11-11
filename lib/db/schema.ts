@@ -2229,6 +2229,40 @@ export const kanTopics = sqliteTable('kan_topics', {
 ])
 
 /**
+ * Kan's thread with its owner: one ongoing conversation, the same on every device.
+ * Most lines are a chat turn; Kan also speaks first, with something it found in what
+ * they read or shared ('reach'), or a plan to answer ('plan').
+ */
+export interface KanMessageData {
+  /** What the owner was looking at when they said it. */
+  about?: string
+  /** Kan's own record of what it did that turn, sent back as context. */
+  memo?: string
+  steps?: { label: string; write?: boolean; href?: string; error?: boolean }[]
+  suggestions?: { label: string; prompt: string }[]
+  /** The inputs a reach-out was about (read:…, share:…), so they aren't raised twice. */
+  refs?: string[]
+  /** A link to open, for a reach-out about one page. */
+  links?: { title: string; url: string }[]
+  passId?: string
+  error?: string
+}
+
+export const kanMessages = sqliteTable('kan_messages', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').$type<'you' | 'kan'>().notNull(),
+  kind: text('kind').$type<'chat' | 'reach' | 'plan'>().notNull().default('chat'),
+  text: text('text').notNull().default(''),
+  data: text('data', { mode: 'json' }).$type<KanMessageData>(),
+  /** When the owner saw a message Kan sent first. */
+  seenAt: integer('seen_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('kan_messages_owner_idx').on(table.ownerId, table.createdAt),
+])
+
+/**
  * One pass of the attention loop: Kan reading everything new the owner gave it and
  * deciding where it belongs, which areas to start, reshape, quiet or wake. A
  * rehearsal decides and changes nothing, so its judgment can be read first.

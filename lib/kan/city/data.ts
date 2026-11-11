@@ -285,6 +285,8 @@ export async function cityFor(userId: string) {
 
   // Town Hall: everything waiting on you.
   const pass = waitingPass(passes)
+  const { threadStatus } = await import('@/lib/kan/thread/store')
+  const kanThread = await threadStatus(userId).catch(() => ({ latestAt: 0, unseen: 0, last: null }))
   const passRunning = passes.some((p) => p.status === 'running' && now - +(p.startedAt ?? 0) < 15 * 60_000)
   // Shown as it would be carried out: whatever they've told Kan since still wins.
   const decisions = pass?.decisions ? fitDecisions(pass.decisions as AttentionDecisionJson, await listTopics(userId)).decisions : null
@@ -366,6 +368,8 @@ export async function cityFor(userId: string) {
       } : null,
       passRunning,
     },
+    /** Kan's thread: when it last changed, and what Kan said first that they haven't seen. */
+    kanThread,
     proposals,
     // Neighborhoods are folders; bots help each other inside one and never outside it.
     neighborhoods: folderRows.map((f) => ({ id: f.id, name: f.name, plots: plots.filter((p) => p.folderId === f.id).length })),

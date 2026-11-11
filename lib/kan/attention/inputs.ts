@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import {
   cards, channelActivityLog, channelBots, channelChatThreads, channels, columns, instructionCards,
-  kanwatchDays, kanwatchReads, operatorChatThreads, playgroundApps,
+  kanMessages, kanwatchDays, kanwatchReads, operatorChatThreads, playgroundApps,
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
 
@@ -13,7 +13,7 @@ import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
  * about (Kanwatch's day stories and the reads it judged worth a look), and where
  * on the board they were busy. Each item carries an id so a decision can point at it.
  *
- * Not readable yet: the /prototypes/kan agent's chat, which lives in the browser.
+ * Kan's own thread (Kan City) counts too: their side of it.
  */
 
 export interface InputItem {
@@ -97,6 +97,15 @@ export async function gatherInputs(ownerId: string, since: Date): Promise<InputI
       items.push({ id: `chat:${t.id}:${m.id}`, kind: 'chat', at: new Date(m.createdAt), text: clip(flat(m.content), 400), channelId: t.channelId })
     }
   }
+
+  // Their side of Kan's thread.
+  const said = await db.query.kanMessages.findMany({
+    where: and(eq(kanMessages.ownerId, ownerId), eq(kanMessages.role, 'you'), gt(kanMessages.createdAt, since)),
+    orderBy: [desc(kanMessages.createdAt)],
+    limit: 60,
+    columns: { id: true, text: true, createdAt: true },
+  })
+  for (const m of said) items.push({ id: `kan:${m.id}`, kind: 'chat', at: m.createdAt ?? new Date(), text: clip(m.text, 400) })
 
   // Notes they wrote on cards (not the share inbox: those are shares).
   for (const c of touchedCards) {

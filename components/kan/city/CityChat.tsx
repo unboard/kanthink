@@ -1,19 +1,25 @@
 'use client';
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Check, ChevronDown, Loader2, MapPin, Plus, Square, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, ExternalLink, Loader2, MapPin, Square, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { formatElapsed } from '@/components/kan/KanTrace';
 import type { AgentEvent } from '@/lib/kan/agent/events';
+import type { KanMessage } from '@/lib/kan/thread/store';
 
 /**
  * The way you run Kan City: one box at the bottom, typed or spoken. It's the Kan
  * agent with the city's own tools (switch bots on, send them to work, sort what came
  * in, carry out the plan), and it knows which building you're looking at. Every
  * step Kan takes is handed up as it happens, so the city can show where it landed.
+ *
+ * It's one ongoing thread, kept on the server (lib/kan/thread), so the phone and the
+ * laptop show the same conversation. Kan speaks first in it too: something worth a
+ * look from what you read or shared, with replies to tap, and its plan, with the
+ * cards to answer right there. Tapping Kan in the city opens it.
  *
  * The thread folds away to a single line, so the city stays the thing you look at.
  */
@@ -29,8 +35,27 @@ export interface ChatStep {
 }
 
 type Turn =
-  | { id: string; role: 'user'; text: string; about?: string }
-  | { id: string; role: 'kan'; text: string; steps: ChatStep[]; suggestions: { label: string; prompt: string }[]; memo?: string; error?: string; startedAt: number; endedAt?: number };
+  | { id: string; sid?: string; role: 'user'; text: string; about?: string }
+  | {
+    id: string; sid?: string; role: 'kan'; text: string; steps: ChatStep[]; suggestions: { label: string; prompt: string }[]; memo?: string; error?: string; startedAt: number; endedAt?: number;
+    /** Kan spoke first: something it found, or a plan to answer. */
+    kind?: 'reach' | 'plan'; passId?: string; links?: { title: string; url: string }[];
+  };
+
+/** A line from the server as a turn in the thread. */
+function toTurn(m: KanMessage): Turn {
+  const at = +new Date(m.createdAt ?? Date.now());
+  const d = m.data ?? {};
+  if (m.role === 'you') return { id: m.id, sid: m.id, role: 'user', text: m.text, about: d.about };
+  return {
+    id: m.id, sid: m.id, role: 'kan', text: m.text, memo: d.memo, error: d.error, startedAt: at, endedAt: at,
+    steps: (d.steps ?? []).map((x, i) => ({ id: `${m.id}:${i}`, label: x.label, status: x.error ? 'error' : 'done', href: x.href, write: x.write, startedAt: at })),
+    suggestions: d.suggestions ?? [],
+    kind: m.kind === 'chat' ? undefined : m.kind, passId: d.passId, links: d.links,
+  };
+}
+
+const THREAD = '/api/prototypes/kan/thread';
 
 export interface ChatFocus { channelId?: string; name?: string; kind?: string }
 
@@ -39,9 +64,11 @@ export interface CityChatHandle {
   ask(prompt: string): void;
   /** Put words in the box for the user to finish. */
   prefill(text: string): void;
+  /** Unfold the thread. */
+  open(): void;
 }
 
-const STORE_KEY = 'kan-city-thread-v1';
+const STORE_KEY = 'kan-city-thread-v2';
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const CityChat = forwardRef<CityChatHandle, {
@@ -58,7 +85,14 @@ export const CityChat = forwardRef<CityChatHandle, {
   /** Hide the thread (a sheet is up on a phone). */
   compact?: boolean;
   onHeight?(px: number): void;
-}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight }, ref) {
+  /** When the thread last changed on the server: a new value means Kan said something. */
+  stamp?: number;
+  /** Lines Kan sent first that haven't been seen; opening the thread sees them. */
+  unseen?: number;
+  onSeen?(): void;
+  /** A plan's cards, under the line Kan announced it with. */
+  renderPlan?(passId: string): ReactNode;
+}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight, stamp, unseen = 0, onSeen, renderPlan }, ref) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [cardIds, setCardIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
@@ -82,6 +116,29 @@ export const CityChat = forwardRef<CityChatHandle, {
       }
     } catch { /* private mode */ }
   }, []);
+  // The server's thread is the real one: on load, and whenever it changes there.
+  const synced = useRef(false);
+  useEffect(() => {
+    if (busy) return;
+    let gone = false;
+    void (async () => {
+      const r = await fetch(THREAD).catch(() => null);
+      if (!r?.ok || gone) return;
+      const server = ((await r.json()).messages ?? []).map(toTurn) as Turn[];
+      setTurns((all) => {
+        if (!synced.current) { synced.current = true; return server; }
+        const have = new Set(all.map((t) => t.sid).filter(Boolean));
+        const fresh = server.filter((t) => !have.has(t.sid));
+        return fresh.length ? [...all, ...fresh] : all;
+      });
+    })();
+    return () => { gone = true; };
+  }, [stamp, busy]);
+  // Opening the thread sees whatever Kan said first.
+  useEffect(() => {
+    if (!open || compact || !unseen) return;
+    void fetch(THREAD, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'seen' }) }).then(() => onSeen?.()).catch(() => {});
+  }, [open, compact, unseen, onSeen]);
   useEffect(() => {
     try { if (turns.length) localStorage.setItem(STORE_KEY, JSON.stringify({ turns: turns.slice(-40), cardIds })); } catch { /* full */ }
   }, [turns, cardIds]);
@@ -124,6 +181,8 @@ export const CityChat = forwardRef<CityChatHandle, {
     const user: Turn = { id: uid(), role: 'user', text: content, about };
     const kanId = uid();
     const kan: Turn = { id: kanId, role: 'kan', text: '', steps: [], suggestions: [], startedAt: Date.now() };
+    // What the turn comes to, kept here too, to save once it's over.
+    const acc = { text: '', steps: [] as ChatStep[], suggestions: [] as { label: string; prompt: string }[], memo: undefined as string | undefined, error: undefined as string | undefined };
     const history = [...turnsRef.current, user]
       .filter((t) => t.role === 'user' || !t.error || t.text)
       .map((t) => ({
@@ -170,6 +229,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           if (e.t === 'text') {
             const brk = pendingBreak;
             pendingBreak = false;
+            acc.text += (brk && acc.text && !acc.text.endsWith('\n') ? '\n\n' : '') + e.delta;
             patchKan(kanId, (t) => ({ ...t, text: t.text + (brk && t.text && !t.text.endsWith('\n') ? '\n\n' : '') + e.delta }));
           } else if (e.t === 'break') {
             pendingBreak = true;
@@ -185,23 +245,42 @@ export const CityChat = forwardRef<CityChatHandle, {
             });
             // The setter runs synchronously in React 18's batching only for the latest state;
             // build the step from the event as well so the city never waits on a render.
-            cb.current.onStep?.(out ?? { id: e.id, label: e.label ?? '', status: e.status, href: e.href, write: e.write, kind: e.kind, startedAt: Date.now() });
+            const step: ChatStep = out ?? { id: e.id, label: e.label ?? '', status: e.status, href: e.href, write: e.write, kind: e.kind, startedAt: Date.now() };
+            const at = acc.steps.findIndex((x) => x.id === e.id);
+            if (at < 0) acc.steps.push(step); else acc.steps[at] = { ...acc.steps[at], ...step };
+            cb.current.onStep?.(step);
           } else if (e.t === 'suggest') {
+            acc.suggestions = e.options;
             patchKan(kanId, (t) => ({ ...t, suggestions: e.options }));
           } else if (e.t === 'done') {
+            acc.memo = e.memo;
             patchKan(kanId, (t) => ({ ...t, memo: e.memo, endedAt: Date.now() }));
             if (e.cardIds?.length) setCardIds((ids) => [...ids, ...e.cardIds!].slice(-10));
           } else if (e.t === 'error') {
+            acc.error = e.message;
             patchKan(kanId, (t) => ({ ...t, error: e.message, endedAt: Date.now() }));
           }
         }
       }
     } catch (err) {
       const stopped = controller.signal.aborted;
-      patchKan(kanId, (t) => ({ ...t, error: stopped ? 'Stopped' : err instanceof Error ? err.message : 'Something went wrong', endedAt: Date.now() }));
+      acc.error = stopped ? 'Stopped' : err instanceof Error ? err.message : 'Something went wrong';
+      patchKan(kanId, (t) => ({ ...t, error: acc.error, endedAt: Date.now() }));
     } finally {
       patchKan(kanId, (t) => ({ ...t, endedAt: t.endedAt ?? Date.now(), steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'done' } : s)) }));
       abortRef.current = null;
+      // Into the thread on the server, so it's there on every device and Kan can read it later.
+      try {
+        const r = await fetch(THREAD, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [
+            { role: 'you', text: content, data: { about } },
+            { role: 'kan', text: acc.text, data: { memo: acc.memo, error: acc.error, suggestions: acc.suggestions, steps: acc.steps.map((x) => ({ label: x.label, write: x.write, href: x.href, error: x.status === 'error' })) } },
+          ] }),
+        });
+        const saved = r.ok ? ((await r.json()).messages ?? []) as KanMessage[] : [];
+        if (saved.length === 2) setTurns((all) => all.map((t) => (t.id === user.id ? { ...t, sid: saved[0].id } : t.id === kanId ? { ...t, sid: saved[1].id } : t)));
+      } catch { /* kept on this device */ }
       setBusy(false);
       cb.current.onTurnEnd?.();
     }
@@ -209,6 +288,7 @@ export const CityChat = forwardRef<CityChatHandle, {
 
   useImperativeHandle(ref, () => ({
     ask: (prompt) => void send(prompt),
+    open: () => setOpen(true),
     prefill: (text) => {
       setDraft(text);
       setTimeout(() => {
@@ -221,13 +301,6 @@ export const CityChat = forwardRef<CityChatHandle, {
       }, 0);
     },
   }), [send]);
-
-  const reset = () => {
-    abortRef.current?.abort();
-    setTurns([]);
-    setCardIds([]);
-    try { localStorage.removeItem(STORE_KEY); } catch { /* fine */ }
-  };
 
   const last = [...turns].reverse().find((t) => t.role === 'kan') as Extract<Turn, { role: 'kan' }> | undefined;
   const running = last && !last.endedAt ? [...last.steps].reverse().find((s) => s.status === 'running') : undefined;
@@ -249,7 +322,6 @@ export const CityChat = forwardRef<CityChatHandle, {
             <div className="flex items-center justify-between px-4 pb-1 pt-2.5">
               <span className="flex items-center gap-1.5 text-[12px] font-medium text-neutral-400"><KanthinkIcon size={14} className="text-violet-400" /> Kan</span>
               <span className="flex items-center gap-0.5">
-                <button onClick={reset} className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-500 hover:bg-white/5 hover:text-neutral-200"><Plus className="h-3.5 w-3.5" /> New</button>
                 <button onClick={() => setOpen(false)} aria-label="Fold the thread away" className="rounded-full p-1.5 text-neutral-500 hover:bg-white/5 hover:text-neutral-200"><ChevronDown className="h-4 w-4" /></button>
               </span>
             </div>
@@ -261,6 +333,8 @@ export const CityChat = forwardRef<CityChatHandle, {
                 </div>
               ) : (
                 <div key={t.id} className="space-y-2">
+                  {t.kind === 'reach' && <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan found something</p>}
+                  {t.kind === 'plan' && <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan’s plan</p>}
                   <Steps turn={t} now={tick} open={Boolean(foldOpen[t.id])} onToggle={() => setFoldOpen((o) => ({ ...o, [t.id]: !o[t.id] }))} />
                   {t.text && (
                     <div className="prose prose-invert prose-neutral max-w-none break-words text-[14px] leading-relaxed text-neutral-200 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-headings:mb-1 prose-headings:mt-3 prose-headings:text-[14px] prose-a:text-violet-300 prose-a:no-underline hover:prose-a:underline prose-strong:text-neutral-100 first:prose-p:mt-0">
@@ -268,6 +342,16 @@ export const CityChat = forwardRef<CityChatHandle, {
                     </div>
                   )}
                   {t.error && <p className="text-[13px] text-rose-300">{t.error}</p>}
+                  {t.links?.map((l) => (
+                    <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12.5px] text-violet-300 hover:text-violet-200"><ExternalLink className="h-3.5 w-3.5 flex-shrink-0" /> <span className="truncate">{l.title}</span></a>
+                  ))}
+                  {t.passId && renderPlan?.(t.passId)}
+                  {/* Replies to something Kan raised, until the conversation moves on (the last turn's show below the thread). */}
+                  {t.kind === 'reach' && t !== last && t.suggestions.length > 0 && turns[turns.indexOf(t) + 1]?.role !== 'user' && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {t.suggestions.map((x) => <button key={x.label} onClick={() => void send(x.prompt)} title={x.prompt} className="rounded-full border border-white/15 px-3 py-1 text-[12.5px] text-neutral-100 hover:border-violet-400/70">{x.label}</button>)}
+                    </div>
+                  )}
                 </div>
               ))}
               <div ref={endRef} />
@@ -309,9 +393,10 @@ export const CityChat = forwardRef<CityChatHandle, {
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? 'Fold the thread away' : 'Show the thread'}
-            className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/15 hover:bg-violet-500/25"
+            className="relative mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/15 hover:bg-violet-500/25"
           >
             <KanthinkIcon size={18} className="text-violet-300" />
+            {unseen > 0 && !showThread && <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-neutral-950" />}
           </button>
           <div className="min-w-0 flex-1">
             {focus?.name && (

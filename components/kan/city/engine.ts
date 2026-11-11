@@ -1351,9 +1351,9 @@ export class CityEngine {
       this.kan = { obj, pos: { x: s.x, z: s.z }, off: { x: 0, z: 0 }, path: [], speed: 7, lateral: 0, wait: 2, phase: 0 };
       this.kanBubble = document.createElement('div');
       this.kanBubble.className = 'kc-bubble kc-bubble-kan';
-      this.kanBubble.addEventListener('click', () => this.cb.onPick({ kind: 'townhall' }));
+      this.kanBubble.addEventListener('click', () => this.cb.onPick({ kind: 'kan' }));
       this.labels.appendChild(this.kanBubble);
-      const lab = this.makeLabel('Kan', 'kan', () => this.cb.onPick({ kind: 'townhall' }));
+      const lab = this.makeLabel('Kan', 'kan', () => this.cb.onPick({ kind: 'kan' }));
       this.fixedLabels.push({ el: lab, pos: obj.position, always: true });
       lab.dataset.follow = '1';
     }
@@ -1370,6 +1370,7 @@ export class CityEngine {
     let kicker = 'Kan', text = '';
     if (note) { kicker = note.kicker; text = note.text; }
     else if (th.passRunning) { kicker = 'Kan is thinking'; text = 'Reading everything you gave me…'; }
+    else if (data.kanThread?.unseen) { kicker = 'Kan found something'; text = data.kanThread.last ?? 'Tap me, I found something for you.'; }
     else if (th.pass) text = 'I noticed a few things. Come see?';
     b.innerHTML = '';
     if (text) {

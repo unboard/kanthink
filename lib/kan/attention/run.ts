@@ -188,6 +188,11 @@ export async function runAttentionPass(ownerId: string, opts: { mode: 'rehearsal
     await db.update(attentionPasses).set({
       status: 'done', decisions, inputs: { ...counts, areas: areas.length }, costMillicents: cost, model: model.id, endedAt: new Date(),
     }).where(eq(attentionPasses.id, pass.id))
+    // Anything to answer goes in Kan's thread too, where they'll see it.
+    if (decisions.filings.length || decisions.areas.some((a) => a.change !== 'keep')) {
+      const { announcePlan } = await import('@/lib/kan/thread/reach')
+      await announcePlan(ownerId, pass.id, decisions.note).catch(() => {})
+    }
     return { id: pass.id, status: 'done' }
   } catch (err) {
     return fail(err instanceof Error ? err.message : 'Something went wrong')
