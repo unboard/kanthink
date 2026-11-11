@@ -94,6 +94,8 @@ interface JobView {
   at: THREE.Vector3;
   /** Beads of light from Kan's saucer, wherever it is, to the roof; the curve follows Kan every frame. */
   trail: { group: THREE.Group; curve: THREE.QuadraticBezierCurve3; dots: THREE.Mesh[]; mat: THREE.MeshBasicMaterial } | null;
+  /** A ring of light on the ground around the building, visible under the bubble even on a phone. */
+  ring: THREE.Mesh | null;
   /** How the trail flows: toward the building while it works, back to Town Hall when it needs you. */
   flow: number;
   key: string;
@@ -1453,6 +1455,7 @@ export class CityEngine {
       if (byPlace.has(place)) continue;
       v.bubble.remove();
       this.dropTrail(v);
+      this.dropRing(v);
       this.jobViews.delete(place);
     }
     const hall = this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
@@ -1466,7 +1469,7 @@ export class CityEngine {
         const bubble = document.createElement('div');
         bubble.className = 'kc-bubble kc-bubble-job';
         this.labels.appendChild(bubble);
-        v = { bubble, at: new THREE.Vector3(center.x, GROUND_Y + top + 1.2, center.z), trail: null, flow: 0, key: '' };
+        v = { bubble, at: new THREE.Vector3(center.x, GROUND_Y + top + 1.2, center.z), trail: null, ring: null, flow: 0, key: '' };
         this.jobViews.set(place, v);
       }
       const view = v;
@@ -1500,6 +1503,22 @@ export class CityEngine {
         }
       }
 
+      if (pv) {
+        if (!view.ring) {
+          view.ring = new THREE.Mesh(
+            new THREE.RingGeometry(3.2, 3.8, 56),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+          );
+          view.ring.rotation.x = -Math.PI / 2;
+          this.city.add(view.ring);
+        }
+        view.ring.position.set(center.x, GROUND_Y + 0.12, center.z);
+        view.ring.scale.setScalar(1);
+        view.ring.userData.base = view.ring.scale.x;
+        view.ring.userData.state = lead.state;
+        (view.ring.material as THREE.MeshBasicMaterial).color.set(JOB_COLOR[lead.state]);
+      } else this.dropRing(view);
+
       // The trail runs only while the work is in hand, and only when there's somewhere to run to.
       const live = lead.state === 'waiting' || lead.state === 'working' || lead.state === 'asking';
       if (!live || !pv) { this.dropTrail(view); continue; }
@@ -1525,6 +1544,14 @@ export class CityEngine {
     }
   }
 
+  private dropRing(v: JobView) {
+    if (!v.ring) return;
+    v.ring.removeFromParent();
+    v.ring.geometry.dispose();
+    (v.ring.material as THREE.Material).dispose();
+    v.ring = null;
+  }
+
   private dropTrail(v: JobView) {
     if (!v.trail) return;
     v.trail.group.removeFromParent();
@@ -1536,11 +1563,20 @@ export class CityEngine {
   /** Light running along each trail: steady toward the building while it works, back toward Kan when it needs you. */
   private animateJobs(t: number) {
     for (const v of this.jobViews.values()) {
+      if (v.ring) {
+        // Breathing while it works, a slow glow while it waits, a quick blink when it needs you.
+        const st = v.ring.userData.state as string;
+        const speed = st === 'working' ? 3 : st === 'asking' ? 6 : 1.2;
+        const k = 0.5 + Math.sin(t * speed) * 0.5;
+        (v.ring.material as THREE.MeshBasicMaterial).opacity = st === 'waiting' ? 0.25 + k * 0.2 : 0.4 + k * 0.45;
+        v.ring.scale.setScalar((v.ring.userData.base as number) * (1 + (st === 'working' ? k * 0.08 : 0)));
+      }
       if (!v.trail) continue;
       const c = v.trail.curve;
       if (this.kan) c.v0.copy(this.kan.obj.position);
       c.v1.copy(c.v0).lerp(c.v2, 0.5);
-      c.v1.y = Math.max(c.v0.y, c.v2.y) + 4 + c.v0.distanceTo(c.v2) * 0.18;
+      // Kept low, so it runs under the bubbles rather than behind them.
+      c.v1.y = Math.max(c.v0.y, c.v2.y) + 1.5 + c.v0.distanceTo(c.v2) * 0.1;
       for (const d of v.trail.dots) {
         let k = (d.userData.off as number) + t * v.flow;
         k -= Math.floor(k);
@@ -2368,15 +2404,22 @@ export class CityEngine {
       const hide = () => { if (el.style.display !== 'none') el.style.display = 'none'; };
       if (!a.show) { hide(); continue; }
       v.copy(a.pos).project(this.view);
-      const x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h + a.dy;
+      const x = (v.x * 0.5 + 0.5) * w;
+      let y = (-v.y * 0.5 + 0.5) * h + a.dy;
       // Behind a first-person camera counts as off screen; so does too far to read.
       const far = fpv && (v.z > 1 || a.pos.distanceTo(this.persp.position) > 150);
       if (far || x < -80 || x > w + 80 || y < -40 || y > h + 40) { hide(); continue; }
       if (el.style.display === 'none') el.style.display = '';
       let size = this.labelSizes.get(el);
       if (!size || now - size.at > 1500) { size = { w: el.offsetWidth, h: el.offsetHeight, at: now }; this.labelSizes.set(el, size); }
-      const r: [number, number, number, number] = [x - size.w / 2 - 3, y - size.h - 2, x + size.w / 2 + 3, y + 2];
-      if (!a.force && placed.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1])) { hide(); continue; }
+      let r: [number, number, number, number] = [x - size.w / 2 - 3, y - size.h - 2, x + size.w / 2 + 3, y + 2];
+      const hit = () => placed.find((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
+      if (!a.force && hit()) { hide(); continue; }
+      // Bubbles always show, so they stack: one that would cover another sits just above it.
+      for (let i = 0, q = a.force ? hit() : undefined; q && i < 6; i++, q = hit()) {
+        y = q[1] - 6;
+        r = [x - size.w / 2 - 3, y - size.h - 2, x + size.w / 2 + 3, y + 2];
+      }
       placed.push(r);
       el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
     }

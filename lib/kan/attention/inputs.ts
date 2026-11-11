@@ -98,14 +98,23 @@ export async function gatherInputs(ownerId: string, since: Date): Promise<InputI
     }
   }
 
-  // Their side of Kan's thread.
-  const said = await db.query.kanMessages.findMany({
-    where: and(eq(kanMessages.ownerId, ownerId), eq(kanMessages.role, 'you'), gt(kanMessages.createdAt, since)),
+  // Their side of Kan's thread, with what Kan already did about each line, so a plan
+  // never proposes again what was handled in the conversation (a build handed to
+  // Claude Code isn't a reason to wake the playground).
+  const thread = await db.query.kanMessages.findMany({
+    where: and(eq(kanMessages.ownerId, ownerId), gt(kanMessages.createdAt, since)),
     orderBy: [desc(kanMessages.createdAt)],
-    limit: 60,
-    columns: { id: true, text: true, createdAt: true },
+    limit: 120,
+    columns: { id: true, role: true, text: true, data: true, createdAt: true },
   })
-  for (const m of said) items.push({ id: `kan:${m.id}`, kind: 'chat', at: m.createdAt ?? new Date(), text: clip(m.text, 400) })
+  thread.reverse()
+  thread.forEach((m, i) => {
+    if (m.role !== 'you') return
+    const reply = thread.slice(i + 1).find((x) => x.role === 'kan')
+    const done = (reply?.data?.steps ?? []).filter((x) => x.write && !x.error).map((x) => x.label).slice(0, 4)
+    const handled = done.length ? ` [Kan already did this in the chat: ${done.join('; ')}. Nothing to plan for it.]` : ''
+    items.push({ id: `kan:${m.id}`, kind: 'chat', at: m.createdAt ?? new Date(), text: clip(m.text, Math.max(120, 400 - handled.length)) + handled })
+  })
 
   // Notes they wrote on cards (not the share inbox: those are shares).
   for (const c of touchedCards) {

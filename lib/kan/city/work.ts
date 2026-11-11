@@ -103,7 +103,8 @@ export async function claudeJobs(ownerId: string, presence: ClaudePresence | nul
     const live = presence?.state ?? 'offline'
     const step = note ? firstLine(note.content)
       : state === 'working' ? (live === 'working' ? 'On it right now' : 'Picked up, between turns')
-      : state === 'waiting' ? (live === 'offline' ? 'Waiting for Claude Code to open' : 'Next in line')
+      // Nothing starts a card by itself: a session has to look. Say which it is.
+      : state === 'waiting' ? (live === 'offline' ? 'Starts when you run /kan in Claude Code' : 'Claude Code is open and hears about this on its next turn')
       : null
     jobs.push({
       id: `claude:${c.id}`, worker: 'claude', who: 'Claude Code', title: clip(c.title, 80), state, step,
