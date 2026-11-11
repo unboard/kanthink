@@ -378,7 +378,8 @@ async function discoverColumns(channelId: string) {
   CHANNEL_ID = channelId
   DO_THESE_COLUMN_ID = doThese
   COMPLETED_COLUMN_ID = completed
-  if (rawIdeas) RAW_IDEAS_COLUMN_ID = rawIdeas
+  // Without an ideas column, new cards go to the inbox: never to a column from another channel.
+  RAW_IDEAS_COLUMN_ID = rawIdeas ?? doThese
 
   console.log(`Channel: ${channelId}`)
   console.log(`  Inbox column: ${doThese}`)
