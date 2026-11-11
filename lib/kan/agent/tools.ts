@@ -241,7 +241,8 @@ export const claudeCodeTool: AgentTool = {
       label: data.error ? undefined : `Handed ${quote(input.title)} to Claude Code`,
       isError: Boolean(data.error),
       cardId: data.cardId,
-      href: cardHref(data.channelId, data.cardId),
+      // create_card doesn't say which channel; it's always Work.
+      href: cardHref(WORK_CHANNEL_ID, data.cardId),
     }
   },
 }

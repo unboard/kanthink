@@ -18,7 +18,7 @@ export async function listThread(ownerId: string, limit = 60): Promise<KanMessag
   return rows.reverse()
 }
 
-export async function addMessages(ownerId: string, msgs: { role: 'you' | 'kan'; kind?: 'chat' | 'reach' | 'plan'; text: string; data?: KanMessageData; at?: Date }[]): Promise<KanMessage[]> {
+export async function addMessages(ownerId: string, msgs: { role: 'you' | 'kan'; kind?: 'chat' | 'reach' | 'plan' | 'work'; text: string; data?: KanMessageData; at?: Date }[]): Promise<KanMessage[]> {
   if (!msgs.length) return []
   const base = Date.now()
   return db.insert(kanMessages).values(msgs.map((m, i) => ({
@@ -29,7 +29,7 @@ export async function addMessages(ownerId: string, msgs: { role: 'you' | 'kan'; 
 }
 
 /** Kan speaking first: a line in the thread the owner hasn't seen yet. */
-export async function kanSays(ownerId: string, kind: 'reach' | 'plan', text: string, data: KanMessageData): Promise<KanMessage> {
+export async function kanSays(ownerId: string, kind: 'reach' | 'plan' | 'work', text: string, data: KanMessageData): Promise<KanMessage> {
   const [m] = await addMessages(ownerId, [{ role: 'kan', kind, text, data }])
   return m
 }

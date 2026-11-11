@@ -2252,7 +2252,7 @@ export const kanMessages = sqliteTable('kan_messages', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role: text('role').$type<'you' | 'kan'>().notNull(),
-  kind: text('kind').$type<'chat' | 'reach' | 'plan'>().notNull().default('chat'),
+  kind: text('kind').$type<'chat' | 'reach' | 'plan' | 'work'>().notNull().default('chat'),
   text: text('text').notNull().default(''),
   data: text('data', { mode: 'json' }).$type<KanMessageData>(),
   /** When the owner saw a message Kan sent first. */

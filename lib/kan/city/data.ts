@@ -13,6 +13,8 @@ import { residentOf } from './residents'
 import { parseStyle } from './style'
 import { parseInterior } from './interior'
 import { callName } from './talk'
+import { botJob, claudeJobs, reportJobs, type CityJob } from './work'
+import { claudePresence } from './claude'
 
 /**
  * Your channels as a city, and what's happening in it right now: which bots
@@ -294,6 +296,18 @@ export async function cityFor(userId: string) {
     name: a.name, why: a.why, columns: a.columns ?? [], lot: layout.free[i] ?? null,
   }))
 
+  // Work in flight: what Claude Code has from Kan, and bots at work, with their latest step.
+  const plotIds = new Set(plots.map((p) => p.channelId))
+  const presence = await claudePresence(userId).catch(() => null)
+  const jobs: CityJob[] = await claudeJobs(userId, presence, plotIds.has('64eQst0Zx_iYYN4QJLWw3')).catch(() => [])
+  for (const r of runs) {
+    const p = plots.find((x) => x.channelId === r.channelId)
+    const j = p ? botJob(r, p.resident.name) : null
+    if (j) jobs.push(j)
+  }
+  // Kan keeps track: what it handed off and is now done, or stuck on a question, it says in its thread.
+  void reportJobs(userId, jobs).catch((err) => console.error('[kan] report jobs', err))
+
   // The feed, newest first.
   const feed: FeedItem[] = []
   for (const r of runs) {
@@ -370,6 +384,8 @@ export async function cityFor(userId: string) {
     },
     /** Kan's thread: when it last changed, and what Kan said first that they haven't seen. */
     kanThread,
+    jobs,
+    claude: presence ? { state: presence.state } : null,
     proposals,
     // Neighborhoods are folders; bots help each other inside one and never outside it.
     neighborhoods: folderRows.map((f) => ({ id: f.id, name: f.name, plots: plots.filter((p) => p.folderId === f.id).length })),

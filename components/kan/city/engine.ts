@@ -86,6 +86,24 @@ interface Citizen {
   sayUntil: number;
 }
 
+type CityJob = CityData['jobs'][number];
+
+interface JobView {
+  bubble: HTMLDivElement;
+  /** Where the bubble sits: over the building's roof. */
+  at: THREE.Vector3;
+  /** Beads of light from Kan's saucer, wherever it is, to the roof; the curve follows Kan every frame. */
+  trail: { group: THREE.Group; curve: THREE.QuadraticBezierCurve3; dots: THREE.Mesh[]; mat: THREE.MeshBasicMaterial } | null;
+  /** How the trail flows: toward the building while it works, back to Town Hall when it needs you. */
+  flow: number;
+  key: string;
+}
+
+const JOB_COLOR: Record<CityJob['state'], string> = { waiting: '#c4b5fd', working: '#38bdf8', asking: '#fbbf24', done: '#34d399', failed: '#f87171' };
+const JOB_WORD: Record<CityJob['state'], string> = { waiting: 'queued', working: 'working', asking: 'needs you', done: 'done', failed: 'stuck' };
+/** A finished job's bubble stays this long after it finished. */
+const JOB_DONE_SHOWN_MS = 30 * 60_000;
+
 interface PlotView {
   plot: CityPlot;
   center: Vec;
@@ -204,6 +222,10 @@ export class CityEngine {
   private kanNote: { text: string; kicker: string; until: number } | null = null;
   private kanVisitUntil = 0;
   private parcels: { group: THREE.Group; label: HTMLDivElement; count: number } | null = null;
+  /** Work in flight, one per place: a bubble over the building and a trail of light from Town Hall to it. */
+  private jobViews = new Map<string, JobView>();
+  /** Each job's state as last seen, so a change can be marked when it happens. */
+  private jobStates: Map<string, string> | null = null;
   /** Plots picked for a new neighborhood. */
   private marked = new Set<string>();
   private mode: ViewMode = 'map';
@@ -314,6 +336,7 @@ export class CityEngine {
     this.syncCitizens(data, first);
     this.syncKan();
     this.syncArrivals(data, first);
+    this.syncJobs(data, first);
     if (first) this.frameAll();
   }
 
@@ -756,6 +779,7 @@ export class CityEngine {
     this.fixedLabels = [];
     this.proposalLots.clear();
     this.parcels = null;
+    this.jobViews.clear();
     this.kan = null;
     this.labels.innerHTML = '';
   }
@@ -1386,6 +1410,147 @@ export class CityEngine {
   }
 
   /**
+   * Work in flight on the map. Over each building where something is being done for
+   * you, a bubble says who's on it and the latest step; from Kan, who keeps track of
+   * it all, a trail of light runs to it while it's in hand, following Kan around. When a job starts,
+   * Kan flies the work over; when one finishes or needs you, the building lights up.
+   */
+  private syncJobs(data: CityData, first: boolean) {
+    if (!this.grid) return;
+    const L = data.layout;
+    const now = Date.now();
+    const shown = (data.jobs ?? []).filter((j) => j.state !== 'done' && j.state !== 'failed' || now - j.at < JOB_DONE_SHOWN_MS);
+    const byPlace = new Map<string, CityJob[]>();
+    for (const j of shown) {
+      const place = j.channelId && this.plots.has(j.channelId) ? j.channelId : 'townhall';
+      byPlace.set(place, [...(byPlace.get(place) ?? []), j]);
+    }
+
+    // What changed since last time: a job handed over, finished, or stuck on a question.
+    const prev = this.jobStates;
+    this.jobStates = new Map((data.jobs ?? []).map((j) => [j.id, j.state]));
+    if (prev && !first) {
+      for (const j of data.jobs ?? []) {
+        const was = prev.get(j.id);
+        if (was === j.state) continue;
+        const where = j.channelId && this.plots.has(j.channelId) ? j.channelId : 'townhall';
+        if (!was && j.worker === 'claude' && j.state === 'waiting') {
+          this.pulse(where, { kanGoes: true });
+          this.kanSay(`Taking “${j.title}” over to ${j.who}.`, 'Handing it off', 9000);
+        } else if (j.state === 'done') {
+          this.pulse(where, { tone: 'write' });
+          if (j.worker === 'claude') this.kanSay(`${j.who} finished “${j.title}”.`, 'Done', 9000);
+        } else if (j.state === 'asking') {
+          this.pulse(where, { tone: 'read' });
+          this.kanSay(`${j.who} has a question on “${j.title}”.`, 'Needs you', 9000);
+        } else if (j.state === 'working' && was === 'waiting') {
+          this.pulse(where, { tone: 'read' });
+        }
+      }
+    }
+
+    for (const [place, v] of this.jobViews) {
+      if (byPlace.has(place)) continue;
+      v.bubble.remove();
+      this.dropTrail(v);
+      this.jobViews.delete(place);
+    }
+    const hall = this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
+    for (const [place, jobs] of byPlace) {
+      const lead = jobs[0];
+      const pv = this.plots.get(place);
+      const center = pv ? pv.center : hall;
+      const top = pv ? pv.built.top : 9;
+      let v = this.jobViews.get(place);
+      if (!v) {
+        const bubble = document.createElement('div');
+        bubble.className = 'kc-bubble kc-bubble-job';
+        this.labels.appendChild(bubble);
+        v = { bubble, at: new THREE.Vector3(center.x, GROUND_Y + top + 1.2, center.z), trail: null, flow: 0, key: '' };
+        this.jobViews.set(place, v);
+      }
+      const view = v;
+      view.at.set(center.x, GROUND_Y + top + 1.2, center.z);
+      view.bubble.onclick = () => this.cb.onPick(lead.worker === 'claude' ? { kind: 'kan' } : { kind: 'plot', id: place });
+
+      const key = JSON.stringify(jobs.map((j) => [j.id, j.state, j.step, j.title]));
+      if (key !== view.key) {
+        view.key = key;
+        view.bubble.dataset.state = lead.state;
+        view.bubble.innerHTML = '';
+        const k = document.createElement('div');
+        k.className = 'kc-bubble-kicker';
+        k.textContent = `${lead.who} · ${JOB_WORD[lead.state]}`;
+        const t = document.createElement('div');
+        t.className = 'kc-job-title';
+        t.textContent = lead.title;
+        view.bubble.append(k, t);
+        if (lead.step) {
+          const st = document.createElement('div');
+          st.className = 'kc-job-step';
+          st.textContent = lead.step;
+          view.bubble.append(st);
+        }
+        const more = jobs.length - 1;
+        if (more > 0) {
+          const m = document.createElement('div');
+          m.className = 'kc-job-more';
+          m.textContent = `+${more} more ${more === 1 ? 'job' : 'jobs'}`;
+          view.bubble.append(m);
+        }
+      }
+
+      // The trail runs only while the work is in hand, and only when there's somewhere to run to.
+      const live = lead.state === 'waiting' || lead.state === 'working' || lead.state === 'asking';
+      if (!live || !pv) { this.dropTrail(view); continue; }
+      view.flow = lead.state === 'working' ? 0.32 : lead.state === 'asking' ? -0.22 : 0.07;
+      if (!view.trail) {
+        const to = new THREE.Vector3(center.x, GROUND_Y + top + 0.4, center.z);
+        const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(hall.x, GROUND_Y + 10, hall.z), new THREE.Vector3(), to);
+        const group = new THREE.Group();
+        const mat = new THREE.MeshBasicMaterial({ color: JOB_COLOR[lead.state], transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
+        const dg = new THREE.SphereGeometry(0.42, 10, 8);
+        const dots: THREE.Mesh[] = [];
+        for (let i = 0; i < 16; i++) {
+          const d = new THREE.Mesh(dg, mat);
+          d.userData.off = i / 16;
+          group.add(d);
+          dots.push(d);
+        }
+        this.city.add(group);
+        view.trail = { group, curve, dots, mat };
+      }
+      view.trail.curve.v2.set(center.x, GROUND_Y + top + 0.4, center.z);
+      view.trail.mat.color.set(JOB_COLOR[lead.state]);
+    }
+  }
+
+  private dropTrail(v: JobView) {
+    if (!v.trail) return;
+    v.trail.group.removeFromParent();
+    v.trail.group.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
+    v.trail.mat.dispose();
+    v.trail = null;
+  }
+
+  /** Light running along each trail: steady toward the building while it works, back toward Kan when it needs you. */
+  private animateJobs(t: number) {
+    for (const v of this.jobViews.values()) {
+      if (!v.trail) continue;
+      const c = v.trail.curve;
+      if (this.kan) c.v0.copy(this.kan.obj.position);
+      c.v1.copy(c.v0).lerp(c.v2, 0.5);
+      c.v1.y = Math.max(c.v0.y, c.v2.y) + 4 + c.v0.distanceTo(c.v2) * 0.18;
+      for (const d of v.trail.dots) {
+        let k = (d.userData.off as number) + t * v.flow;
+        k -= Math.floor(k);
+        v.trail.curve.getPoint(k, d.position);
+        d.scale.setScalar(0.55 + Math.sin(k * Math.PI) * 0.65);
+      }
+    }
+  }
+
+  /**
    * What came in since Kan last looked waits in a pile of parcels by Town Hall. When
    * more arrives, a van brings it.
    */
@@ -1631,6 +1796,7 @@ export class CityEngine {
       if (v.beacon.visible) (v.beacon.material as THREE.MeshBasicMaterial).opacity = 0.14 + Math.sin(t * 3) * 0.06;
     }
     this.selectRing.rotation.z = t * 0.3;
+    this.animateJobs(t);
     if (this.effects.length) {
       for (const e of [...this.effects]) {
         e.t += dt / e.life;
@@ -2190,6 +2356,7 @@ export class CityEngine {
       const saying = performance.now() < c.sayUntil;
       ask(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs') && c.bubble.childElementCount > 0, 0, -4, true);
     }
+    for (const j of this.jobViews.values()) ask(j.bubble, j.at, j.bubble.childElementCount > 0 && this.mode === 'map', 0, -2, true);
     if (this.kan && this.kanBubble) ask(this.kanBubble, this.kan.obj.position.clone().setY(this.kan.obj.position.y + 4.2), this.kanSays, 0, -30, true);
 
     asks.sort((a, b) => a.prio - b.prio);

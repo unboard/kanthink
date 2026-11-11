@@ -39,7 +39,7 @@ type Turn =
   | {
     id: string; sid?: string; role: 'kan'; text: string; steps: ChatStep[]; suggestions: { label: string; prompt: string }[]; memo?: string; error?: string; startedAt: number; endedAt?: number;
     /** Kan spoke first: something it found, or a plan to answer. */
-    kind?: 'reach' | 'plan'; passId?: string; links?: { title: string; url: string }[];
+    kind?: 'reach' | 'plan' | 'work'; passId?: string; links?: { title: string; url: string }[];
   };
 
 /** A line from the server as a turn in the thread. */
@@ -334,6 +334,7 @@ export const CityChat = forwardRef<CityChatHandle, {
               ) : (
                 <div key={t.id} className="space-y-2">
                   {t.kind === 'reach' && <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan found something</p>}
+                  {t.kind === 'work' && <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-300"><KanthinkIcon size={12} /> From the work Kan handed off</p>}
                   {t.kind === 'plan' && <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan’s plan</p>}
                   <Steps turn={t} now={tick} open={Boolean(foldOpen[t.id])} onToggle={() => setFoldOpen((o) => ({ ...o, [t.id]: !o[t.id] }))} />
                   {t.text && (
@@ -347,7 +348,7 @@ export const CityChat = forwardRef<CityChatHandle, {
                   ))}
                   {t.passId && renderPlan?.(t.passId)}
                   {/* Replies to something Kan raised, until the conversation moves on (the last turn's show below the thread). */}
-                  {t.kind === 'reach' && t !== last && t.suggestions.length > 0 && turns[turns.indexOf(t) + 1]?.role !== 'user' && (
+                  {(t.kind === 'reach' || t.kind === 'work') && t !== last && t.suggestions.length > 0 && turns[turns.indexOf(t) + 1]?.role !== 'user' && (
                     <div className="flex flex-wrap gap-1.5">
                       {t.suggestions.map((x) => <button key={x.label} onClick={() => void send(x.prompt)} title={x.prompt} className="rounded-full border border-white/15 px-3 py-1 text-[12.5px] text-neutral-100 hover:border-violet-400/70">{x.label}</button>)}
                     </div>
