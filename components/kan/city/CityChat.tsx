@@ -8,7 +8,8 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { formatElapsed } from '@/components/kan/KanTrace';
 import type { AgentEvent, EmailDraft } from '@/lib/kan/agent/events';
-import { useCityVoice, type VoicePhase } from './useCityVoice';
+import { useCityLive, type CityJob, type LivePhase } from './useCityLive';
+import type { CityVoicePlot } from '@/lib/kan/city/voice';
 import type { KanMessage } from '@/lib/kan/thread/store';
 
 /**
@@ -24,9 +25,10 @@ import type { KanMessage } from '@/lib/kan/thread/store';
  *
  * The thread folds away to a single line, so the city stays the thing you look at.
  *
- * Voice mode (the waves button) is a hands-free conversation with the same Kan: the
- * thread steps aside so the whole city shows while you talk, and what Kan does lands
- * on the map as it happens. An email Kan writes comes up as a draft to send.
+ * Voice mode (the waves button) is the original live voice: Kan answers the moment
+ * you stop talking. Work goes to this same agent as background jobs, so Kan keeps
+ * talking while the city shows the job happening, and tells you when it lands. The
+ * thread steps aside so the whole city shows. An email comes up as a draft to send.
  */
 
 export interface ChatStep {
@@ -104,7 +106,9 @@ export const CityChat = forwardRef<CityChatHandle, {
   onEmailSent?(draft: EmailDraft): void;
   /** Voice mode went on or off. */
   onVoice?(on: boolean): void;
-}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight, stamp, unseen = 0, onSeen, renderPlan, onEmailDrafted, onEmailSent, onVoice }, ref) {
+  /** The town, for Kan to know by name when you talk. */
+  voicePlots?: CityVoicePlot[];
+}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight, stamp, unseen = 0, onSeen, renderPlan, onEmailDrafted, onEmailSent, onVoice, voicePlots }, ref) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [cardIds, setCardIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
@@ -181,6 +185,10 @@ export const CityChat = forwardRef<CityChatHandle, {
   const focusRef = useRef(focus);
   focusRef.current = focus;
   const voiceOn = useRef(false);
+  /** While a voice job runs: what it changed, and a way to tell Kan as it happens. */
+  const jobDid = useRef<string[] | null>(null);
+  const progress = useRef<(label: string) => void>(() => {});
+  const lastError = useRef<string | null>(null);
   const cardIdsRef = useRef(cardIds);
   cardIdsRef.current = cardIds;
 
@@ -263,6 +271,7 @@ export const CityChat = forwardRef<CityChatHandle, {
             const at = acc.steps.findIndex((x) => x.id === e.id);
             if (at < 0) acc.steps.push(step); else acc.steps[at] = { ...acc.steps[at], ...step };
             cb.current.onStep?.(step);
+            if (jobDid.current && step.status === 'done' && step.write) { jobDid.current.push(step.label); progress.current(step.label); }
           } else if (e.t === 'email') {
             acc.emails.push(e.draft);
             patchKan(kanId, (t) => ({ ...t, emails: [...(t.emails ?? []), e.draft] }));
@@ -287,6 +296,7 @@ export const CityChat = forwardRef<CityChatHandle, {
     } finally {
       patchKan(kanId, (t) => ({ ...t, endedAt: t.endedAt ?? Date.now(), steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'done' } : s)) }));
       abortRef.current = null;
+      lastError.current = acc.error ?? null;
       // Into the thread on the server, so it's there on every device and Kan can read it later.
       try {
         const r = await fetch(THREAD, {
@@ -334,10 +344,21 @@ export const CityChat = forwardRef<CityChatHandle, {
     }
   }, [patchKan]);
 
-  const voice = useCityVoice({
-    onUtterance: (text) => send(text),
-    onCancelThinking: () => abortRef.current?.abort(),
+  const voice = useCityLive({
+    plots: voicePlots ?? [],
+    runJob: async (instruction) => {
+      // A turn you typed is still going: wait for it rather than drop the job.
+      for (let i = 0; busyRef.current && i < 600; i++) await new Promise((r) => setTimeout(r, 500));
+      jobDid.current = [];
+      const reply = await send(instruction);
+      const did = jobDid.current ?? [];
+      jobDid.current = null;
+      const error = lastError.current;
+      return { reply: error ? null : reply, did, error };
+    },
+    cancelJob: () => abortRef.current?.abort(),
   });
+  useEffect(() => { progress.current = (label) => voice.note(`[Progress] Done so far: ${label}`); }, [voice]);
   useEffect(() => { voiceOn.current = voice.active; cb.current.onVoice?.(voice.active); }, [voice.active]);
 
   useImperativeHandle(ref, () => ({
@@ -447,10 +468,11 @@ export const CityChat = forwardRef<CityChatHandle, {
           <p className="mb-2 rounded-2xl bg-rose-950/80 px-3.5 py-2 text-[13px] text-rose-200 backdrop-blur-xl">{voice.error}</p>
         )}
         {voice.active && !compact && (
-          <VoiceCaption phase={voice.phase} heard={voice.heard} turn={last} running={running?.label} emails={pendingEmails} onSend={(i, d) => { if (last) void sendEmail(last.id, i, d); }} />
+          <VoiceCaption phase={voice.phase} heard={voice.heard} said={voice.said} jobs={voice.jobs} turn={last} running={running?.label} emails={pendingEmails} onStopJobs={voice.cancelJobs}
+            onSend={(i, d) => { if (!last) return; void sendEmail(last.id, i, d).then(() => voice.note(`[System] They pressed Send on the email to ${d.to} ("${d.subject}"). It is on its way; treat it as done.`)); }} />
         )}
         {voice.active ? (
-          <VoiceBar phase={voice.phase} level={voice.level} step={running?.label} onTap={voice.interrupt} onEnd={voice.stop} onType={() => { voice.stop(); setOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }} />
+          <VoiceBar phase={voice.phase} level={voice.level} busy={voice.busy} step={running?.label} onTap={voice.interrupt} onEnd={voice.stop} onType={() => { voice.stop(); setOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }} />
         ) : (
         <form
           onSubmit={(e) => { e.preventDefault(); void send(draft); }}
@@ -521,29 +543,30 @@ export const CityChat = forwardRef<CityChatHandle, {
   );
 });
 
-const PHASE: Record<VoicePhase, string> = {
-  off: '', starting: 'Starting', listening: 'Listening', hearing: 'Hearing you', transcribing: 'Got it', thinking: 'Kan is on it', speaking: 'Kan',
+const PHASE: Record<LivePhase, string> = {
+  off: '', connecting: 'Connecting', listening: 'Listening', hearing: 'Hearing you', speaking: 'Kan',
 };
 
-/** The bar at the bottom while you talk: what Kan is doing, how loud you are, and a way out. */
-function VoiceBar({ phase, level, step, onTap, onEnd, onType }: { phase: VoicePhase; level: number; step?: string; onTap(): void; onEnd(): void; onType(): void }) {
+/** The bar at the bottom while you talk: who's talking, whether a job is running, and a way out. */
+function VoiceBar({ phase, level, busy, step, onTap, onEnd, onType }: { phase: LivePhase; level: number; busy: boolean; step?: string; onTap(): void; onEnd(): void; onType(): void }) {
   const ear = phase === 'listening' || phase === 'hearing';
-  const hint = phase === 'speaking' ? 'Tap to cut in' : phase === 'thinking' ? (step ?? 'Tap to stop') : ear ? 'Say what you need' : '';
+  const hint = phase === 'connecting' ? 'One moment' : phase === 'speaking' ? 'Tap to cut in, or just talk' : busy ? (step ?? 'Working in the background') : 'Say what you need';
   return (
     <div className="flex items-center gap-2 rounded-[26px] border border-violet-400/40 bg-neutral-950/85 py-1.5 pl-1.5 pr-1.5 shadow-2xl backdrop-blur-xl">
-      <button onClick={onTap} aria-label={phase === 'speaking' ? 'Stop Kan talking' : phase === 'thinking' ? 'Stop Kan' : 'Kan is listening'} className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20">
-        <span className="absolute inset-0 rounded-full bg-violet-400/30 transition-transform duration-75" style={{ transform: `scale(${ear ? 1 + level * 0.6 : phase === 'speaking' ? 1.15 : 1})` }} />
-        {phase === 'thinking' || phase === 'transcribing' || phase === 'starting'
+      <button onClick={onTap} aria-label={phase === 'speaking' ? 'Stop Kan talking' : 'Kan is listening'} className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20">
+        <span className="absolute inset-0 rounded-full bg-violet-400/30 transition-transform duration-75" style={{ transform: `scale(${ear ? 1 + level * 0.8 : phase === 'speaking' ? 1.15 : 1})` }} />
+        {busy && <span className="absolute -inset-1 animate-spin rounded-full border-2 border-transparent border-t-violet-300/80" />}
+        {phase === 'connecting'
           ? <Loader2 className="relative h-4 w-4 animate-spin text-violet-200" />
           : <KanthinkIcon size={20} className="relative text-violet-200" />}
       </button>
       <button onClick={onTap} className="min-w-0 flex-1 py-0.5 text-left">
-        <span className="block text-[11px] font-semibold uppercase tracking-wider text-violet-300">{PHASE[phase]}</span>
+        <span className="block text-[11px] font-semibold uppercase tracking-wider text-violet-300">{PHASE[phase]}{busy && phase !== 'connecting' ? ' · working' : ''}</span>
         <span className="block truncate text-[13.5px] text-neutral-200">{hint}</span>
       </button>
       <span className="flex h-6 flex-shrink-0 items-center gap-[3px] pr-1" aria-hidden>
         {[0.5, 0.9, 1, 0.7, 0.4].map((w, i) => (
-          <span key={i} className={`w-[3px] rounded-full ${phase === 'speaking' ? 'animate-pulse bg-violet-300' : 'bg-violet-400/80'}`} style={{ height: `${Math.max(4, (ear ? level : phase === 'speaking' ? 0.6 : 0.1) * w * 24)}px`, animationDelay: `${i * 120}ms` }} />
+          <span key={i} className={`w-[3px] rounded-full ${phase === 'speaking' ? 'animate-pulse bg-violet-300' : 'bg-violet-400/80'}`} style={{ height: `${Math.max(4, (ear ? level * 2 : phase === 'speaking' ? 0.6 : 0.1) * w * 24)}px`, animationDelay: `${i * 120}ms` }} />
         ))}
       </span>
       <button onClick={onType} aria-label="Type instead" title="Type instead" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-white/5 hover:text-neutral-100"><Pencil className="h-4 w-4" /></button>
@@ -552,28 +575,42 @@ function VoiceBar({ phase, level, step, onTap, onEnd, onType }: { phase: VoicePh
   );
 }
 
-/** Above the bar while you talk: what you said, and Kan's answer as it comes, small enough to keep the city in view. */
-function VoiceCaption({ phase, heard, turn, running, emails, onSend }: {
-  phase: VoicePhase; heard: string | null; turn?: Extract<Turn, { role: 'kan' }>; running?: string;
-  emails: { d: EmailDraft; i: number }[]; onSend(i: number, d: EmailDraft): void;
+/**
+ * Above the bar while you talk: the words as they're said, and the jobs Kan has
+ * running in the background with the step each is on. Small, so the city stays in view.
+ */
+function VoiceCaption({ phase, heard, said, jobs, turn, running, emails, onSend, onStopJobs }: {
+  phase: LivePhase; heard: string; said: string; jobs: CityJob[]; turn?: Extract<Turn, { role: 'kan' }>; running?: string;
+  emails: { d: EmailDraft; i: number }[]; onSend(i: number, d: EmailDraft): void; onStopJobs(): void;
 }) {
-  const reply = turn?.text ? turn.text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[#*_`>]/g, '').trim() : '';
-  const working = phase === 'thinking';
+  const live = jobs.filter((j) => j.status === 'running' || j.status === 'waiting');
+  const landed = jobs.filter((j) => j.status === 'done' || j.status === 'failed').slice(-1)[0];
   const done = turn?.endedAt ? turn.steps.filter((s) => s.write && s.status === 'done').slice(-3) : [];
-  if (!heard && !reply && !emails.length && !running) return null;
+  const words = phase === 'speaking' || (!heard && said) ? said : heard;
   return (
     <div className="mb-2 space-y-2">
       {emails.map(({ d, i }) => <EmailCard key={i} draft={d} onSend={(x) => onSend(i, x)} floating />)}
-      {(heard || reply || running) && (
+      {live.length > 0 && (
+        <div className="rounded-2xl border border-violet-400/25 bg-neutral-950/80 px-3.5 py-2 shadow-xl backdrop-blur-xl">
+          {live.map((j) => (
+            <p key={j.id} className="flex items-center gap-2 py-0.5 text-[13px]">
+              {j.status === 'running' ? <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-violet-300" /> : <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-neutral-500" />}
+              <span className="min-w-0 flex-1 truncate text-neutral-100">{j.label}</span>
+              {j.status === 'running' && running && <span className="max-w-[45%] truncate text-[12px] text-violet-300">{running}</span>}
+              {j.status === 'waiting' && <span className="text-[12px] text-neutral-500">next</span>}
+            </p>
+          ))}
+          <button onClick={onStopJobs} className="mt-0.5 text-[12px] text-neutral-500 hover:text-neutral-200">Stop</button>
+        </div>
+      )}
+      {!live.length && landed && done.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {done.map((s) => <span key={s.id} className="flex max-w-full items-center gap-1 rounded-full bg-violet-500/20 px-2 py-0.5 text-[11.5px] text-violet-100 backdrop-blur-xl"><Check className="h-3 w-3 flex-shrink-0" /><span className="truncate">{s.label}</span></span>)}
+        </div>
+      )}
+      {words && (
         <div className="rounded-2xl border border-white/10 bg-neutral-950/70 px-3.5 py-2.5 shadow-xl backdrop-blur-xl">
-          {heard && <p className="truncate text-[12.5px] text-neutral-400">“{heard}”</p>}
-          {working && running && <p className="mt-1 flex items-center gap-1.5 text-[13px] text-violet-200"><Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" /> <span className="truncate">{running}</span></p>}
-          {reply && <p className="mt-1 line-clamp-3 text-[14px] leading-snug text-neutral-100">{reply}</p>}
-          {!working && done.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {done.map((s) => <span key={s.id} className="flex max-w-full items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[11.5px] text-violet-200"><Check className="h-3 w-3 flex-shrink-0" /><span className="truncate">{s.label}</span></span>)}
-            </div>
-          )}
+          <p className={`line-clamp-3 text-[14px] leading-snug ${words === heard ? 'text-neutral-400' : 'text-neutral-100'}`}>{words === heard ? `“${words}”` : words}</p>
         </div>
       )}
     </div>

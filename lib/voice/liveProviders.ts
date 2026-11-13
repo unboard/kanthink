@@ -323,6 +323,20 @@ export function buildSilentNote(provider: LiveProvider, text: string): unknown {
   }
 }
 
+/**
+ * A fact the model should hear and then speak about: work it started in the
+ * background has finished, and the user is waiting to hear what came of it.
+ */
+export function buildSpokenNote(provider: LiveProvider, text: string): unknown[] {
+  if (provider === 'openai') {
+    return [
+      { type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } },
+      { type: 'response.create' },
+    ]
+  }
+  return [{ clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true } }]
+}
+
 // ── Inbound ───────────────────────────────────────────────────────────────
 
 export interface NormalizedLiveEvent {

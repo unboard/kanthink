@@ -1,22 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { spokenText } from '@/components/kan/city/useCityVoice'
 import { draftEmailTool } from '@/lib/kan/agent/tools'
+import { cityVoicePrompt, cityVoiceTools, jobDoneNote } from '@/lib/kan/city/voice'
+import { buildSpokenNote, toOpenAITools } from '@/lib/voice/liveProviders'
 
-describe('Kan City voice: what Kan says out loud', () => {
-  it('drops markdown, links and lists but keeps the words', () => {
-    const md = '## Done\n\n- Made a card **Call Tim** in [Work](/channel/abc)\n- Ran the bot\n\nSee https://example.com for more.'
-    expect(spokenText(md)).toBe('Done Made a card Call Tim in Work Ran the bot See for more.')
+describe('Kan City voice: live talk, work in the background', () => {
+  it('gives the live model one tool that hands work to the city', () => {
+    const [block] = cityVoiceTools(false)
+    expect(block).toHaveProperty('functionDeclarations')
+    const names = (block as { functionDeclarations: { name: string }[] }).functionDeclarations.map((d) => d.name)
+    expect(names).toEqual(['city_job'])
+    expect(cityVoiceTools(true)).toContainEqual({ googleSearch: {} })
+    expect(toOpenAITools(cityVoiceTools(false) as never).map((t) => t.name)).toEqual(['city_job'])
   })
 
-  it('stops at a sentence when the reply is long', () => {
-    const md = `${'This is a sentence. '.repeat(60)}`
-    const out = spokenText(md, 200)
-    expect(out.length).toBeLessThanOrEqual(200)
-    expect(out.endsWith('.')).toBe(true)
+  it('tells Kan to keep talking while a job runs and never to claim it done early', () => {
+    const p = cityVoicePrompt({ name: 'Dustin Hodge', plots: [{ name: 'Work', cards: 12, bot: 'working' }], search: false })
+    expect(p).toMatch(/keep the conversation going/)
+    expect(p).toMatch(/Never say a job is finished until its \[Job done\] note/)
+    expect(p).toMatch(/- Work \(12 cards, bot working\)/)
+    expect(p).toMatch(/cannot search the web/)
   })
 
-  it('says nothing for a reply that is only code', () => {
-    expect(spokenText('```ts\nconst x = 1\n```')).toBe('')
+  it('reports a landed job with what changed, and a failed one plainly', () => {
+    expect(jobDoneNote({ ask: 'Card for Tim', reply: 'Made it.', did: ['Made a card'] })).toMatch(/What changed: Made a card/)
+    expect(jobDoneNote({ ask: 'x', reply: null, did: [], error: 'No key' })).toMatch(/failed: No key/)
+  })
+
+  it('makes the model speak after a spoken note, on both providers', () => {
+    expect(buildSpokenNote('openai', 'hi').at(-1)).toEqual({ type: 'response.create' })
+    expect(buildSpokenNote('google', 'hi')[0]).toMatchObject({ clientContent: { turnComplete: true } })
   })
 })
 

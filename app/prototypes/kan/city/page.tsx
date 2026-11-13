@@ -437,6 +437,7 @@ export default function CityPage() {
   useEffect(() => { engine.current?.select(pick ?? (board ? { kind: 'plot', id: board } : null), true); }, [pick, board, rightW, leftW]);
 
   const plots = useMemo(() => shown?.plots ?? [], [shown]);
+  const voicePlots = useMemo(() => plots.map((p) => ({ name: p.name, cards: p.cards, bot: p.bot.status })), [plots]);
   const plotOf = useMemo(() => new Map(plots.map((p) => [p.channelId, p])), [plots]);
   // A link from outside (the morning email) can open a card: ?channel=…&card=…
   const linked = useRef(false);
@@ -1060,6 +1061,7 @@ export default function CityPage() {
         onEmailDrafted={onEmailDrafted}
         onEmailSent={onEmailSent}
         onVoice={onVoice}
+        voicePlots={voicePlots}
         stamp={data?.kanThread.latestAt}
         unseen={data?.kanThread.unseen ?? 0}
         onSeen={reloadSoon}
