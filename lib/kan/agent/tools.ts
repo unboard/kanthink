@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { VOICE_TOOLS } from '@/lib/voice/tools'
 import { runVoiceAction } from '@/lib/voice/runAction'
 import { gatherNow } from './now'
-import { pastTense } from './events'
+import { pastTense, type EmailDraft } from './events'
 
 /**
  * Everything the Kan agent can do, as Claude tools.
@@ -41,6 +41,8 @@ export interface ToolOutcome {
   cardId?: string
   /** For `suggest`: the taps to offer under the reply. */
   suggestions?: { label: string; prompt: string }[]
+  /** An email drafted for the person to send, shown as its own card. */
+  email?: EmailDraft
   /** What the tool itself spent on AI (an app build), so a bot's budget can count it. */
   costMillicents?: number
 }
@@ -187,6 +189,43 @@ const nowTool: AgentTool = {
     }
   },
 }
+
+/**
+ * Voice mode's draft_email, for the agent: the draft goes to the person's screen as a
+ * card with a Send button. Nothing is sent from here.
+ */
+export const draftEmailTool: AgentTool = (() => {
+  const declarations = (VOICE_TOOLS[0] as unknown as { functionDeclarations: { name: string; description: string; parameters: GeminiSchema }[] }).functionDeclarations
+  const d = declarations.find((x) => x.name === 'draft_email')!
+  return {
+    name: 'draft_email',
+    description: 'Write an email for the user to look over and send. It shows up as a draft card with a Send button; it is NOT sent. Never send or claim to have sent it: say it is ready to send. Look up a card first if the email is about one. Infer the style; do not ask for it.',
+    input_schema: { type: 'object', ...toJsonSchema(d.parameters) } as Anthropic.Tool.InputSchema,
+    kind: 'read',
+    running: (i) => `Writing an email to ${str(i.recipientName) || str(i.to) || 'them'}`,
+    async run(input) {
+      const to = str(input.to).trim()
+      const subject = str(input.subject).trim()
+      const body = str(input.body).trim()
+      if (!to || !subject || !body) return { content: 'An email needs who it goes to, a subject and a body.', isError: true }
+      const email: EmailDraft = {
+        to, subject, body,
+        style: str(input.style) || 'professional',
+        recipientName: str(input.recipientName) || undefined,
+        cardTitle: str(input.cardTitle) || undefined,
+        cardId: str(input.cardId) || undefined,
+        ctaText: str(input.ctaText) || undefined,
+        ctaUrl: str(input.ctaUrl) || undefined,
+        status: 'ready',
+      }
+      return {
+        content: `The draft to ${to} ("${subject}") is on their screen with a Send button. It has NOT been sent. Tell them it's ready to look over and send; don't read it out.`,
+        label: `Wrote an email to ${email.recipientName || to}`,
+        email,
+      }
+    },
+  }
+})()
 
 const suggestTool: AgentTool = {
   name: 'suggest',

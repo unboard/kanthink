@@ -3,7 +3,7 @@ import { resolveProviderKeys } from '@/lib/ai/keys'
 import { recordUsage } from '@/lib/usage'
 import { loadAccess } from '@/lib/voice/resolveReference'
 import { buildAgentPrompt } from '@/lib/kan/agent/prompt'
-import { agentTools, type ToolContext } from '@/lib/kan/agent/tools'
+import { agentTools, draftEmailTool, type ToolContext } from '@/lib/kan/agent/tools'
 import { runAgent } from '@/lib/kan/agent/run'
 import type { AgentEvent } from '@/lib/kan/agent/events'
 import { cityPrompt, cityTools } from '@/lib/kan/city/tools'
@@ -26,6 +26,8 @@ interface AgentRequest {
   sessionCardIds?: string[]
   timeZone?: string
   city?: { focus?: { channelId?: string; name?: string; kind?: string } | null }
+  /** They are talking, not typing: the reply is read aloud. */
+  voice?: boolean
 }
 
 export async function POST(request: Request) {
@@ -68,10 +70,12 @@ ${m.content}`
   const topics = await listTopics(userId).catch(() => [])
   const system = await buildAgentPrompt({ userId, name: session.user.name, readable: access.readable, timeZone: body.timeZone })
     + (body.city ? cityPrompt(body.city) : '')
+    + (body.voice ? '\n\n## They are talking to you\nThis is voice mode: your reply is read aloud while they watch the city. Answer in one to three short spoken sentences. No lists, headings, links or ids. Do the work with your tools as usual; the city shows it, so say what you did in a few words.' : '')
     + (topics.length ? `\n\n## What they've told you about their work\nHonor these: never build or run anything for what you only know about.\n${describeTopics(topics)}` : '')
   const tools = agentTools(ctx)
   // The city's own tools go before `suggest`, which is always last.
-  if (body.city) tools.splice(tools.length - 1, 0, ...cityTools)
+  // From the city, Kan can also write an email for them to send (a draft card, never sent by Kan).
+  if (body.city) tools.splice(tools.length - 1, 0, ...cityTools, draftEmailTool)
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream<Uint8Array>({

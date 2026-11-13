@@ -20,13 +20,25 @@ type Line = { role?: string; text?: string; data?: KanMessageData }
  * POST { messages } — add a finished turn (their line and Kan's reply).
  * POST { action: 'seen' } — they opened the thread.
  * POST { action: 'reach' } — have Kan look over what's new now, and speak if there's something.
+ * POST { action: 'emailSent', id, index } — they sent an email Kan drafted on that line.
  */
 export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   await ensureSchema()
   const userId = session.user.id
-  const body = await req.json().catch(() => ({})) as { action?: string; messages?: Line[] }
+  const body = await req.json().catch(() => ({})) as { action?: string; messages?: Line[]; id?: string; index?: number }
+  if (body.action === 'emailSent' && typeof body.id === 'string' && typeof body.index === 'number') {
+    const { db } = await import('@/lib/db')
+    const { kanMessages } = await import('@/lib/db/schema')
+    const { and, eq } = await import('drizzle-orm')
+    const row = await db.query.kanMessages.findFirst({ where: and(eq(kanMessages.id, body.id), eq(kanMessages.ownerId, userId)), columns: { data: true } })
+    const emails = row?.data?.emails
+    if (!emails?.[body.index]) return Response.json({ error: 'Not found' }, { status: 404 })
+    emails[body.index] = { ...emails[body.index], status: 'sent' }
+    await db.update(kanMessages).set({ data: { ...row!.data, emails } }).where(eq(kanMessages.id, body.id))
+    return Response.json({ ok: true })
+  }
   if (body.action === 'seen') { await markSeen(userId); return Response.json({ ok: true }) }
   if (body.action === 'reach') {
     const { reachOut } = await import('@/lib/kan/thread/reach')
@@ -47,6 +59,11 @@ function clean(d: KanMessageData): KanMessageData {
     memo: s(d.memo, 4000),
     error: s(d.error, 300),
     steps: Array.isArray(d.steps) ? d.steps.slice(0, 40).map((x) => ({ label: s(x.label, 200) ?? '', write: Boolean(x.write), href: s(x.href, 300), error: Boolean(x.error) })) : undefined,
+    emails: Array.isArray(d.emails) ? d.emails.slice(0, 4).map((x) => ({
+      to: s(x.to, 320) ?? '', subject: s(x.subject, 300) ?? '', body: s(x.body, 20_000) ?? '', style: s(x.style, 20),
+      recipientName: s(x.recipientName, 80), cardTitle: s(x.cardTitle, 200), cardId: s(x.cardId, 64), ctaText: s(x.ctaText, 80), ctaUrl: s(x.ctaUrl, 500),
+      status: (x.status === 'sent' || x.status === 'failed' ? x.status : 'ready') as 'ready' | 'sent' | 'failed',
+    })).filter((x) => x.to && x.subject) : undefined,
     suggestions: Array.isArray(d.suggestions) ? d.suggestions.slice(0, 4).map((x) => ({ label: s(x.label, 80) ?? '', prompt: s(x.prompt, 1000) ?? '' })) : undefined,
   }
 }

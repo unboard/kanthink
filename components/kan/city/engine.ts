@@ -738,6 +738,66 @@ export class CityEngine {
     }
   }
 
+  /**
+   * Something Kan carries: a card flies in an arc from Kan into a building (and lands
+   * with a pulse), or a letter rises from Kan and away over the city when an email goes.
+   * `where` is a channel id, or null for up and away.
+   */
+  courier(where: string | null, kind: 'card' | 'mail') {
+    if (!this.grid || !this.data) return;
+    const v = where ? this.plots.get(where) : undefined;
+    if (where && !v) return;
+    if (!this.kan) { if (where) this.pulse(where, { kanGoes: true }); return; }
+    const from = this.kan.obj.position.clone().setY(this.kan.obj.position.y + 3.5);
+    const to = v
+      ? new THREE.Vector3(v.center.x, GROUND_Y + v.built.top * 0.75, v.center.z)
+      : from.clone().add(new THREE.Vector3(8, 46, -14));
+    const mail = kind === 'mail';
+    const geo = mail ? new THREE.BoxGeometry(1.9, 0.14, 1.3) : new THREE.BoxGeometry(1.2, 0.1, 1.6);
+    const mat = new THREE.MeshBasicMaterial({ color: mail ? '#f8fafc' : '#c4b5fd', transparent: true, opacity: 1 });
+    const obj = new THREE.Mesh(geo, mat);
+    obj.position.copy(from);
+    this.scene.add(obj);
+    // A seal on the letter, a stripe on the card: enough to read at a distance.
+    const markGeo = mail ? new THREE.CircleGeometry(0.28, 16) : new THREE.PlaneGeometry(0.8, 0.14);
+    const markMat = new THREE.MeshBasicMaterial({ color: mail ? '#e11d48' : '#7c3aed', side: THREE.DoubleSide });
+    const mark = new THREE.Mesh(markGeo, markMat);
+    mark.rotation.x = -Math.PI / 2;
+    mark.position.y = 0.09;
+    obj.add(mark);
+    const tg = new THREE.OctahedronGeometry(0.22, 0);
+    const tm = new THREE.MeshBasicMaterial({ color: mail ? '#fde68a' : '#a78bfa', transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    const trail: THREE.Mesh[] = [];
+    const lift = v ? 9 + from.distanceTo(to) * 0.12 : 4;
+    let dropped = 0;
+    this.effects.push({
+      t: 0, life: mail ? 2.8 : 1.7,
+      update: (k, dt) => {
+        const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        obj.position.lerpVectors(from, to, e);
+        obj.position.y += Math.sin(Math.PI * e) * lift;
+        obj.rotation.y += dt * (mail ? 2.5 : 6);
+        obj.rotation.z = Math.sin(k * 14) * 0.25;
+        if (k - dropped > 0.035) {
+          dropped = k;
+          const s = new THREE.Mesh(tg, tm);
+          s.position.copy(obj.position);
+          this.scene.add(s);
+          trail.push(s);
+        }
+        trail.forEach((s, i) => s.scale.setScalar(Math.max(0.05, 1 - (trail.length - i) * 0.07)));
+        tm.opacity = 0.9 * (1 - k * 0.6);
+        if (!v) { const fade = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1; mat.opacity = fade; markMat.opacity = fade; markMat.transparent = true; }
+      },
+      done: () => {
+        obj.removeFromParent(); geo.dispose(); mat.dispose(); markGeo.dispose(); markMat.dispose();
+        for (const s of trail) s.removeFromParent();
+        tg.dispose(); tm.dispose();
+        if (where && v) this.pulse(where, { tone: 'write' });
+      },
+    });
+  }
+
   /** Put words in Kan's mouth for a little while: what it's doing for you right now. */
   kanSay(text: string | null, kicker = 'Kan', ms = 6000) {
     this.kanNote = text ? { text, kicker, until: performance.now() + ms } : null;

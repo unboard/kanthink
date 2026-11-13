@@ -2242,6 +2242,8 @@ export interface KanMessageData {
   suggestions?: { label: string; prompt: string }[]
   /** The inputs a reach-out was about (read:…, share:…), so they aren't raised twice. */
   refs?: string[]
+  /** Emails Kan drafted that turn, and whether they were sent. */
+  emails?: { to: string; subject: string; body: string; style?: string; recipientName?: string; cardTitle?: string; cardId?: string; ctaText?: string; ctaUrl?: string; status?: 'ready' | 'sending' | 'sent' | 'failed' }[]
   /** A link to open, for a reach-out about one page. */
   links?: { title: string; url: string }[]
   passId?: string

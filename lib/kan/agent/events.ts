@@ -3,6 +3,20 @@
  * writes it and the page that reads it.
  */
 
+/** An email Kan drafted. The person sends it; Kan never does. */
+export interface EmailDraft {
+  to: string
+  subject: string
+  body: string
+  style?: string
+  recipientName?: string
+  cardTitle?: string
+  cardId?: string
+  ctaText?: string
+  ctaUrl?: string
+  status?: 'ready' | 'sending' | 'sent' | 'failed'
+}
+
 export type AgentEvent =
   /** A trace line starting, or the same id finishing (later fields win). */
   | {
@@ -22,6 +36,8 @@ export type AgentEvent =
   /** A new model round began; text after it is a new paragraph. */
   | { t: 'break' }
   | { t: 'suggest'; options: { label: string; prompt: string }[] }
+  /** An email Kan wrote for them to look over and send (it never sends one itself). */
+  | { t: 'email'; id: string; draft: EmailDraft }
   /** What this turn did, for the next turn's history. */
   | { t: 'done'; memo?: string; cardIds?: string[] }
   | { t: 'error'; message: string }

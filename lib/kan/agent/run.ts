@@ -86,6 +86,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
     try {
       const out = await tool.run(input, ctx)
       if (out.suggestions?.length) send({ t: 'suggest', options: out.suggestions })
+      if (out.email) send({ t: 'email', id, draft: out.email })
       if (out.cardId && tool.kind === 'write') madeCards.push(out.cardId)
       const doneLabel = out.label ?? pastTense(label)
       if (!quiet) {

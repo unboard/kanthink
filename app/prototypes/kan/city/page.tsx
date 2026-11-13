@@ -13,6 +13,7 @@ import { FreewayView } from '@/components/kan/freeway/FreewayView';
 import { ZooView } from '@/components/kan/zoo/ZooView';
 import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
+import type { EmailDraft } from '@/lib/kan/agent/events';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { Census } from '@/components/kan/city/Census';
 import { PlayerSheet, Portrait, usePlayers } from '@/components/kan/city/PlayerSheet';
@@ -546,7 +547,11 @@ export default function CityPage() {
     if (ok !== false) setGather(null);
   };
 
-  // Whatever Kan does in the chat shows up in the city.
+  // Whatever Kan does in the chat shows up in the city: a card it makes flies into its
+  // building, a channel it sets up rises as a new building and lights up once it's there.
+  const arriving = useRef(new Map<string, string>());
+  const plotsRef = useRef(plots);
+  plotsRef.current = plots;
   const onStep = useCallback((s: ChatStep) => {
     const e = engine.current;
     if (!e) return;
@@ -554,11 +559,37 @@ export default function CityPage() {
     if (s.status === 'running' && s.write) { e.kanSay(s.label, 'Kan is on it', 20_000); e.kanInside(s.label, 20_000); }
     if (s.status === 'done') {
       if (s.write) e.kanInside(s.label, 5000);
-      if (where) e.pulse(where, { tone: s.write ? 'write' : 'read', kanGoes: s.write });
+      const known = where ? plotsRef.current.some((p) => p.channelId === where) : false;
+      if (where && !known && s.write) arriving.current.set(where, s.label);
+      else if (where && s.write && /\/card\//.test(s.href ?? '')) e.courier(where, 'card');
+      else if (where) e.pulse(where, { tone: s.write ? 'write' : 'read', kanGoes: s.write });
       else if (s.write) e.pulse('townhall', { kanGoes: true });
       if (s.write) { e.kanSay(s.label, 'Kan', 6000); reloadSoon(); }
     }
   }, [reloadSoon]);
+  // A building Kan just made: once the city has it, it rises, then lights up.
+  useEffect(() => {
+    if (!arriving.current.size) return;
+    for (const [id, label] of [...arriving.current]) {
+      const plot = plots.find((p) => p.channelId === id);
+      if (!plot) continue;
+      arriving.current.delete(id);
+      setTimeout(() => { engine.current?.pulse(id, { kanGoes: true }); engine.current?.kanSay(`New in town: ${plot.name}`, label, 7000); }, 900);
+    }
+  }, [plots]);
+  const onEmailDrafted = useCallback((d: EmailDraft) => {
+    engine.current?.kanSay(`A letter for ${d.recipientName || d.to} is ready. Send it when it looks right.`, 'Kan wrote', 9000);
+  }, []);
+  const onEmailSent = useCallback((d: EmailDraft) => {
+    engine.current?.courier(null, 'mail');
+    engine.current?.kanSay(`Sent to ${d.recipientName || d.to}`, 'Off it goes', 5000);
+  }, []);
+  // Voice mode: clear the way so the whole city is in view while you talk.
+  const onVoice = useCallback((on: boolean) => {
+    if (!on) return;
+    setPick(null); setBoard(null); setSide(null);
+    engine.current?.kanSay('I’m listening', 'Kan', 4000);
+  }, []);
 
   const ask = (prompt: string, prefill = false) => {
     if (!wide) { setPick(null); setBoard(null); }
@@ -1026,6 +1057,9 @@ export default function CityPage() {
           if (!wide) { setPick(null); setBoard(null); setSide(null); }
         }}
         onTurnEnd={reloadSoon}
+        onEmailDrafted={onEmailDrafted}
+        onEmailSent={onEmailSent}
+        onVoice={onVoice}
         stamp={data?.kanThread.latestAt}
         unseen={data?.kanThread.unseen ?? 0}
         onSeen={reloadSoon}

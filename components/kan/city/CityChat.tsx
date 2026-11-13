@@ -3,11 +3,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Check, ChevronDown, ExternalLink, Loader2, MapPin, Square, X } from 'lucide-react';
+import { ArrowUp, AudioLines, Check, ChevronDown, ExternalLink, Loader2, Mail, MapPin, Pencil, Send, Square, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { formatElapsed } from '@/components/kan/KanTrace';
-import type { AgentEvent } from '@/lib/kan/agent/events';
+import type { AgentEvent, EmailDraft } from '@/lib/kan/agent/events';
+import { useCityVoice, type VoicePhase } from './useCityVoice';
 import type { KanMessage } from '@/lib/kan/thread/store';
 
 /**
@@ -22,6 +23,10 @@ import type { KanMessage } from '@/lib/kan/thread/store';
  * cards to answer right there. Tapping Kan in the city opens it.
  *
  * The thread folds away to a single line, so the city stays the thing you look at.
+ *
+ * Voice mode (the waves button) is a hands-free conversation with the same Kan: the
+ * thread steps aside so the whole city shows while you talk, and what Kan does lands
+ * on the map as it happens. An email Kan writes comes up as a draft to send.
  */
 
 export interface ChatStep {
@@ -40,6 +45,7 @@ type Turn =
     id: string; sid?: string; role: 'kan'; text: string; steps: ChatStep[]; suggestions: { label: string; prompt: string }[]; memo?: string; error?: string; startedAt: number; endedAt?: number;
     /** Kan spoke first: something it found, or a plan to answer. */
     kind?: 'reach' | 'plan' | 'work'; passId?: string; links?: { title: string; url: string }[];
+    emails?: EmailDraft[];
   };
 
 /** A line from the server as a turn in the thread. */
@@ -51,7 +57,7 @@ function toTurn(m: KanMessage): Turn {
     id: m.id, sid: m.id, role: 'kan', text: m.text, memo: d.memo, error: d.error, startedAt: at, endedAt: at,
     steps: (d.steps ?? []).map((x, i) => ({ id: `${m.id}:${i}`, label: x.label, status: x.error ? 'error' : 'done', href: x.href, write: x.write, startedAt: at })),
     suggestions: d.suggestions ?? [],
-    kind: m.kind === 'chat' ? undefined : m.kind, passId: d.passId, links: d.links,
+    kind: m.kind === 'chat' ? undefined : m.kind, passId: d.passId, links: d.links, emails: d.emails,
   };
 }
 
@@ -92,7 +98,13 @@ export const CityChat = forwardRef<CityChatHandle, {
   onSeen?(): void;
   /** A plan's cards, under the line Kan announced it with. */
   renderPlan?(passId: string): ReactNode;
-}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight, stamp, unseen = 0, onSeen, renderPlan }, ref) {
+  /** Kan wrote an email for them to send. */
+  onEmailDrafted?(draft: EmailDraft): void;
+  /** They sent one. */
+  onEmailSent?(draft: EmailDraft): void;
+  /** Voice mode went on or off. */
+  onVoice?(on: boolean): void;
+}>(function CityChat({ focus, onClearFocus, onStep, onTurnStart, onTurnEnd, starters, rightInset = 0, leftInset = 0, compact, onHeight, stamp, unseen = 0, onSeen, renderPlan, onEmailDrafted, onEmailSent, onVoice }, ref) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [cardIds, setCardIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
@@ -104,8 +116,8 @@ export const CityChat = forwardRef<CityChatHandle, {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const cb = useRef({ onStep, onTurnStart, onTurnEnd });
-  cb.current = { onStep, onTurnStart, onTurnEnd };
+  const cb = useRef({ onStep, onTurnStart, onTurnEnd, onEmailDrafted, onEmailSent, onVoice });
+  cb.current = { onStep, onTurnStart, onTurnEnd, onEmailDrafted, onEmailSent, onVoice };
 
   useEffect(() => {
     try {
@@ -168,12 +180,13 @@ export const CityChat = forwardRef<CityChatHandle, {
   busyRef.current = busy;
   const focusRef = useRef(focus);
   focusRef.current = focus;
+  const voiceOn = useRef(false);
   const cardIdsRef = useRef(cardIds);
   cardIdsRef.current = cardIds;
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string): Promise<string | null> => {
     const content = text.trim();
-    if (!content || busyRef.current) return;
+    if (!content || busyRef.current) return null;
     setDraft('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
     const f = focusRef.current;
@@ -182,7 +195,7 @@ export const CityChat = forwardRef<CityChatHandle, {
     const kanId = uid();
     const kan: Turn = { id: kanId, role: 'kan', text: '', steps: [], suggestions: [], startedAt: Date.now() };
     // What the turn comes to, kept here too, to save once it's over.
-    const acc = { text: '', steps: [] as ChatStep[], suggestions: [] as { label: string; prompt: string }[], memo: undefined as string | undefined, error: undefined as string | undefined };
+    const acc = { text: '', steps: [] as ChatStep[], suggestions: [] as { label: string; prompt: string }[], memo: undefined as string | undefined, error: undefined as string | undefined, emails: [] as EmailDraft[] };
     const history = [...turnsRef.current, user]
       .filter((t) => t.role === 'user' || !t.error || t.text)
       .map((t) => ({
@@ -207,6 +220,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           sessionCardIds: cardIdsRef.current,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           city: { focus: f },
+          voice: voiceOn.current,
         }),
         signal: controller.signal,
       });
@@ -249,6 +263,10 @@ export const CityChat = forwardRef<CityChatHandle, {
             const at = acc.steps.findIndex((x) => x.id === e.id);
             if (at < 0) acc.steps.push(step); else acc.steps[at] = { ...acc.steps[at], ...step };
             cb.current.onStep?.(step);
+          } else if (e.t === 'email') {
+            acc.emails.push(e.draft);
+            patchKan(kanId, (t) => ({ ...t, emails: [...(t.emails ?? []), e.draft] }));
+            cb.current.onEmailDrafted?.(e.draft);
           } else if (e.t === 'suggest') {
             acc.suggestions = e.options;
             patchKan(kanId, (t) => ({ ...t, suggestions: e.options }));
@@ -275,7 +293,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: [
             { role: 'you', text: content, data: { about } },
-            { role: 'kan', text: acc.text, data: { memo: acc.memo, error: acc.error, suggestions: acc.suggestions, steps: acc.steps.map((x) => ({ label: x.label, write: x.write, href: x.href, error: x.status === 'error' })) } },
+            { role: 'kan', text: acc.text, data: { memo: acc.memo, error: acc.error, suggestions: acc.suggestions, emails: acc.emails.length ? acc.emails : undefined, steps: acc.steps.map((x) => ({ label: x.label, write: x.write, href: x.href, error: x.status === 'error' })) } },
           ] }),
         });
         const saved = r.ok ? ((await r.json()).messages ?? []) as KanMessage[] : [];
@@ -284,7 +302,43 @@ export const CityChat = forwardRef<CityChatHandle, {
       setBusy(false);
       cb.current.onTurnEnd?.();
     }
+    return acc.error ? (acc.error === 'Stopped' ? null : acc.error) : acc.text || (acc.emails.length ? 'The email is ready for you to look over and send.' : null);
   }, [patchKan]);
+
+  // An email Kan drafted, sent from its card. Kan hears about it on the next turn.
+  const sendEmail = useCallback(async (turnId: string, index: number, draft: EmailDraft) => {
+    const mark = (status: EmailDraft['status']) => patchKan(turnId, (t) => ({
+      ...t,
+      emails: (t.emails ?? []).map((x, i) => (i === index ? { ...draft, status } : x)),
+      memo: status === 'sent' ? `${t.memo ? `${t.memo}\n` : ''}They sent the email to ${draft.to} ("${draft.subject}").` : t.memo,
+    }));
+    mark('sending');
+    try {
+      const r = await fetch('/api/voice/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_email', args: {
+          to: draft.to, subject: draft.subject, body: draft.body, style: draft.style ?? 'professional',
+          recipientName: draft.recipientName ?? '', cardTitle: draft.cardTitle ?? '', cardId: draft.cardId ?? '',
+          ctaText: draft.ctaText ?? '', ctaUrl: draft.ctaUrl ?? '',
+        } }),
+      });
+      const result = String((await r.json().catch(() => ({}))).result ?? '');
+      const ok = r.ok && !/^(Failed|Email error|Email service not configured)/.test(result);
+      mark(ok ? 'sent' : 'failed');
+      if (!ok) return;
+      cb.current.onEmailSent?.(draft);
+      const sid = turnsRef.current.find((t) => t.id === turnId)?.sid;
+      if (sid) void fetch(THREAD, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'emailSent', id: sid, index }) }).catch(() => {});
+    } catch {
+      mark('failed');
+    }
+  }, [patchKan]);
+
+  const voice = useCityVoice({
+    onUtterance: (text) => send(text),
+    onCancelThinking: () => abortRef.current?.abort(),
+  });
+  useEffect(() => { voiceOn.current = voice.active; cb.current.onVoice?.(voice.active); }, [voice.active]);
 
   useImperativeHandle(ref, () => ({
     ask: (prompt) => void send(prompt),
@@ -308,7 +362,9 @@ export const CityChat = forwardRef<CityChatHandle, {
     ? running?.label ?? (last?.text ? last.text.split('\n')[0] : 'Thinking')
     : last?.error ?? (last?.text ? last.text.replace(/[#*_`>]/g, '').split('\n').find((l) => l.trim()) : null);
   const chips = !busy && last?.endedAt && last.suggestions.length ? last.suggestions : turns.length ? [] : starters;
-  const showThread = open && !compact && turns.length > 0;
+  const showThread = open && !compact && turns.length > 0 && !voice.active;
+  // In voice mode, drafts still waiting to go out stay up where you can send them.
+  const pendingEmails = voice.active && last ? (last.emails ?? []).map((d, i) => ({ d, i })).filter(({ d }) => d.status !== 'sent') : [];
 
   return (
     <div
@@ -346,6 +402,7 @@ export const CityChat = forwardRef<CityChatHandle, {
                   {t.links?.map((l) => (
                     <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[12.5px] text-violet-300 hover:text-violet-200"><ExternalLink className="h-3.5 w-3.5 flex-shrink-0" /> <span className="truncate">{l.title}</span></a>
                   ))}
+                  {t.emails?.map((d, i) => <EmailCard key={i} draft={d} onSend={(x) => void sendEmail(t.id, i, x)} />)}
                   {t.passId && renderPlan?.(t.passId)}
                   {/* Replies to something Kan raised, until the conversation moves on (the last turn's show below the thread). */}
                   {(t.kind === 'reach' || t.kind === 'work') && t !== last && t.suggestions.length > 0 && turns[turns.indexOf(t) + 1]?.role !== 'user' && (
@@ -361,7 +418,7 @@ export const CityChat = forwardRef<CityChatHandle, {
         )}
 
         {/* Only while Kan is working: the last reply is in the thread, which opens when you tap the input. */}
-        {!showThread && !compact && busy && glance && (
+        {!showThread && !compact && !voice.active && busy && glance && (
           <button
             onClick={() => setOpen(true)}
             className="mx-auto mb-2 flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-neutral-950/80 px-3.5 py-1.5 text-[13px] text-neutral-200 shadow-lg backdrop-blur-xl hover:bg-neutral-900/90"
@@ -371,7 +428,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           </button>
         )}
 
-        {chips.length > 0 && !compact && (
+        {chips.length > 0 && !compact && !voice.active && (
           <div className="no-scrollbar mb-2 flex gap-2 overflow-x-auto px-0.5">
             {chips.map((s) => (
               <button
@@ -386,6 +443,15 @@ export const CityChat = forwardRef<CityChatHandle, {
           </div>
         )}
 
+        {voice.error && !voice.active && (
+          <p className="mb-2 rounded-2xl bg-rose-950/80 px-3.5 py-2 text-[13px] text-rose-200 backdrop-blur-xl">{voice.error}</p>
+        )}
+        {voice.active && !compact && (
+          <VoiceCaption phase={voice.phase} heard={voice.heard} turn={last} running={running?.label} emails={pendingEmails} onSend={(i, d) => { if (last) void sendEmail(last.id, i, d); }} />
+        )}
+        {voice.active ? (
+          <VoiceBar phase={voice.phase} level={voice.level} step={running?.label} onTap={voice.interrupt} onEnd={voice.stop} onType={() => { voice.stop(); setOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }} />
+        ) : (
         <form
           onSubmit={(e) => { e.preventDefault(); void send(draft); }}
           className="flex items-end gap-1.5 rounded-[26px] border border-white/12 bg-neutral-950/85 py-1.5 pl-2 pr-1.5 shadow-2xl backdrop-blur-xl focus-within:border-violet-400/50"
@@ -434,6 +500,11 @@ export const CityChat = forwardRef<CityChatHandle, {
             }}
             className="mb-0.5 !h-9 !w-9 !rounded-full text-violet-300 hover:bg-white/5"
           />
+          {!draft.trim() && !busy && (
+            <button type="button" onClick={() => { setOpen(false); void voice.start(); }} aria-label="Talk with Kan" title="Voice mode: talk with Kan while you watch the city" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-violet-300 hover:bg-white/5">
+              <AudioLines className="h-[18px] w-[18px]" />
+            </button>
+          )}
           {busy ? (
             <button type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-800 text-neutral-200 hover:bg-neutral-700">
               <Square className="h-3.5 w-3.5 fill-current" />
@@ -444,10 +515,115 @@ export const CityChat = forwardRef<CityChatHandle, {
             </button>
           )}
         </form>
+        )}
       </div>
     </div>
   );
 });
+
+const PHASE: Record<VoicePhase, string> = {
+  off: '', starting: 'Starting', listening: 'Listening', hearing: 'Hearing you', transcribing: 'Got it', thinking: 'Kan is on it', speaking: 'Kan',
+};
+
+/** The bar at the bottom while you talk: what Kan is doing, how loud you are, and a way out. */
+function VoiceBar({ phase, level, step, onTap, onEnd, onType }: { phase: VoicePhase; level: number; step?: string; onTap(): void; onEnd(): void; onType(): void }) {
+  const ear = phase === 'listening' || phase === 'hearing';
+  const hint = phase === 'speaking' ? 'Tap to cut in' : phase === 'thinking' ? (step ?? 'Tap to stop') : ear ? 'Say what you need' : '';
+  return (
+    <div className="flex items-center gap-2 rounded-[26px] border border-violet-400/40 bg-neutral-950/85 py-1.5 pl-1.5 pr-1.5 shadow-2xl backdrop-blur-xl">
+      <button onClick={onTap} aria-label={phase === 'speaking' ? 'Stop Kan talking' : phase === 'thinking' ? 'Stop Kan' : 'Kan is listening'} className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/20">
+        <span className="absolute inset-0 rounded-full bg-violet-400/30 transition-transform duration-75" style={{ transform: `scale(${ear ? 1 + level * 0.6 : phase === 'speaking' ? 1.15 : 1})` }} />
+        {phase === 'thinking' || phase === 'transcribing' || phase === 'starting'
+          ? <Loader2 className="relative h-4 w-4 animate-spin text-violet-200" />
+          : <KanthinkIcon size={20} className="relative text-violet-200" />}
+      </button>
+      <button onClick={onTap} className="min-w-0 flex-1 py-0.5 text-left">
+        <span className="block text-[11px] font-semibold uppercase tracking-wider text-violet-300">{PHASE[phase]}</span>
+        <span className="block truncate text-[13.5px] text-neutral-200">{hint}</span>
+      </button>
+      <span className="flex h-6 flex-shrink-0 items-center gap-[3px] pr-1" aria-hidden>
+        {[0.5, 0.9, 1, 0.7, 0.4].map((w, i) => (
+          <span key={i} className={`w-[3px] rounded-full ${phase === 'speaking' ? 'animate-pulse bg-violet-300' : 'bg-violet-400/80'}`} style={{ height: `${Math.max(4, (ear ? level : phase === 'speaking' ? 0.6 : 0.1) * w * 24)}px`, animationDelay: `${i * 120}ms` }} />
+        ))}
+      </span>
+      <button onClick={onType} aria-label="Type instead" title="Type instead" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-neutral-400 hover:bg-white/5 hover:text-neutral-100"><Pencil className="h-4 w-4" /></button>
+      <button onClick={onEnd} aria-label="End voice mode" className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-800 text-neutral-200 hover:bg-neutral-700"><X className="h-4 w-4" /></button>
+    </div>
+  );
+}
+
+/** Above the bar while you talk: what you said, and Kan's answer as it comes, small enough to keep the city in view. */
+function VoiceCaption({ phase, heard, turn, running, emails, onSend }: {
+  phase: VoicePhase; heard: string | null; turn?: Extract<Turn, { role: 'kan' }>; running?: string;
+  emails: { d: EmailDraft; i: number }[]; onSend(i: number, d: EmailDraft): void;
+}) {
+  const reply = turn?.text ? turn.text.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[#*_`>]/g, '').trim() : '';
+  const working = phase === 'thinking';
+  const done = turn?.endedAt ? turn.steps.filter((s) => s.write && s.status === 'done').slice(-3) : [];
+  if (!heard && !reply && !emails.length && !running) return null;
+  return (
+    <div className="mb-2 space-y-2">
+      {emails.map(({ d, i }) => <EmailCard key={i} draft={d} onSend={(x) => onSend(i, x)} floating />)}
+      {(heard || reply || running) && (
+        <div className="rounded-2xl border border-white/10 bg-neutral-950/70 px-3.5 py-2.5 shadow-xl backdrop-blur-xl">
+          {heard && <p className="truncate text-[12.5px] text-neutral-400">“{heard}”</p>}
+          {working && running && <p className="mt-1 flex items-center gap-1.5 text-[13px] text-violet-200"><Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" /> <span className="truncate">{running}</span></p>}
+          {reply && <p className="mt-1 line-clamp-3 text-[14px] leading-snug text-neutral-100">{reply}</p>}
+          {!working && done.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {done.map((s) => <span key={s.id} className="flex max-w-full items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[11.5px] text-violet-200"><Check className="h-3 w-3 flex-shrink-0" /><span className="truncate">{s.label}</span></span>)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** An email Kan wrote: read it, change it, send it. Kan never sends one itself. */
+function EmailCard({ draft, onSend, floating }: { draft: EmailDraft; onSend(d: EmailDraft): void; floating?: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(draft.subject);
+  const [body, setBody] = useState(draft.body);
+  const [open, setOpen] = useState(false);
+  const status = draft.status ?? 'ready';
+  const sent = status === 'sent';
+  return (
+    <div className={`overflow-hidden rounded-2xl border ${sent ? 'border-emerald-400/30' : 'border-amber-200/25'} ${floating ? 'bg-neutral-950/85 shadow-xl backdrop-blur-xl' : 'bg-white/[0.04]'}`}>
+      <div className="flex items-center gap-2 border-b border-white/5 px-3.5 py-2">
+        <Mail className={`h-4 w-4 flex-shrink-0 ${sent ? 'text-emerald-300' : 'text-amber-200'}`} />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-neutral-400">To <span className="text-neutral-200">{draft.recipientName ? `${draft.recipientName} · ` : ''}{draft.to}</span></span>
+        {sent ? <span className="flex items-center gap-1 text-[12px] text-emerald-300"><Check className="h-3.5 w-3.5" /> Sent</span>
+          : status === 'failed' ? <span className="text-[12px] text-rose-300">Didn’t send</span> : null}
+      </div>
+      <div className="px-3.5 py-2.5">
+        {editing ? (
+          <div className="space-y-2">
+            <input value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Subject" className="w-full rounded-lg bg-white/5 px-2.5 py-1.5 text-[13.5px] font-medium text-neutral-100 focus:outline-none focus:ring-1 focus:ring-violet-400/60" />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} aria-label="Email" className="w-full resize-y rounded-lg bg-white/5 px-2.5 py-1.5 text-[13px] leading-relaxed text-neutral-200 focus:outline-none focus:ring-1 focus:ring-violet-400/60" />
+          </div>
+        ) : (
+          <button onClick={() => setOpen((o) => !o)} className="block w-full text-left">
+            <p className="text-[13.5px] font-medium text-neutral-100">{subject}</p>
+            <p className={`mt-0.5 whitespace-pre-wrap text-[13px] leading-relaxed text-neutral-400 ${open ? '' : 'line-clamp-2'}`}>{body.replace(/[#*_`>]/g, '')}</p>
+          </button>
+        )}
+        {!sent && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <button
+              disabled={status === 'sending'}
+              onClick={() => { setEditing(false); onSend({ ...draft, subject, body }); }}
+              className="flex items-center gap-1.5 rounded-full bg-violet-600 px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-violet-500 disabled:opacity-60"
+            >
+              {status === 'sending' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} {status === 'failed' ? 'Try again' : 'Send'}
+            </button>
+            <button onClick={() => setEditing((e) => !e)} className="rounded-full border border-white/15 px-3 py-1.5 text-[13px] text-neutral-200 hover:bg-white/5">{editing ? 'Done' : 'Edit'}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** What Kan did: while it works, every step; after, reads fold away and changes stay. */
 function Steps({ turn, now, open, onToggle }: { turn: Extract<Turn, { role: 'kan' }>; now: number; open: boolean; onToggle(): void }) {
