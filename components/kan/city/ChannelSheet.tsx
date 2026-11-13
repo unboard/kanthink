@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
-import { AppWindow, ArrowLeft, ArrowUpRight, Check, CheckSquare, Loader2, MessageSquare, Plus, Send, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, ArrowUpRight, Check, CheckSquare, Loader2, MessageSquare, Plus, Send, Wand2, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { CardChat } from '@/components/board/CardChat';
 import { useStore } from '@/lib/store';
@@ -135,6 +135,11 @@ export function ChannelSheet(props: {
           <h2 className="truncate text-[15px] font-semibold">{board?.channel.name ?? name}</h2>
           <p className="text-[11px] text-neutral-500">{board ? `${total} card${total === 1 ? '' : 's'}` : 'Opening…'}</p>
         </div>
+        {Boolean(board?.styles) && (
+          <Link href={`/styles/${channelId}`} className="flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-1 text-[11px] text-violet-200 hover:bg-violet-500/25">
+            <Wand2 className="h-3 w-3" /> Style playground
+          </Link>
+        )}
         <Link href={`/channel/${channelId}`} className="flex items-center gap-0.5 rounded-full px-2 py-1 text-[11px] text-neutral-500 hover:text-neutral-300">
           Full board <ArrowUpRight className="h-3 w-3" />
         </Link>

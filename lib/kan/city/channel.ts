@@ -3,6 +3,7 @@ import { cards, channels, columns, playgroundApps, tasks, users } from '@/lib/db
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { inBucket } from '@/lib/db/cardBuckets'
 import { videosIn } from './watch'
+import { templateOf } from '@/lib/styles/library'
 
 /**
  * A channel's board, lean enough to draw in a sheet over Kan City.
@@ -57,6 +58,8 @@ export async function channelBoard(channelId: string, canEdit: boolean) {
     channel: { ...channel, canEdit },
     // YouTube videos shared to the channel, for the TV in its building.
     videos: videosIn(rows),
+    // Prompt cards: the channel can open as a style playground (/styles/[id]).
+    styles: rows.filter((r) => templateOf(((r.messages ?? []) as Message[]).map((m) => m.content).join('\n'))).length,
     columns: cols.map((c) => {
       const list = byColumn.get(c.id) ?? []
       return {
