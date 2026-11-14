@@ -165,7 +165,10 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
     const cost = thinkingCost(result.model, result.usage) + spend.builds
     if (key.source !== 'byok') await recordUsage(owner.id, 'channel-bot').catch(() => {})
     const why = thinking + lastRound >= runCap ? `this run reached its cap ($${(runCap / 100_000).toFixed(2)})` : room.message
-    const summary = (result.text.trim() || 'Finished without a report.') + (result.stopped ? `\n\nStopped early: ${why}.` : '')
+    // Cut off before it could write a report: say what it did, from its own steps.
+    const did = steps.filter((s) => s.write && s.status === 'done').map((s) => s.label)
+    const fallback = did.length ? `Did ${did.length === 1 ? 'one thing' : `${did.length} things`} before stopping:\n${did.map((l) => `- ${l}`).join('\n')}` : 'Finished without a report.'
+    const summary = (result.text.trim() || fallback) + (result.stopped ? `\n\nStopped early: ${why}.` : '')
     const out = await finish('done', {
       steps, summary, asks: ctx.asks, costMillicents: cost, buildMillicents: spend.builds, model: result.model,
       inputTokens: result.usage.inputTokens, cachedTokens: result.usage.cachedInputTokens ?? 0, outputTokens: result.usage.outputTokens,

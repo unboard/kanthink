@@ -1363,7 +1363,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
           <ShroomBot seed={hash(p.channelId)} status={p.bot.status} size={40} />
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-medium text-neutral-200">{p.resident.name}</p>
-            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}` : 'Lives here, off duty. Put it to work and it runs the channel on its own.'}</p>
+            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}${p.bot.nextRunAt ? ` · next ${p.bot.nextRunAt - Date.now() < 86_400_000 ? clock(Math.max(p.bot.nextRunAt, Date.now())) : day(p.bot.nextRunAt)}` : ''}` : 'Lives here, off duty. Put it to work and it runs the channel on its own.'}</p>
           </div>
           <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] ${s.pill}`}>{s.label}</span>
         </div>
