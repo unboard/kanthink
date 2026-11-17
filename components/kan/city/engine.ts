@@ -70,7 +70,12 @@ interface Walker {
   phase: number;
   /** Bots go in when they reach work. */
   inside?: boolean;
+  /** Eased nudge away from other bots, so two never stand in one spot. */
+  sep?: Vec;
 }
+
+/** How far apart two bots' centers keep: a little more than a body's width at city scale. */
+const PERSONAL_SPACE = 2.4;
 
 interface Citizen {
   plotId: string;
@@ -1915,6 +1920,7 @@ export class CityEngine {
     this.stepField(t, dt);
 
     const r = Math.random;
+    this.keepApart(dt);
     // Bots.
     for (const c of this.citizens.values()) {
       const w = c.walker;
@@ -2036,6 +2042,42 @@ export class CityEngine {
   };
 
   /**
+   * Bots never share a spot: any two closer than PERSONAL_SPACE ease apart, each
+   * taking half. Measured on where they mean to be (their path and lane), so the
+   * nudge never feeds back into itself, and it eases so nobody jumps.
+   */
+  private keepApart(dt: number) {
+    const live = [...this.citizens.values()].filter((c) => c.walker.obj.visible && !c.walker.inside);
+    const want = new Map<Citizen, Vec>(live.map((c) => [c, { x: 0, z: 0 }]));
+    for (let i = 0; i < live.length; i++) {
+      const a = live[i].walker;
+      for (let j = i + 1; j < live.length; j++) {
+        const b = live[j].walker;
+        const ax = a.pos.x + a.off.x, az = a.pos.z + a.off.z, bx = b.pos.x + b.off.x, bz = b.pos.z + b.off.z;
+        let dx = ax - bx, dz = az - bz;
+        let d = Math.hypot(dx, dz);
+        if (d >= PERSONAL_SPACE) continue;
+        // Exactly on top of each other: part along a direction their ids settle.
+        if (d < 0.001) { const t = (hash(live[i].plotId + live[j].plotId) % 628) / 100; dx = Math.cos(t); dz = Math.sin(t); d = 1; }
+        const push = (PERSONAL_SPACE - Math.min(d, PERSONAL_SPACE)) / 2;
+        const wa = want.get(live[i])!, wb = want.get(live[j])!;
+        wa.x += (dx / d) * push; wa.z += (dz / d) * push;
+        wb.x -= (dx / d) * push; wb.z -= (dz / d) * push;
+      }
+    }
+    const k = Math.min(1, dt * 4);
+    for (const c of this.citizens.values()) {
+      const w = c.walker;
+      const t = want.get(c) ?? { x: 0, z: 0 };
+      const len = Math.hypot(t.x, t.z);
+      if (len > PERSONAL_SPACE) { t.x *= PERSONAL_SPACE / len; t.z *= PERSONAL_SPACE / len; }
+      const sep = w.sep ?? (w.sep = { x: 0, z: 0 });
+      sep.x += (t.x - sep.x) * k;
+      sep.z += (t.z - sep.z) * k;
+    }
+  }
+
+  /**
    * Move a walker along its path; returns whether it moved. Its place on the road
    * line is kept apart from its lane, so routes stay exact while people spread out
    * and cars keep to the right.
@@ -2065,7 +2107,7 @@ export class CityEngine {
       w.off.x += (wantX - w.off.x) * Math.min(1, dt * 6);
       w.off.z += (wantZ - w.off.z) * Math.min(1, dt * 6);
     }
-    w.obj.position.set(w.pos.x + w.off.x, y, w.pos.z + w.off.z);
+    w.obj.position.set(w.pos.x + w.off.x + (w.sep?.x ?? 0), y, w.pos.z + w.off.z + (w.sep?.z ?? 0));
     return moving;
   }
 

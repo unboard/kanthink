@@ -50,7 +50,8 @@ function facadeTextures(wall: string, lit: number, style: 'grid' | 'band' | 'gla
   const key = `${wall}|${lit.toFixed(2)}|${style}`;
   const hit = texCache.get(key);
   if (hit) return hit;
-  const S = 128;
+  // 256px per 4x4 windows: room for frames, mullions, sills and a glint on the glass.
+  const S = 256;
   const base = document.createElement('canvas');
   base.width = base.height = S;
   const glow = document.createElement('canvas');
@@ -62,22 +63,53 @@ function facadeTextures(wall: string, lit: number, style: 'grid' | 'band' | 'gla
   g.fillStyle = '#000';
   g.fillRect(0, 0, S, S);
   const r = rng(key.length * 7919 + Math.round(lit * 1000));
-  const cols = style === 'glass' ? 4 : 4;
+  // A faint weathering, so a big wall isn't one flat color.
+  for (let i = 0; i < 90; i++) {
+    b.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.05)';
+    b.fillRect(r() * S, r() * S, 6 + r() * 26, 2 + r() * 10);
+  }
+  const cols = 4;
   const rows = 4;
   const cw = S / cols, rh = S / rows;
+  // A floor line under each storey.
+  if (style !== 'glass') for (let j = 0; j < rows; j++) { b.fillStyle = 'rgba(0,0,0,0.10)'; b.fillRect(0, (j + 1) * rh - 3, S, 3); b.fillStyle = 'rgba(255,255,255,0.12)'; b.fillRect(0, (j + 1) * rh - 5, S, 2); }
+  const glass = (x: number, y: number, w: number, h: number, on: boolean) => {
+    const grad = b.createLinearGradient(x, y, x + w * 0.4, y + h);
+    if (on) { grad.addColorStop(0, '#ffe9b0'); grad.addColorStop(1, '#f6c46a'); }
+    else { grad.addColorStop(0, style === 'glass' ? '#9fb8dc' : '#8ea6c8'); grad.addColorStop(0.45, style === 'glass' ? '#4d618f' : '#3f4d72'); grad.addColorStop(1, '#2c3554'); }
+    b.fillStyle = grad;
+    b.fillRect(x, y, w, h);
+    // A diagonal glint across the pane.
+    b.fillStyle = on ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.22)';
+    b.beginPath(); b.moveTo(x + w * 0.15, y + h); b.lineTo(x + w * 0.45, y); b.lineTo(x + w * 0.6, y); b.lineTo(x + w * 0.3, y + h); b.fill();
+    if (on) { g.fillStyle = '#fff'; g.fillRect(x, y, w, h); }
+  };
   for (let i = 0; i < cols; i++) {
     for (let j = 0; j < rows; j++) {
       const on = r() < lit;
-      let x = i * cw + cw * 0.22, y = j * rh + rh * 0.24, w = cw * 0.56, h = rh * 0.52;
-      if (style === 'band') { x = i * cw; w = cw; y = j * rh + rh * 0.3; h = rh * 0.42; }
-      if (style === 'glass') { x = i * cw + 2; y = j * rh + 2; w = cw - 4; h = rh - 4; }
-      b.fillStyle = on ? '#ffd88a' : style === 'glass' ? '#4a5a86' : '#3d4566';
-      b.fillRect(x, y, w, h);
-      if (on) { g.fillStyle = '#fff'; g.fillRect(x, y, w, h); }
-      if (style !== 'glass' && style !== 'band') {
-        b.fillStyle = 'rgba(255,255,255,0.18)';
-        b.fillRect(x, y + h - 2, w, 2);
+      if (style === 'glass') {
+        // Curtain wall: big panes, thin dark mullions.
+        glass(i * cw + 3, j * rh + 3, cw - 6, rh - 6, on);
+        continue;
       }
+      if (style === 'band') {
+        glass(i * cw, j * rh + rh * 0.3, cw, rh * 0.42, on);
+        b.fillStyle = 'rgba(0,0,0,0.25)';
+        b.fillRect(i * cw, j * rh + rh * 0.3, 2, rh * 0.42);
+        continue;
+      }
+      const x = i * cw + cw * 0.2, y = j * rh + rh * 0.2, w = cw * 0.6, h = rh * (style === 'shop' ? 0.62 : 0.56);
+      // Frame, pane, a cross of mullions, and a sill catching the light.
+      b.fillStyle = 'rgba(40,36,48,0.55)';
+      b.fillRect(x - 3, y - 3, w + 6, h + 6);
+      glass(x, y, w, h, on);
+      b.fillStyle = 'rgba(245,242,236,0.85)';
+      b.fillRect(x + w / 2 - 1.5, y, 3, h);
+      b.fillRect(x, y + h * 0.42, w, 3);
+      b.fillStyle = 'rgba(255,255,255,0.55)';
+      b.fillRect(x - 5, y + h + 3, w + 10, 4);
+      b.fillStyle = 'rgba(0,0,0,0.18)';
+      b.fillRect(x - 5, y + h + 7, w + 10, 2);
     }
   }
   const make = (c: HTMLCanvasElement) => {
@@ -114,7 +146,47 @@ export function windowBox(w: number, h: number, d: number, wall: string, roof: s
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [sx, sx, top, top, sz, sz]);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  // Remembered so the building can be finished around it: a base, a parapet.
+  mesh.userData.facade = { w, h, d, wall, roof };
   return mesh;
+}
+
+/** A color a step darker or lighter, for trim. */
+function shade(hex: string, k: number) {
+  const c = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s, THREE.MathUtils.clamp(hsl.l + k, 0, 1));
+  return `#${c.getHexString()}`;
+}
+
+/**
+ * Finish a facade box the way real buildings are finished: a stone base where it
+ * meets the ground, a cornice and parapet around the roof, and (on a flat roof
+ * with room) a couple of rooftop units. Small things, but they're what make a box
+ * read as a building.
+ */
+function finishFacade(g: THREE.Group, m: THREE.Mesh, r: () => number, opts: { parapet: boolean; units: boolean; grounded: boolean }) {
+  const f = m.userData.facade as { w: number; h: number; d: number; wall: string; roof: string };
+  const { x, y, z } = m.position;
+  const bottom = y - f.h / 2, topY = y + f.h / 2;
+  if (opts.grounded && bottom < 0.8) box(g, f.w + 0.16, 0.45, f.d + 0.16, mat(shade(f.wall, -0.16)), x, bottom, z, false);
+  if (!opts.parapet) return;
+  const trim = mat(shade(f.wall, 0.08));
+  // The cornice, a lip just proud of the wall.
+  box(g, f.w + 0.24, 0.16, f.d + 0.24, mat(shade(f.wall, -0.1)), x, topY - 0.16, z, false);
+  // The parapet: four low walls, never a slab (a slab level with the roof flickers).
+  const t = 0.18, ph = 0.38;
+  box(g, f.w + 0.24, ph, t, trim, x, topY, z + f.d / 2 + 0.03, false);
+  box(g, f.w + 0.24, ph, t, trim, x, topY, z - f.d / 2 - 0.03, false);
+  box(g, t, ph, f.d, trim, x + f.w / 2 + 0.03, topY, z, false);
+  box(g, t, ph, f.d, trim, x - f.w / 2 - 0.03, topY, z, false);
+  if (opts.units && f.w > 3.5 && f.d > 3.5) {
+    const unit = mat('#c9ccd3');
+    box(g, 1.1, 0.6, 0.8, unit, x - f.w * 0.28, topY, z - f.d * 0.28);
+    box(g, 0.9, 0.08, 0.9, mat('#8d929c'), x - f.w * 0.28, topY + 0.6, z - f.d * 0.28, false);
+    if (r() < 0.6) cyl(g, 0.16, 0.16, 0.7, mat('#a7acb5'), x - f.w * 0.05, topY, z - f.d * 0.32, 8);
+  }
 }
 
 const signCache = new Map<string, THREE.MeshStandardMaterial>();
@@ -755,6 +827,17 @@ export function building(kind: Archetype, o: BuildOpts): Built {
       top = h + 2;
       break;
     }
+  }
+
+  // Finish every facade: a base, and a cornice and parapet where the roof is flat
+  // and nothing else (a gable, a slab, a sawtooth) already finishes it.
+  const sloped = new Set<Archetype>(['library', 'school', 'house', 'station', 'factory', 'bank', 'office', 'postoffice']);
+  const units = new Set<Archetype>(['printshop', 'clinic', 'cafe', 'garage']);
+  let unitsDone = false;
+  for (const m of [...g.children]) {
+    if (!(m as THREE.Mesh).userData?.facade) continue;
+    finishFacade(g, m as THREE.Mesh, r, { parapet: !sloped.has(kind), units: units.has(kind) && !unitsDone, grounded: true });
+    unitsDone = true;
   }
 
   // A lamp post and a tree or two on every lot that isn't already all garden.
