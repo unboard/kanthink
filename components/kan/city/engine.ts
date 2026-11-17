@@ -13,6 +13,7 @@ import {
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
+import { buildField, sproutView, stepSprout, type Field, type SproutView } from './field';
 import { decorate, THEME_COLORS } from './themes';
 import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePet, type InsidePick, type TvShow } from './inside';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
@@ -157,7 +158,7 @@ export interface PlayerKit {
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
 /** The place you're next to in first person: a building, or an app on the Strip. */
-export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo'; id: string; name: string }
+export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo' | 'sprout'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -245,6 +246,15 @@ export class CityEngine {
     glider: { obj: THREE.Object3D; x: number; y: number; z: number; heading: number; speed: number; t: number } | null;
   } | null = null;
   private strip: Strip | null = null;
+  /** The Sprout Field, out past the west edge of town. */
+  private field: Field | null = null;
+  private sproutViews = new Map<string, SproutView & { label: HTMLDivElement; proxy: THREE.Mesh; slot: number }>();
+  private leavingSprouts: SproutView[] = [];
+  private fieldLayer = new THREE.Group();
+  /** Every resident ever drawn, so only a bot that's truly new arrives by cab. */
+  private seenCitizens = new Set<string>();
+  /** When a sprout last left for the city, so its cab comes in from the field. */
+  private sproutLeftAt = 0;
   private appLabels = new Map<string, HTMLDivElement>();
   /** How tall what stands on each cell is, so a flyer can't go through it. */
   private tops = new Map<string, number>();
@@ -276,7 +286,7 @@ export class CityEngine {
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.sun, this.sun.target, this.hemi, this.city, this.pickGroup);
+    this.scene.add(this.sun, this.sun.target, this.hemi, this.city, this.pickGroup, this.fieldLayer);
 
     this.selectRing = new THREE.Mesh(
       new THREE.RingGeometry(6.6, 7.2, 40),
@@ -330,10 +340,13 @@ export class CityEngine {
     const first = !this.grid;
     if (key !== this.layoutKey) {
       this.layoutKey = key;
+      // Whatever left the field goes now, before the rebuild, so it gets its goodbye.
+      this.releaseSprouts(data);
       this.build(data);
     }
     this.data = data;
     this.syncProposals(data);
+    this.syncField(data);
     this.syncPlots(data);
     this.syncCitizens(data, first);
     this.syncKan();
@@ -345,7 +358,8 @@ export class CityEngine {
   select(p: Pick | null, focus = false) {
     this.selected = p;
     const pos = p ? this.pickPosition(p) : null;
-    this.selectRing.visible = Boolean(pos);
+    // The whole field is too big for a ring; it just comes into view.
+    this.selectRing.visible = Boolean(pos) && p?.kind !== 'field';
     if (pos) {
       const big = p?.kind === 'townhall' || p?.kind === 'park';
       this.selectRing.scale.setScalar(big ? 2.05 : 1);
@@ -840,6 +854,10 @@ export class CityEngine {
     this.pickGroup.clear();
     this.fixedLabels = [];
     this.proposalLots.clear();
+    // Growing sprouts are drawn again with the new city; ones on their way out finish leaving.
+    for (const v of this.sproutViews.values()) { v.label.remove(); v.group.removeFromParent(); }
+    this.sproutViews.clear();
+    this.field = null;
     this.parcels = null;
     this.jobViews.clear();
     this.kan = null;
@@ -1047,6 +1065,14 @@ export class CityEngine {
       }
       const gl = this.makeLabel('The Strip', 'strip', () => this.focusStrip());
       this.fixedLabels.push({ el: gl, pos: new THREE.Vector3(this.strip.gate.x, 10.5, this.strip.gate.z), always: true });
+    }
+    // The Sprout Field, out west, down a dirt road.
+    this.field = buildField(grid);
+    this.city.add(this.field.group);
+    this.ticks.push(...this.field.ticks);
+    {
+      const f = this.field.bounds;
+      this.fixedLabels.push({ el: this.makeLabel('Sprout Field', 'field', () => this.cb.onPick({ kind: 'field' })), pos: new THREE.Vector3((f.x0 + f.x1) / 2, 6, f.z0 + 1), always: true });
     }
     const reachZ = this.strip ? this.strip.bounds.z1 * 2 : D;
     const shadowSize = Math.max(W, D, reachZ) * 0.72;
@@ -1301,6 +1327,72 @@ export class CityEngine {
     }
   }
 
+  // ---------- The Sprout Field ----------
+
+  /** Swing over to the field. */
+  focusField() {
+    if (!this.field || this.mode !== 'map') return;
+    const b = this.field.bounds;
+    this.focus({ x: (b.x0 + b.x1) / 2, z: 0 }, 1.6);
+  }
+
+  private releaseSprouts(data: CityData) {
+    const want = new Set((data.field ?? []).map((s) => s.id));
+    for (const [id, v] of this.sproutViews) {
+      if (want.has(id)) continue;
+      // Gone from the field: off to the city, or pulled. Either way it pops out and goes.
+      v.label.remove();
+      this.fixedLabels = this.fixedLabels.filter((l) => l.el !== v.label);
+      this.pickables = this.pickables.filter((x) => x !== v.proxy);
+      v.proxy.removeFromParent();
+      v.proxy.geometry.dispose();
+      v.leaving = this.elapsed;
+      this.leavingSprouts.push(v);
+      this.sproutViews.delete(id);
+      this.sproutLeftAt = performance.now();
+    }
+  }
+
+  private syncField(data: CityData) {
+    const f = this.field;
+    if (!f) return;
+    const want = new Map((data.field ?? []).map((s) => [s.id, s]));
+    this.releaseSprouts(data);
+    const taken = new Set([...this.sproutViews.values()].map((v) => v.slot));
+    const fresh = [...want.values()].filter((s) => !this.sproutViews.has(s.id)).sort((a, b) => a.plantedAt - b.plantedAt);
+    for (const s of fresh) {
+      const slot = f.slots.findIndex((_, i) => !taken.has(i));
+      if (slot < 0) break;
+      taken.add(slot);
+      const at = f.slots[slot];
+      const v = sproutView(s, at, GROUND_Y);
+      this.fieldLayer.add(v.group);
+      const proxy = this.addPickable(new THREE.Mesh(new THREE.BoxGeometry(2.6, 3.2, 2.6)), { kind: 'sprout', id: s.id }, { x: at.x, y: GROUND_Y + 1.4, z: at.z });
+      const label = this.makeLabel(s.title, 'sprout', () => this.cb.onPick({ kind: 'sprout', id: s.id }));
+      this.fixedLabels.push({ el: label, pos: new THREE.Vector3(at.x, GROUND_Y + 2.4, at.z) });
+      this.sproutViews.set(s.id, { ...v, label, proxy, slot });
+    }
+    for (const [id, v] of this.sproutViews) {
+      const s = want.get(id)!;
+      v.sprout = s;
+      v.depth = Math.max(0.3, 2.25 - 1.95 * Math.min(1, s.growth / 100));
+      const b = v.label.querySelector('.kc-badge') as HTMLSpanElement;
+      b.textContent = s.ready ? 'Ready for the city' : s.raining ? 'Growing' : '';
+      b.dataset.tone = s.ready ? 'ready' : s.raining ? 'rain' : '';
+      b.style.display = b.textContent ? '' : 'none';
+    }
+  }
+
+  private stepField(t: number, dt: number) {
+    for (const v of this.sproutViews.values()) stepSprout(v, t, dt, GROUND_Y);
+    if (!this.leavingSprouts.length) return;
+    this.leavingSprouts = this.leavingSprouts.filter((v) => {
+      const alive = stepSprout(v, t, dt, GROUND_Y);
+      if (!alive) v.group.removeFromParent();
+      return alive;
+    });
+  }
+
   // ---------- Citizens ----------
 
   private doorOf(plotId: string): (Vec & { m: number }) | null {
@@ -1345,7 +1437,8 @@ export class CityEngine {
         c = { plotId: p.channelId, status: p.bot.status, fig, label, bubble, goal: '', hold: 0, sayUntil: 0, walker: { obj: fig.group, pos: { x: home.x, z: home.z }, off: { x: 0, z: 0 }, path: [], speed: 4.2 + (hash(p.channelId) % 10) / 10, lateral: ((hash(p.channelId) % 7) - 3) * 0.45, wait: 0, phase: Math.random() * 6 } };
         this.citizens.set(p.channelId, c);
         // A bot that just joined arrives by cab.
-        if (!first) this.arriveByCab(c, home);
+        if (!first && !this.seenCitizens.has(p.channelId)) this.arriveByCab(c, home);
+        this.seenCitizens.add(p.channelId);
       }
       c.status = p.bot.status;
       // On duty, it wears its sweatband.
@@ -1409,10 +1502,14 @@ export class CityEngine {
     const g = this.grid!;
     const cab = this.noShadows(car(0, true));
     const start = g.node(0, home.m);
-    cab.position.set(start.x - 6, 0.1, start.z);
+    // Born in the Sprout Field: the cab comes down the dirt road from its gate.
+    const fromField = this.field && performance.now() - this.sproutLeftAt < 20_000 ? this.field : null;
+    const from = fromField ? { x: fromField.gate.x + 2, z: 0 } : { x: start.x - 6, z: start.z };
+    cab.position.set(from.x, 0.1, from.z);
     this.city.add(cab);
     c.walker.obj.visible = false;
-    const walker: Walker = { obj: cab, pos: { x: start.x - 6, z: start.z }, off: { x: 0, z: 0 }, isCar: true, path: [{ x: start.x, z: start.z }, { x: home.x, z: home.z }], speed: 12, lateral: 1.25, wait: 0.8, phase: 0 };
+    const route = fromField ? [{ x: start.x, z: 0 }, { x: start.x, z: start.z }, { x: home.x, z: home.z }] : [{ x: start.x, z: start.z }, { x: home.x, z: home.z }];
+    const walker: Walker = { obj: cab, pos: { ...from }, off: { x: 0, z: 0 }, isCar: true, path: route, speed: 12, lateral: 1.25, wait: fromField ? 1.8 : 0.8, phase: 0 };
     const entry = { walker, leaving: false, onArrive: () => {
       c.walker.obj.visible = !c.walker.inside;
       // The cab drives on out of town.
@@ -1785,6 +1882,7 @@ export class CityEngine {
       this.clampTarget();
     } else this.stepPlayer(dt);
     for (const f of this.ticks) f(t, dt);
+    this.stepField(t, dt);
 
     const r = Math.random;
     // Bots.
@@ -2080,6 +2178,7 @@ export class CityEngine {
   /** Driving: on a street in town, or a road on the Strip. */
   private drivable(x: number, z: number) {
     const g = this.grid!;
+    if (this.field && inRect(this.field.road, x, z, -0.4)) return true;
     if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.9))) return true;
     return Math.abs(x) <= g.width / 2 - 1.2 && Math.abs(z) <= g.depth / 2 - 1.2 && this.onBlock(x, z, 1.3) === null;
   }
@@ -2087,6 +2186,7 @@ export class CityEngine {
   /** Walking: anywhere on the island or the Strip that isn't inside a building. */
   private walkable(x: number, z: number) {
     const g = this.grid!;
+    if (this.field && (inRect(this.field.bounds, x, z, -1.4) || inRect(this.field.road, x, z, 0))) return true;
     if (this.strip && inRect(this.strip.bounds, x, z, -0.8)) return !this.strip.lots.some((l) => inRect(l.footprint, x, z, 0.4));
     if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.5))) return true;
     if (Math.abs(x) > g.width / 2 + 2.2 || Math.abs(z) > g.depth / 2 + 2.2) return false;
@@ -2316,6 +2416,12 @@ export class CityEngine {
         if (d < 4.5 && d - 4 < bestD) { best = { kind: 'bot', id: c.plotId, name: this.plots.get(c.plotId)?.plot.resident.name ?? 'Bot' }; bestD = d - 4; }
       }
     }
+    if (this.mode === 'walk') {
+      for (const v of this.sproutViews.values()) {
+        const d = Math.hypot(v.at.x - p.x, v.at.z - p.z);
+        if (d < 3.6 && d - 3 < bestD) { best = { kind: 'sprout', id: v.sprout.id, name: v.sprout.title }; bestD = d - 3; }
+      }
+    }
     if (this.portalAt && !flying) {
       const d = Math.hypot(this.portalAt.x - p.x, this.portalAt.z - p.z);
       if (d < (this.mode === 'walk' ? 5 : 8) && d < bestD) { best = { kind: 'portal', id: 'portal', name: 'the Kanwatch Freeway' }; bestD = d; }
@@ -2372,7 +2478,7 @@ export class CityEngine {
 
   // ---------- Labels ----------
 
-  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip' | 'zoo', onClick: () => void) {
+  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip' | 'zoo' | 'sprout' | 'field', onClick: () => void) {
     const el = document.createElement('div');
     el.className = `kc-label kc-${kind}`;
     const dot = document.createElement('span');
@@ -2497,7 +2603,8 @@ export class CityEngine {
     return o;
   }
 
-  private addPickable(o: THREE.Object3D, p: Pick) {
+  private addPickable(o: THREE.Object3D, p: Pick, at?: { x: number; y: number; z: number }) {
+    if (at) o.position.set(at.x, at.y, at.z);
     o.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(o);
     const size = box.getSize(new THREE.Vector3());
@@ -2506,6 +2613,7 @@ export class CityEngine {
     proxy.userData.pick = p;
     this.pickGroup.add(proxy);
     this.pickables.push(proxy);
+    return proxy;
   }
 
   private pickAt(clientX: number, clientY: number): Pick | null {
@@ -2610,7 +2718,8 @@ export class CityEngine {
     if (!this.grid) return;
     const t = this.controls.target;
     const lx = this.grid.width / 2 + 30, lz = Math.max(this.grid.depth / 2, this.strip?.bounds.z1 ?? 0) + 30;
-    const cx = THREE.MathUtils.clamp(t.x, -lx, lx), cz = THREE.MathUtils.clamp(t.z, -lz, lz);
+    const west = Math.max(lx, this.field ? -this.field.bounds.x0 + 10 : 0);
+    const cx = THREE.MathUtils.clamp(t.x, -west, lx), cz = THREE.MathUtils.clamp(t.z, -lz, lz);
     if (cx !== t.x || cz !== t.z) {
       const dx = cx - t.x, dz = cz - t.z;
       t.x = cx; t.z = cz;
@@ -2641,6 +2750,8 @@ export class CityEngine {
     if (p.kind === 'townhall' || p.kind === 'arrivals') return this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
     if (p.kind === 'app') { const lot = this.strip?.lots.find((l) => l.app.id === p.id); return lot ? lot.center : null; }
     if (p.kind === 'park') return this.grid.blockCenter(L.park.cx, L.park.cz);
+    if (p.kind === 'sprout') { const v = this.sproutViews.get(p.id); return v ? v.at : null; }
+    if (p.kind === 'field') { const b = this.field?.bounds; return b ? { x: (b.x0 + b.x1) / 2, z: 0 } : null; }
     if (p.kind === 'proposal') {
       const lot = this.data.proposals.find((x) => x.name === p.name)?.lot;
       return lot ? this.grid.cellCenter(lot.cx, lot.cz) : null;

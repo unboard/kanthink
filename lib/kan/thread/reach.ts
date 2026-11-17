@@ -63,7 +63,7 @@ const mins = (sec: number) => Math.max(1, Math.round(sec / 60))
 const PLACE = /^(home|inbox|feed|notifications|messages|dashboard|new tab|google|facebook|youtube|x|mine)(\s*[/|·-]\s*\w+)?$|^google messages/i
 
 /** What they spent time on and searched for, from Kanwatch's own record. */
-async function attentionTrail(ownerId: string, since: Date, newSince: Date) {
+export async function attentionTrail(ownerId: string, since: Date, newSince: Date) {
   const visits = await db.query.kanwatchVisits.findMany({
     where: and(eq(kanwatchVisits.userId, ownerId), gt(kanwatchVisits.startedAt, since), eq(kanwatchVisits.isPrivate, false)),
     columns: { startedAt: true, activeSeconds: true, domain: true, title: true, searchQuery: true, isBackground: true },

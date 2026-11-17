@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { fieldFor } from '@/lib/kan/sprouts'
 import {
   appOrders, appPurchases, appUsers, attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
   instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, users, type AttentionDecisionJson,
@@ -384,6 +385,8 @@ export async function cityFor(userId: string) {
     },
     /** Kan's thread: when it last changed, and what Kan said first that they haven't seen. */
     kanThread,
+    // The Sprout Field out past town: ideas not yet born.
+    field: await fieldFor(userId).catch(() => []),
     jobs,
     claude: presence ? { state: presence.state } : null,
     proposals,

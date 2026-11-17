@@ -2288,3 +2288,40 @@ export const attentionPasses = sqliteTable('attention_passes', {
 }, (table) => [
   index('attention_passes_owner_idx').on(table.ownerId, table.startedAt),
 ])
+
+/** One piece of evidence a sprout grew from: a share, a page they read, something they said, their own watering. */
+export interface SproutClue { text: string; from: 'share' | 'read' | 'browsing' | 'chat' | 'you' | 'kan'; ref?: string; at: number }
+
+/**
+ * The Sprout Field, out past the edge of Kan City: ideas that haven't been born yet.
+ * Kan plants one when something in their trail could become a bot worth having (an
+ * app to make, something for the family, a thing they shared and would love
+ * recreated) and grows it as more evidence comes in. They water it, pull it like a
+ * weed, or send it to the big city, where it's born as a bot with a home.
+ */
+export const sprouts = sqliteTable('sprouts', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** What it is, in a few words. */
+  title: text('title').notNull(),
+  /** What it would become if it grew up: the bot and what it would make. */
+  dream: text('dream').notNull().default(''),
+  kind: text('kind').$type<'app' | 'family' | 'recreate' | 'learn' | 'other'>().notNull().default('other'),
+  /** The bot it would be born as: a mushroom name and one line on who it is. */
+  botName: text('bot_name'),
+  personality: text('personality'),
+  clues: text('clues', { mode: 'json' }).$type<SproutClue[]>(),
+  /** 0–100. Ready to go to the city from about 70. */
+  growth: integer('growth').notNull().default(10),
+  status: text('status').$type<'growing' | 'born' | 'pulled'>().notNull().default('growing'),
+  /** Why they pulled it, so Kan stops growing that kind of thing. */
+  pulledWhy: text('pulled_why'),
+  /** Born: the channel its bot lives in. */
+  channelId: text('channel_id'),
+  /** When it last grew, for the rain cloud. */
+  grewAt: integer('grew_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('sprouts_owner_idx').on(table.ownerId, table.status),
+])

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Pencil, Plane, Play, Plus, Scooter,
-  RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
+  RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut, Droplets, Sprout as SproutIcon, Shovel, Building2,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { Stick } from '@/components/kan/city/Stick';
@@ -109,6 +109,8 @@ function ago(ms: number | null | undefined) {
   return `${Math.round(s / 86400)}d ago`;
 }
 const clock = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+/** When a bot runs next: a time today, else a weekday. */
+function nextAt(ms: number) { const now = Date.now(); return ms - now < 86_400_000 ? clock(Math.max(ms, now)) : day(ms); }
 const day = (ms: number) => new Date(ms).toLocaleDateString('en-US', { weekday: 'short' });
 const usd = (millicents: number | null | undefined) => `$${((millicents ?? 0) / 100_000).toFixed(2)}`;
 const channelOfHref = (href?: string) => href?.match(/^\/channel\/([^/?#]+)/)?.[1] ?? null;
@@ -533,6 +535,15 @@ export default function CityPage() {
   const runNow = (id: string) => act(`run:${id}`, () => fetch(`/api/prototypes/kan/bots/${id}/run`, json('POST', {})), 'Off to work.', id);
   const decide = (id: string, approve: boolean, extra: { reason?: string; modelId?: string } = {}) =>
     act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve, ...extra })), approve ? 'Approved. The crane’s going up.' : 'Passed. The bot will read why.', approvals.find((a) => a.id === id)?.channelId);
+  // The Sprout Field.
+  const water = (id: string, text: string) => act(`sp:${id}`, () => fetch('/api/prototypes/kan/sprouts', json('POST', { action: 'water', id, text })), 'Watered. It grew a little.');
+  const pull = async (id: string, why: string) => {
+    if (await act(`sp:${id}`, () => fetch('/api/prototypes/kan/sprouts', json('POST', { action: 'pull', id, text: why })), 'Pulled. I won’t grow that kind of thing again.')) setPick({ kind: 'field' });
+  };
+  const bloom = async (id: string, name: string) => {
+    if (await act(`sp:${id}`, () => fetch('/api/prototypes/kan/sprouts', json('POST', { action: 'bloom', id })), `${name} is off to the big city. Watch for the cab.`)) setPick(null);
+  };
+  const walkField = () => act('walk', () => fetch('/api/prototypes/kan/sprouts', json('POST', { action: 'walk' })), 'Walked the field.');
   const look = () => act('look', () => fetch('/api/prototypes/kan/attention', { method: 'POST' }), 'Reading everything you’ve given me. A minute or two.', 'townhall');
   const buildOne = (passId: string, name: string) =>
     act('apply', () => fetch('/api/prototypes/kan/city/build', json('POST', { passId, name })), `Putting up ${name}. Watch it rise.`, 'townhall');
@@ -664,6 +675,7 @@ export default function CityPage() {
           {counts.needs > 0 && <Chip tone="amber" n={counts.needs} label="need you" onClick={() => onPickRef.current({ kind: 'townhall' })} />}
           {data && data.arrivals.count > 0 && <Chip tone="orange" n={data.arrivals.count} label="new for Kan" onClick={() => onPickRef.current({ kind: 'arrivals' })} />}
           {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
+          {data && data.field.some((f) => f.ready) && <Chip tone="gold" n={data.field.filter((f) => f.ready).length} label="ready to move to town" onClick={() => { onPickRef.current({ kind: 'field' }); engine.current?.focusField(); }} />}
           {data && (
             <button
               onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setToday((t) => (t ? null : { x: r.left, y: r.bottom + 6 })); }}
@@ -995,6 +1007,19 @@ export default function CityPage() {
             <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onStep={(id, kind, key, ok) => void stepPass(id, kind, key, ok)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
+          ) : pick.kind === 'sprout' ? (
+            <SproutPanel
+              key={pick.id}
+              s={data.field.find((f) => f.id === pick.id) ?? null}
+              busy={busy === `sp:${pick.id}`}
+              onWater={(text) => void water(pick.id, text)}
+              onPull={(why) => void pull(pick.id, why)}
+              onBloom={(name) => void bloom(pick.id, name)}
+              onAsk={ask}
+              onField={() => onPickRef.current({ kind: 'field' })}
+            />
+          ) : pick.kind === 'field' ? (
+            <FieldPanel field={data.field} walking={busy === 'walk'} onPick={(id) => onPickRef.current({ kind: 'sprout', id })} onWalk={() => void walkField()} />
           ) : pick.kind === 'proposal' ? (
             <ProposalPanel data={data} name={pick.name} busy={busy} onBuild={(id, name) => { setPick(null); void buildOne(id, name); }} onAsk={ask} />
           ) : pick.kind === 'app' ? (
@@ -1363,7 +1388,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
           <ShroomBot seed={hash(p.channelId)} status={p.bot.status} size={40} />
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-medium text-neutral-200">{p.resident.name}</p>
-            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}${p.bot.nextRunAt ? ` · next ${p.bot.nextRunAt - Date.now() < 86_400_000 ? clock(Math.max(p.bot.nextRunAt, Date.now())) : day(p.bot.nextRunAt)}` : ''}` : 'Lives here, off duty. Put it to work and it runs the channel on its own.'}</p>
+            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}${p.bot.nextRunAt ? ` · next ${nextAt(p.bot.nextRunAt)}` : ''}` : 'Lives here, off duty. Put it to work and it runs the channel on its own.'}</p>
           </div>
           <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] ${s.pill}`}>{s.label}</span>
         </div>
@@ -1720,6 +1745,97 @@ function ParkPanel({ plots, onGo }: { plots: CityPlot[]; onGo: (id: string) => v
   );
 }
 
+const KIND_LABEL: Record<CityData['field'][number]['kind'], string> = { app: 'An app idea', family: 'For the family', recreate: 'Something to recreate', learn: 'Something to learn', other: 'An idea' };
+
+/** One sprout: what it would grow up into, what it grew from, and what you can do with it. */
+function SproutPanel({ s, busy, onWater, onPull, onBloom, onAsk, onField }: {
+  s: CityData['field'][number] | null; busy: boolean; onWater(text: string): void; onPull(why: string): void; onBloom(name: string): void; onAsk(prompt: string): void; onField(): void;
+}) {
+  const [thought, setThought] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const [why, setWhy] = useState('');
+  if (!s) return <div><p className="text-[13px] text-neutral-400">That one has left the field.</p><button onClick={onField} className="mt-3 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">See the field</button></div>;
+  const name = s.botName || 'It';
+  return (
+    <div>
+      <button onClick={onField} className="pr-8 text-[11px] uppercase tracking-wider text-lime-300 hover:text-lime-200">Sprout Field · {KIND_LABEL[s.kind]}</button>
+      <h3 className="mt-0.5 pr-8 text-[19px] font-semibold leading-tight text-neutral-50">{s.title}</h3>
+      <div className="mt-2.5">
+        <div className="relative h-2 rounded-full bg-white/10">
+          <div className={`h-2 rounded-full ${s.ready ? 'bg-yellow-300' : 'bg-lime-400'}`} style={{ width: `${s.growth}%` }} />
+          <span className="absolute -top-0.5 h-3 w-px bg-yellow-200/70" style={{ left: '70%' }} />
+        </div>
+        <p className="mt-1 text-[11.5px] text-neutral-500">{s.ready ? 'Grown up and ready for the big city.' : s.raining ? 'Growing: it got new rain today.' : 'Still small. Water it if you like where it’s going.'}</p>
+      </div>
+      <p className="mt-3 text-[13.5px] leading-relaxed text-neutral-200">{s.dream}</p>
+      {s.botName && <p className="mt-1.5 text-[12.5px] text-neutral-400">It would be born as <span className="font-medium text-neutral-200">{s.botName}</span>{s.personality ? `: ${s.personality}` : ''}</p>}
+
+      <p className="mt-4 text-[11px] uppercase tracking-wider text-neutral-500">What it grew from</p>
+      <ul className="mt-1 space-y-1">
+        {s.clues.map((c, i) => (
+          <li key={i} className="flex gap-2 text-[12.5px] leading-snug text-neutral-300">
+            {c.from === 'you' ? <Droplets className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sky-300" /> : <SproutIcon className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-lime-400/80" />}
+            <span>{c.text}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 flex gap-2">
+        <input value={thought} onChange={(e) => setThought(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !busy) { onWater(thought); setThought(''); } }}
+          placeholder="Add a thought: what you’d want from it" className="min-w-0 flex-1 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-[13px] text-neutral-100 placeholder:text-neutral-500 focus:border-sky-400/50 focus:outline-none" />
+        <button disabled={busy} onClick={() => { onWater(thought); setThought(''); }} className="flex items-center gap-1 rounded-full bg-sky-500/20 px-3 py-1.5 text-xs font-medium text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"><Droplets className="h-3.5 w-3.5" /> Water</button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button disabled={busy} onClick={() => onBloom(name)} className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium disabled:opacity-50 ${s.ready ? 'bg-yellow-300 text-neutral-950 hover:bg-yellow-200' : 'border border-white/15 text-neutral-200 hover:bg-white/5'}`}>
+          <Building2 className="h-3.5 w-3.5" /> {busy ? 'Packing its bags…' : s.ready ? 'Send it to the big city' : 'Send it early'}
+        </button>
+        <button onClick={() => onAsk(`Let's talk about the "${s.title}" sprout in my field. ${s.dream} What would it make first, and what would make it better?`)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Talk it over</button>
+        {!pulling && <button onClick={() => setPulling(true)} className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs text-neutral-500 hover:bg-white/5 hover:text-neutral-300"><Shovel className="h-3.5 w-3.5" /> Pull it</button>}
+      </div>
+      {pulling && (
+        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <p className="text-[12.5px] text-neutral-300">Pull it like a weed. Why? (optional, and Kan learns from it)</p>
+          <input value={why} onChange={(e) => setWhy(e.target.value)} autoFocus placeholder="e.g. not my thing, too much like work" className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[13px] text-neutral-100 placeholder:text-neutral-500 focus:outline-none" />
+          <div className="mt-2 flex gap-2">
+            <button disabled={busy} onClick={() => onPull(why)} className="rounded-full bg-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-900 hover:bg-white disabled:opacity-50">Pull it</button>
+            <button onClick={() => setPulling(false)} className="rounded-full px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-200">Keep it</button>
+          </div>
+        </div>
+      )}
+      {!s.ready && <p className="mt-3 text-[11.5px] leading-relaxed text-neutral-600">Sent to the city, it’s born as a bot with its own building, works a day at a time on a 60¢ daily budget, and starts right away.</p>}
+    </div>
+  );
+}
+
+/** The whole field: everything growing, biggest first. */
+function FieldPanel({ field, walking, onPick, onWalk }: { field: CityData['field']; walking: boolean; onPick(id: string): void; onWalk(): void }) {
+  const rows = [...field].sort((a, b) => b.growth - a.growth);
+  return (
+    <div>
+      <p className="pr-8 text-[11px] uppercase tracking-wider text-lime-300">Out past town</p>
+      <h3 className="mt-0.5 pr-8 text-[19px] font-semibold text-neutral-50">Sprout Field</h3>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-400">Ideas Kan plants from what you share, say and read, outside your day job. Rain means one grew today. Water the ones you like, pull the weeds, and when one grows up it moves to the big city as a bot of its own.</p>
+      <div className="mt-3 space-y-1.5">
+        {rows.map((s) => (
+          <button key={s.id} onClick={() => onPick(s.id)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left hover:bg-white/[0.06]">
+            <SproutIcon className={`h-4 w-4 flex-shrink-0 ${s.ready ? 'text-yellow-300' : 'text-lime-400'}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13.5px] font-medium text-neutral-100">{s.title}</span>
+              <span className="block truncate text-[12px] text-neutral-500">{s.ready ? 'Ready for the city' : s.raining ? 'Growing' : 'Sprouting'}{s.botName ? ` · ${s.botName}` : ''}</span>
+            </span>
+            <span className="h-1.5 w-14 flex-shrink-0 rounded-full bg-white/10"><span className={`block h-1.5 rounded-full ${s.ready ? 'bg-yellow-300' : 'bg-lime-400'}`} style={{ width: `${s.growth}%` }} /></span>
+          </button>
+        ))}
+        {!rows.length && <p className="text-[13px] text-neutral-500">Nothing growing yet.</p>}
+      </div>
+      <button disabled={walking} onClick={onWalk} className="mt-3 flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5 disabled:opacity-50">
+        {walking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SproutIcon className="h-3.5 w-3.5" />} {walking ? 'Kan is walking the field…' : 'Have Kan walk the field now'}
+      </button>
+    </div>
+  );
+}
+
 function ProposalPanel({ data, name, busy, onBuild, onAsk }: { data: CityData; name: string; busy: string | null; onBuild: (passId: string, name: string) => void; onAsk: (prompt: string) => void }) {
   const p = data.proposals.find((x) => x.name === name);
   const pass = data.townHall.pass;
@@ -1874,6 +1990,10 @@ const LABEL_CSS = `
 .kc-badge[data-tone="building"] { background: transparent; color: #0ea5e9; font-size: 12px; min-width: 0; padding: 0; }
 .kc-app { font-size: 11px; padding: 3px 9px 3px 8px; background: rgba(20,13,34,0.88); color: #fdf4ff; box-shadow: 0 0 0 1px rgba(255,60,172,.5), 0 4px 14px rgba(255,60,172,.25); }
 .kc-app[data-tier="earning"] { background: #fff4cc; color: #6b4300; box-shadow: 0 0 0 2px #ffcc33, 0 4px 18px rgba(255,190,40,.55); }
+.kc-field { background: #3f2d1f; color: #d9f99d; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #84cc16, 0 4px 18px rgba(132,204,22,.35); }
+.kc-sprout { font-size: 11.5px; }
+.kc-badge[data-tone="ready"] { background: #facc15; color: #422006; padding: 0 7px; }
+.kc-badge[data-tone="rain"] { background: #3b82f6; padding: 0 7px; }
 .kc-zoo { background: #065f46; color: #fef3c7; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 0 0 2px #facc15, 0 4px 18px rgba(250,204,21,.4); }
 .kc-strip { background: #1a0f2e; color: #ffd23f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #ff3cac, 0 4px 18px rgba(255,60,172,.45); }
 .kc-badge[data-tone="gold"] { background: #ffcc33; color: #5a3a00; padding: 0 7px; }

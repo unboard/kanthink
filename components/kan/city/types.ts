@@ -23,5 +23,8 @@ export type Pick =
   | { kind: 'free' }
   | { kind: 'arrivals' }
   | { kind: 'app'; id: string }
+  /** An idea growing in the Sprout Field, and the field itself. */
+  | { kind: 'sprout'; id: string }
+  | { kind: 'field' }
   /** A resident: the mushroom who lives on a channel's plot, to talk with. */
   | { kind: 'bot'; id: string };

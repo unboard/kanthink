@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
   await ensureSchema()
   const days = await writeFinishedDays()
   // Kan speaking first from what Kanwatch saw (rate-limited per person inside).
-  const { reachOutAll } = await import('@/lib/kan/thread/reach')
-  const reach = await reachOutAll().catch((err) => ({ error: err instanceof Error ? err.message : 'failed' }))
-  return NextResponse.json({ ...days, reach })
+  // Kan walks the Sprout Field instead of writing messages: ideas grow there for you to tend.
+  const { growAll } = await import('@/lib/kan/sprouts')
+  const sprouts = await growAll().catch((err) => ({ error: err instanceof Error ? err.message : 'failed' }))
+  return NextResponse.json({ ...days, sprouts })
 }

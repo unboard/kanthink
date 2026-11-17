@@ -26,8 +26,8 @@ const REACH_CHECK_MS = 20 * 60_000
  * comes back as construction sites on free lots, waiting for you to say "build it".
  * It only proposes; nothing changes until you do.
  *
- * Opening the city is also when Kan looks for something worth telling you, from what
- * you read and shared, and says it in its thread (lib/kan/thread/reach.ts).
+ * Opening the city is also when Kan walks the Sprout Field out past town, planting and
+ * growing ideas from what you shared, said and read (lib/kan/sprouts.ts).
  */
 export async function GET() {
   const session = await auth()
@@ -37,8 +37,9 @@ export async function GET() {
   const city = await cityFor(userId)
   if (!('empty' in city) && Date.now() - (lastReach.get(userId) ?? 0) > REACH_CHECK_MS) {
     lastReach.set(userId, Date.now())
-    const { reachOut } = await import('@/lib/kan/thread/reach')
-    afterResponse(() => reachOut(userId).then(() => undefined).catch((err) => console.error('[kan] reach out', err)))
+    // Kan walks the Sprout Field (rate-limited again inside growSprouts).
+    const { growSprouts } = await import('@/lib/kan/sprouts')
+    afterResponse(() => growSprouts(userId).then(() => undefined).catch((err) => console.error('[kan] sprouts', err)))
   }
   // Name any resident who doesn't have a name yet, after the response, so the city never waits on it.
   if (!('empty' in city) && city.plots.some((p) => !p.named)) {

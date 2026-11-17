@@ -264,7 +264,7 @@ export async function keepAwakeInPlan(ownerId: string, channelId: string): Promi
   await db.update(attentionPasses).set({ decisions: { ...d, areas } }).where(eq(attentionPasses.id, pass.id))
 }
 
-async function startArea(ownerId: string, name: string, purpose: string, columnNames: string[]): Promise<string> {
+export async function startArea(ownerId: string, name: string, purpose: string, columnNames: string[]): Promise<string> {
   const id = nanoid()
   const now = new Date()
   await db.insert(channels).values({ id, ownerId, name: clip(name, 60), description: purpose, status: 'active', createdAt: now, updatedAt: now })
