@@ -989,7 +989,7 @@ export class CityEngine {
 
     // Free lots: the first few that no proposal takes.
     const proposed = new Set(data.proposals.filter((p) => p.lot).map((p) => `${p.lot!.cx},${p.lot!.cz}`));
-    for (const f of L.free.slice(0, 6)) {
+    for (const f of L.free.slice(0, 3)) {
       if (proposed.has(`${f.cx},${f.cz}`)) continue;
       const lot = freeLot();
       const c = grid.cellCenter(f.cx, f.cz);
@@ -1001,7 +1001,7 @@ export class CityEngine {
     }
 
     // Everything else is still countryside.
-    const used = new Set<string>([...data.plots.map((p) => `${p.cx},${p.cz}`), ...L.free.slice(0, 6).map((f) => `${f.cx},${f.cz}`)])
+    const used = new Set<string>([...data.plots.map((p) => `${p.cx},${p.cz}`), ...L.free.slice(0, 3).map((f) => `${f.cx},${f.cz}`)])
     for (const b of [L.townHall, L.park]) for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) used.add(`${b.cx + dx},${b.cz + dz}`);
     // Near what's built, the gaps fill in as ordinary town: homes, little shops, a
     // plaza, parking, a garden. Out toward the edges it stays green.
@@ -1013,7 +1013,8 @@ export class CityEngine {
       const near = Math.min(...builtCells.map((b) => Math.max(Math.abs(b.cx - cx), Math.abs(b.cz - cz))));
       const edge = cx === 0 || cz === 0 || cx === L.cols - 1 || cz === L.rows - 1;
       const roll = (hash(`fill:${cx},${cz}`) % 100) / 100;
-      const town = near <= 2 && !edge && roll < (near <= 1 ? 0.85 : 0.55);
+      // Inside the green belt it's all town, with a pocket park now and then.
+      const town = roll < (edge ? 0.6 : near <= 1 ? 0.92 : 0.82);
       const gr = town ? townscape(FILL[hash(`kind:${cx},${cz}`) % FILL.length], seed) : grove(seed);
       const c = grid.cellCenter(cx, cz);
       gr.group.position.set(c.x, GROUND_Y - 0.02, c.z);

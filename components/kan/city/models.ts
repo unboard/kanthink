@@ -1558,9 +1558,19 @@ export function grove(seed: number): Built {
     const w = cyl(g, 1.8, 1.8, 0.1, mat('#5ab0e0', { rough: 0.15, emissive: '#2a80bb', intensity: 0.15 }), (r() - 0.5) * 3, 0.04, (r() - 0.5) * 3, 16);
     w.castShadow = false;
   }
-  const n = 3 + Math.floor(r() * 5);
-  for (let i = 0; i < n; i++) tree(g, (r() - 0.5) * 8, (r() - 0.5) * 8, 0.7 + r() * 0.6, r() < 0.4 ? 'pine' : 'round', ['#5fae6b', '#7cbf5a', '#4f9a6a', '#8fcf6a'][i % 4]);
-  for (let i = 0; i < 8; i++) sphere(g, 0.14, mat(['#ff7aa2', '#ffd166', '#c77dff', '#ffffff'][i % 4]), (r() - 0.5) * 8.6, 0.16, (r() - 0.5) * 8.6, 5);
+  // A pocket park: a curving path, a bench, a stand of trees, bushes and flowers.
+  const path = mat('#e6d8b8');
+  box(g, 1.1, 0.04, 9.6, path, -0.8, 0.04, 0, false);
+  box(g, 4.2, 0.04, 1.1, path, 1.3, 0.04, 1.2, false);
+  bench(g, 1.4, 2.1, Math.PI);
+  const n = 7 + Math.floor(r() * 5);
+  for (let i = 0; i < n; i++) {
+    let x = (r() - 0.5) * 8.4, z = (r() - 0.5) * 8.4;
+    if (Math.abs(x + 0.8) < 1.1) x += x > -0.8 ? 1.6 : -1.6;
+    tree(g, x, z, 0.65 + r() * 0.6, r() < 0.4 ? 'pine' : 'round', ['#5fae6b', '#7cbf5a', '#4f9a6a', '#8fcf6a'][i % 4]);
+  }
+  for (let i = 0; i < 6; i++) sphere(g, 0.42 + r() * 0.2, mat(['#4f9a5a', '#5fae6b'][i % 2]), (r() - 0.5) * 8.4, 0.3, (r() - 0.5) * 8.4, 6);
+  for (let i = 0; i < 14; i++) sphere(g, 0.14, mat(['#ff7aa2', '#ffd166', '#c77dff', '#ffffff'][i % 4]), (r() - 0.5) * 8.6, 0.16, (r() - 0.5) * 8.6, 5);
   return { group: g, top: 3, windows: [] };
 }
 

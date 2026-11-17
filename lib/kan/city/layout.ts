@@ -176,14 +176,17 @@ export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}
     || (a.createdAt ?? 0) - (b.createdAt ?? 0)
     || a.channelId.localeCompare(b.channelId))
 
-  // Every district's seed: Downtown at the middle, folders out in a direction of their own.
+  // Every district's seed. Downtown is the middle; the neighborhoods sit close around
+  // it, each in a direction of its own (from its name, so adding one never moves the
+  // others), sharing three quarters of the circle. Old Town has the last quarter, to
+  // the north-east, just past them.
+  const RING = 3.6
   const seeds = new Map<string, { x: number; z: number }>()
   const seedOf = (n: string) => {
     let s = seeds.get(n)
     if (!s) {
-      // Old Town always sits out to the north-east, past the neighborhoods.
-      const a = n === OLD_TOWN ? -Math.PI / 4 : (hash(`district:${n}`) / 2 ** 32) * Math.PI * 2
-      const r = n === DOWNTOWN ? 0 : n === OLD_TOWN ? 9 : 4.5
+      const a = n === OLD_TOWN ? -Math.PI / 4 : Math.PI / 8 + (hash(`district:${n}`) / 2 ** 32) * Math.PI * 1.5
+      const r = n === DOWNTOWN ? 0 : n === OLD_TOWN ? RING + 2 : RING
       s = { x: center.x + Math.cos(a) * r, z: center.z + Math.sin(a) * r }
       seeds.set(n, s)
     }
