@@ -7,13 +7,14 @@ import { kidFigure } from './avatar';
 import { BLOCK, CELL, GAP, Grid, PITCH, ROAD, rng, type Vec } from './grid';
 import {
   botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, moped, sportsCar, ufo,
-  nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
+  nightGlows, sharedMaterials, shroomFigure, townHall, townscape, windowMaterials, type Built, type Filler,
   portalDoor,
   zooGate,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
 import { buildField, sproutView, stepSprout, type Field, type SproutView } from './field';
+import { CityFx, buildSea, seaColor, type Sea } from './fx';
 import { decorate, THEME_COLORS } from './themes';
 import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePet, type InsidePick, type TvShow } from './inside';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
@@ -251,6 +252,9 @@ export class CityEngine {
   private sproutViews = new Map<string, SproutView & { label: HTMLDivElement; proxy: THREE.Mesh; slot: number }>();
   private leavingSprouts: SproutView[] = [];
   private fieldLayer = new THREE.Group();
+  /** The finish on the map view (occlusion, tilt-shift), and the sea the islands sit in. */
+  private fx: CityFx | null = null;
+  private sea: Sea | null = null;
   /** Every resident ever drawn, so only a bot that's truly new arrives by cab. */
   private seenCitizens = new Set<string>();
   /** When a sprout last left for the city, so its cab comes in from the field. */
@@ -307,6 +311,7 @@ export class CityEngine {
     window.addEventListener('keydown', this.onKey);
     window.addEventListener('keyup', this.onKey);
     window.addEventListener('blur', this.onBlur);
+    try { this.fx = new CityFx(this.renderer, this.scene, this.camera); } catch (err) { console.warn('[city] effects off', err); this.fx = null; }
     this.resize();
     this.loop();
     if (process.env.NODE_ENV !== 'production') (window as unknown as { __kanCity?: CityEngine }).__kanCity = this;
@@ -322,6 +327,9 @@ export class CityEngine {
 
   setSky(sky: Sky) {
     this.sky = sky;
+    this.sea?.setSky(sky);
+    this.fx?.setSky(sky);
+    this.scene.background = new THREE.Color(seaColor(sky));
     const L = LIGHT[sky];
     this.sun.color.set(L.sun);
     this.sun.intensity = L.sunI;
@@ -829,6 +837,7 @@ export class CityEngine {
     this.controls.dispose();
     this.leaveInside();
     this.clearCity();
+    this.fx?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.labels.innerHTML = '';
@@ -989,12 +998,23 @@ export class CityEngine {
     // Everything else is still countryside.
     const used = new Set<string>([...data.plots.map((p) => `${p.cx},${p.cz}`), ...L.free.slice(0, 6).map((f) => `${f.cx},${f.cz}`)])
     for (const b of [L.townHall, L.park]) for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) used.add(`${b.cx + dx},${b.cz + dz}`);
+    // Near what's built, the gaps fill in as ordinary town: homes, little shops, a
+    // plaza, parking, a garden. Out toward the edges it stays green.
+    const builtCells = [...data.plots.map((p) => ({ cx: p.cx, cz: p.cz })), { cx: L.townHall.cx, cz: L.townHall.cz }, { cx: L.park.cx, cz: L.park.cz }];
+    const FILL: Filler[] = ['homes', 'homes', 'homes', 'shops', 'shops', 'plaza', 'parking', 'garden'];
     for (let cz = 0; cz < L.rows; cz++) for (let cx = 0; cx < L.cols; cx++) {
       if (used.has(`${cx},${cz}`)) continue;
-      const gr = grove(cx * 131 + cz * 977);
+      const seed = cx * 131 + cz * 977;
+      const near = Math.min(...builtCells.map((b) => Math.max(Math.abs(b.cx - cx), Math.abs(b.cz - cz))));
+      const edge = cx === 0 || cz === 0 || cx === L.cols - 1 || cz === L.rows - 1;
+      const roll = (hash(`fill:${cx},${cz}`) % 100) / 100;
+      const town = near <= 2 && !edge && roll < (near <= 1 ? 0.85 : 0.55);
+      const gr = town ? townscape(FILL[hash(`kind:${cx},${cz}`) % FILL.length], seed) : grove(seed);
       const c = grid.cellCenter(cx, cz);
       gr.group.position.set(c.x, GROUND_Y - 0.02, c.z);
+      if (town) gr.group.rotation.y = grid.door(cx, cz).facing === -1 ? Math.PI : 0;
       gr.group.userData.freeKey = `${cx},${cz}`;
+      if (gr.tick) this.ticks.push(gr.tick);
       this.addPickable(gr.group, { kind: 'free' });
       this.city.add(gr.group);
     }
@@ -1074,6 +1094,16 @@ export class CityEngine {
       const f = this.field.bounds;
       this.fixedLabels.push({ el: this.makeLabel('Sprout Field', 'field', () => this.cb.onPick({ kind: 'field' })), pos: new THREE.Vector3((f.x0 + f.x1) / 2, 6, f.z0 + 1), always: true });
     }
+    // The sea: town, the Strip and the field are islands with sandy shores.
+    this.sea = buildSea([
+      { x0: -W / 2 - 3, z0: -D / 2 - 3, x1: W / 2 + 3, z1: D / 2 + 3 },
+      ...(this.strip ? [this.strip.bounds] : []),
+      this.field.bounds,
+    ]);
+    this.sea.group.userData.dynamic = true;
+    this.city.add(this.sea.group);
+    this.sea.setSky(this.sky);
+    { const sea = this.sea; this.ticks.push((t) => sea.tick(t)); }
     const reachZ = this.strip ? this.strip.bounds.z1 * 2 : D;
     const shadowSize = Math.max(W, D, reachZ) * 0.72;
     const sc = this.sun.shadow.camera;
@@ -2000,7 +2030,8 @@ export class CityEngine {
     }
     if (this.kanNote && this.kanNote.until < performance.now()) { this.kanNote = null; this.renderKanBubble(); }
 
-    this.renderer.render(this.scene, this.view);
+    if (this.fx && this.mode === 'map' && !this.lowPower) this.fx.frame(this.camera.zoom);
+    else this.renderer.render(this.scene, this.view);
     this.placeLabels();
   };
 
@@ -2689,6 +2720,7 @@ export class CityEngine {
   private resize() {
     const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.fx?.setSize(w, h, this.renderer.getPixelRatio());
     this.renderer.domElement.style.width = `${w}px`;
     this.renderer.domElement.style.height = `${h}px`;
     const span = this.grid ? Math.max(this.grid.width, this.grid.depth) * 0.8 : 100;

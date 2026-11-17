@@ -1481,6 +1481,124 @@ export function grove(seed: number): Built {
   return { group: g, top: 3, windows: [] };
 }
 
+// ---------- The town around your buildings ----------
+
+export type Filler = 'homes' | 'shops' | 'plaza' | 'parking' | 'garden';
+
+const COTTAGE_WALLS = ['#f6efe2', '#f3dccb', '#e4ecf4', '#f1e3c0', '#e2efe0', '#f2d9e1', '#ece6f6'];
+const COTTAGE_ROOFS = ['#b85c4f', '#5f6f8f', '#7d5d8a', '#4f7f6a', '#9a6a3f', '#c27a4a'];
+const SHOP_AWNINGS: [string, string][] = [['#e94f3d', '#ffffff'], ['#2f7fd1', '#ffffff'], ['#2f9e6b', '#f6f1dc'], ['#f2b632', '#ffffff'], ['#b14bff', '#f8eefe']];
+
+/** A small house with a pitched roof, a door, lit windows and a chimney. Front is +z. */
+function cottage(g: THREE.Object3D, x: number, z: number, r: () => number) {
+  const w = 2.4 + r() * 0.8, d = 2.2 + r() * 0.6, h = 1.6 + r() * 0.7;
+  const wall = mat(COTTAGE_WALLS[Math.floor(r() * COTTAGE_WALLS.length)]);
+  const roof = mat(COTTAGE_ROOFS[Math.floor(r() * COTTAGE_ROOFS.length)]);
+  const two = r() < 0.3;
+  const H = two ? h + 1.3 : h;
+  box(g, w, H, d, wall, x, 0, z);
+  gable(g, w + 0.3, 1.1 + r() * 0.4, d + 0.4, roof, x, H, z);
+  box(g, 0.6, 1.1, 0.12, mat('#6b4632'), x - w * 0.22, 0, z + d / 2, false);
+  const pane = glow('#ffe7a8', 0.5);
+  for (const sx of [0.18, -0.02]) box(g, 0.5, 0.5, 0.06, pane, x + w * (sx + 0.1), 0.75, z + d / 2 + 0.01, false);
+  if (two) for (const sx of [-0.22, 0.22]) box(g, 0.5, 0.5, 0.06, pane, x + w * sx, h + 0.35, z + d / 2 + 0.01, false);
+  if (r() < 0.6) box(g, 0.32, 0.9, 0.32, mat('#8a5a48'), x + w * 0.28, H + 0.3, z - d * 0.15);
+}
+
+/** One block cell of town that isn't anybody's channel: homes, shops, a plaza, parking or a garden. */
+export function townscape(kind: Filler, seed: number): Built {
+  const g = new THREE.Group();
+  const r = rng(seed);
+  const lawn = mat(['#b9dc9c', '#b3d89a', '#c0dfa6'][seed % 3]);
+  const paving = mat('#e6e0d2');
+  const ticks: ((t: number, dt: number) => void)[] = [];
+  if (kind === 'homes') {
+    box(g, 9.6, 0.06, 9.6, lawn, 0, 0, 0, false);
+    // Two rows of houses, front gardens on the street side, a path to each door.
+    const spots: [number, number][] = [[-2.6, 2], [2.6, 2], [-2.6, -2.6], [2.6, -2.6]];
+    for (const [x, z] of spots) {
+      if (r() < 0.15) { tree(g, x, z, 0.9 + r() * 0.3, r() < 0.5 ? 'round' : 'pine', ['#5fae6b', '#7cbf5a', '#8fcf6a'][Math.floor(r() * 3)]); continue; }
+      cottage(g, x, z - 0.4, r);
+      box(g, 0.5, 0.04, 1.8, paving, x - 0.5, 0.04, z + 1.9, false);
+    }
+    // Hedges along the street and a tree or two.
+    box(g, 9.2, 0.5, 0.4, mat('#4f9a5a'), 0, 0, 4.5);
+    tree(g, 0, 0, 0.8, 'round', '#7cbf5a');
+    for (let i = 0; i < 6; i++) sphere(g, 0.12, mat(['#ff7aa2', '#ffd166', '#c77dff', '#ffffff'][i % 4]), (r() - 0.5) * 8, 0.14, 3.9, 5);
+  } else if (kind === 'shops') {
+    box(g, 9.6, 0.06, 9.6, paving, 0, 0, 0, false);
+    // A row of little shops facing the street, awnings out, a sign over each.
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const x = -3.1 + i * 3.1, w = 2.9, h = 2.4 + r() * 1.4;
+      const wall = mat(COTTAGE_WALLS[Math.floor(r() * COTTAGE_WALLS.length)]);
+      box(g, w, h, 4, wall, x, 0, -0.4);
+      box(g, w + 0.1, 0.25, 4.1, mat('#d8d0c2'), x, h, -0.4);
+      box(g, w * 0.8, 1.3, 0.08, glow('#bfe6ff', 0.35), x, 0.2, 1.62, false);
+      const [a, b] = SHOP_AWNINGS[Math.floor(r() * SHOP_AWNINGS.length)];
+      const aw = new THREE.Group();
+      awning(aw, w * 0.9, a, b, 1.8, 1.0);
+      aw.position.x = x;
+      g.add(aw);
+      box(g, w * 0.7, 0.45, 0.1, glow(a, 0.45), x, h - 0.75, 1.62, false);
+    }
+    // Café tables out front, a couple of planters.
+    for (const x of [-3.4, 0.2, 3.4]) {
+      cyl(g, 0.35, 0.35, 0.06, mat('#ffffff'), x, 0.7, 3.2, 10);
+      cyl(g, 0.05, 0.05, 0.7, mat('#555'), x, 0, 3.2, 6);
+    }
+    for (const x of [-4.3, 4.3]) { box(g, 0.8, 0.5, 0.8, mat('#9a6b45'), x, 0, 3.9); sphere(g, 0.45, mat('#5fae6b'), x, 0.85, 3.9, 7); }
+  } else if (kind === 'plaza') {
+    box(g, 9.6, 0.06, 9.6, paving, 0, 0, 0, false);
+    // A ring of grass around a fountain, benches facing it, trees at the corners.
+    cyl(g, 3.2, 3.2, 0.1, lawn, 0, 0.02, 0, 24);
+    cyl(g, 1.7, 1.8, 0.5, mat('#cfc8bb'), 0, 0, 0, 20);
+    const water = mat('#6cc3e6', { emissive: '#2a80bb', intensity: 0.15, rough: 0.15 });
+    cyl(g, 1.45, 1.45, 0.06, water, 0, 0.47, 0, 20);
+    cyl(g, 0.2, 0.25, 1.4, mat('#cfc8bb'), 0, 0.5, 0, 8);
+    const spout = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshStandardMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.7, roughness: 0.1 }));
+    spout.position.y = 2.0;
+    dyn(spout);
+    g.add(spout);
+    ticks.push((t) => { const s = 1 + Math.sin(t * 6) * 0.15; spout.scale.set(s, 1.2 - (s - 1), s); });
+    for (const [x, z, rot] of [[0, 2.6, Math.PI], [0, -2.6, 0], [2.6, 0, -Math.PI / 2], [-2.6, 0, Math.PI / 2]] as const) bench(g, x, z, rot);
+    for (const [x, z] of [[-3.8, -3.8], [3.8, -3.8], [-3.8, 3.8], [3.8, 3.8]] as const) tree(g, x, z, 0.95, 'round', '#6fb85f');
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; sphere(g, 0.14, mat(['#ff7aa2', '#ffd166', '#c77dff'][i % 3]), Math.cos(a) * 2.6, 0.14, Math.sin(a) * 2.6, 5); }
+  } else if (kind === 'parking') {
+    box(g, 9.6, 0.06, 9.6, mat('#5d6170', { rough: 0.95 }), 0, 0, 0, false);
+    const line = mat('#f2f2f2');
+    for (let i = 0; i < 6; i++) for (const z of [-2.4, 2.0]) box(g, 0.1, 0.02, 2.6, line, -3.9 + i * 1.6, 0.06, z, false);
+    // A few cars parked in the spaces.
+    for (let i = 0; i < 5; i++) {
+      if (r() < 0.35) continue;
+      const c = car(Math.floor(r() * 7));
+      c.position.set(-3.1 + i * 1.6, 0.05, i % 2 ? -2.4 : 2.0);
+      c.rotation.y = Math.PI / 2;
+      c.scale.setScalar(0.9);
+      g.add(c);
+    }
+    for (const x of [-4.4, 4.4]) tree(g, x, 0, 0.7, 'round', '#6fb85f');
+  } else {
+    // A community garden: raised beds, a greenhouse, a shed.
+    box(g, 9.6, 0.06, 9.6, lawn, 0, 0, 0, false);
+    const soil = mat('#7a5a40', { rough: 1 });
+    const crops = ['#6fbf4a', '#e9a23b', '#d9534f', '#8bc34a'];
+    for (let i = 0; i < 4; i++) {
+      const x = -3.3 + i * 2.2;
+      box(g, 1.5, 0.35, 4.2, mat('#a47a52'), x, 0, 1.2);
+      box(g, 1.3, 0.05, 4, soil, x, 0.35, 1.2, false);
+      const crop = mat(crops[i % crops.length]);
+      for (let j = 0; j < 5; j++) sphere(g, 0.22, crop, x + (j % 2 ? 0.3 : -0.3), 0.55, -0.4 + j * 0.8, 6);
+    }
+    const glass = new THREE.MeshStandardMaterial({ color: '#d9f2ff', transparent: true, opacity: 0.45, roughness: 0.1 });
+    box(g, 3.4, 1.8, 2.4, glass, -2, 0, -3.3, false);
+    gable(g, 3.4, 0.9, 2.4, glass, -2, 1.8, -3.3);
+    box(g, 1.8, 1.6, 1.6, mat('#a15c5c'), 2.6, 0, -3.3);
+    gable(g, 2, 0.7, 1.8, mat('#6b4632'), 2.6, 1.6, -3.3);
+  }
+  return { group: g, top: 3, windows: [], tick: ticks.length ? (t, dt) => { for (const f of ticks) f(t, dt); } : undefined };
+}
+
 /** The gate to the zoo: green pillars, a sign, a giraffe peeking over, and a swirl of savanna gold to step through. */
 export function zooGate(): { group: THREE.Group; tick: (t: number) => void } {
   const g = dyn(new THREE.Group());
