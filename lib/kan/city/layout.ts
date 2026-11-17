@@ -143,6 +143,8 @@ export interface CityLayout {
 }
 
 export const DOWNTOWN = 'Downtown'
+/** Where quiet channels live: out at the edge, together, away from what's busy. */
+export const OLD_TOWN = 'Old Town'
 
 /** How big a building is: log-scaled by cards, so a 178-card channel isn't a needle. */
 export function sizeFor(cards: number): number {
@@ -179,8 +181,9 @@ export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}
   const seedOf = (n: string) => {
     let s = seeds.get(n)
     if (!s) {
-      const a = (hash(`district:${n}`) / 2 ** 32) * Math.PI * 2
-      const r = n === DOWNTOWN ? 0 : 4.5
+      // Old Town always sits out to the north-east, past the neighborhoods.
+      const a = n === OLD_TOWN ? -Math.PI / 4 : (hash(`district:${n}`) / 2 ** 32) * Math.PI * 2
+      const r = n === DOWNTOWN ? 0 : n === OLD_TOWN ? 9 : 4.5
       s = { x: center.x + Math.cos(a) * r, z: center.z + Math.sin(a) * r }
       seeds.set(n, s)
     }

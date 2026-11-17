@@ -8,7 +8,7 @@ import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
 import { planCards, waitingPass } from '@/lib/kan/attention/plan'
 import { fitDecisions, listTopics } from '@/lib/kan/attention/topics'
-import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
+import { layoutCity, ARCHETYPE_LABEL, OLD_TOWN } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
 import { residentOf } from './residents'
 import { parseStyle } from './style'
@@ -187,18 +187,26 @@ export async function cityFor(userId: string) {
   const colName = new Map(cols.map((c) => [c.id, c.name]))
   const areaName = new Map(areas.map((a) => [a.channelId, a.name]))
 
+  // Old Town: channels nobody's touched in two weeks, with no bot on duty, move
+  // together to the edge of the island, lights off. Nothing about them changes; the
+  // first time one is used again it moves back into town.
+  const QUIET_MS = 14 * 24 * HOUR
+  const quiet = new Set(areas.filter((a) => !a.botOn && !a.recentActivity && !a.fixed
+    && (+(a.lastActivityAt ?? 0) < now - QUIET_MS) && (madeAt.get(a.channelId) ?? 0) < now - QUIET_MS).map((a) => a.channelId))
+
   const layout = layoutCity(areas.map((a) => ({
     channelId: a.channelId,
     name: a.name,
     description: a.description,
-    district: folderOf.get(a.channelId) ?? null,
+    district: quiet.has(a.channelId) ? OLD_TOWN : folderOf.get(a.channelId) ?? null,
     cards: a.cards,
     lastActivityAt: ms(a.lastActivityAt),
     attention: a.attention,
     createdAt: madeAt.get(a.channelId) ?? null,
     isShareInbox: a.isShareInbox,
     isStudio: Boolean(a.fixed?.includes('Studio')),
-    pin: pinOf(botOf.get(a.channelId), userId),
+    // A quiet channel goes where Old Town is, wherever it was moved to before.
+    pin: quiet.has(a.channelId) ? null : pinOf(botOf.get(a.channelId), userId),
   })))
 
   // Who's at work right now. A run older than the function ceiling was cut off.
@@ -250,6 +258,8 @@ export async function cityFor(userId: string) {
       lastActivityAt: ms(a.lastActivityAt),
       apps: a.apps,
       attention: a.attention,
+      // In Old Town: untouched for two weeks, no bot on duty.
+      quiet: quiet.has(p.channelId),
       attentionWhy: bot?.attentionWhy ?? null,
       startedByKan: a.startedByKan,
       fixed: a.fixed ?? null,

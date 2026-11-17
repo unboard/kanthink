@@ -1202,7 +1202,8 @@ export class CityEngine {
   }
 
   private litFor(p: CityPlot) {
-    if (p.attention === 'muted') return 0;
+    // Old Town keeps its lights off: nobody's working there.
+    if (p.attention === 'muted' || p.quiet) return 0;
     const recent = p.lastActivityAt ? Math.max(0, 1 - (Date.now() - p.lastActivityAt) / (30 * 86400_000)) : 0;
     const base = p.attention === 'quiet' ? 0.15 : p.attention === 'active' ? 0.5 : 0.25;
     return Math.min(0.85, base + recent * 0.35 + Math.min(0.15, p.recentActivity * 0.03));
@@ -1336,7 +1337,7 @@ export class CityEngine {
       b.textContent = badge ? String(badge) : working ? '●' : p.building ? '◆' : p.isNew ? 'New' : '';
       b.dataset.tone = badge ? 'needs' : working ? 'working' : p.building ? 'building' : p.isNew ? 'new' : '';
       b.style.display = b.textContent ? '' : 'none';
-      v.label.dataset.muted = p.attention === 'muted' ? '1' : '';
+      v.label.dataset.muted = p.attention === 'muted' || p.quiet ? '1' : '';
     }
   }
 
