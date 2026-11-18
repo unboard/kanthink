@@ -39,7 +39,7 @@ export function nextRunAfter(bot: Pick<BotRow, 'everyHours'>, from: Date): Date 
   return new Date(from.getTime() + Math.max(1, bot.everyHours ?? 24) * 3600_000)
 }
 
-export async function runBot(channelId: string, opts: { trigger: 'scheduled' | 'manual' | 'rehearsal'; runId?: string; now?: Date }): Promise<{ runId: string; status: string }> {
+export async function runBot(channelId: string, opts: { trigger: 'scheduled' | 'manual' | 'rehearsal'; runId?: string; now?: Date; tellChat?: boolean }): Promise<{ runId: string; status: string }> {
   const now = opts.now ?? new Date()
   const runId = opts.runId ?? crypto.randomUUID()
   const rehearsal = opts.trigger === 'rehearsal'
@@ -174,6 +174,12 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
       inputTokens: result.usage.inputTokens, cachedTokens: result.usage.cachedInputTokens ?? 0, outputTokens: result.usage.outputTokens,
       handoffs: spend.handoffs,
     })
+
+    // Started from its chat, with you watching: it comes back and pitches what it made there.
+    if (opts.tellChat && !rehearsal) {
+      const { pitchToChat } = await import('@/lib/kan/city/talk')
+      await pitchToChat(owner.id, channelId, runId, summary).catch((e) => console.error('[bots] pitch', e))
+    }
 
     const changed = steps.filter((s) => s.write && s.status === 'done' && !s.label.startsWith('Wrote notes'))
     if (!rehearsal && (changed.length || ctx.asks.length)) {

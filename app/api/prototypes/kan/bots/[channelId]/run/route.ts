@@ -31,10 +31,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ channel
   // A run older than the function ceiling was cut off; it mustn't block new runs forever.
   if (running && Date.now() - +(running.startedAt ?? 0) < 15 * 60_000) return Response.json({ runId: running.id, already: true })
 
-  const { rehearsal } = (await req.json().catch(() => ({}))) as { rehearsal?: boolean }
+  const { rehearsal, tellChat } = (await req.json().catch(() => ({}))) as { rehearsal?: boolean; tellChat?: boolean }
   const runId = crypto.randomUUID()
   afterResponse(async () => {
-    await runBot(channelId, { trigger: rehearsal ? 'rehearsal' : 'manual', runId })
+    await runBot(channelId, { trigger: rehearsal ? 'rehearsal' : 'manual', runId, tellChat: Boolean(tellChat) && !rehearsal })
   })
   return Response.json({ runId })
+}
+
+/** GET ?runId= — how a run is going, step by step, so you can watch it work. */
+export async function GET(req: Request, { params }: { params: Promise<{ channelId: string }> }) {
+  const session = await auth()
+  if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  const { channelId } = await params
+  const runId = new URL(req.url).searchParams.get('runId') ?? ''
+  const run = await db.query.botRuns.findFirst({ where: and(eq(botRuns.id, runId), eq(botRuns.channelId, channelId)), columns: { ownerId: true, status: true, steps: true } })
+  if (!run || run.ownerId !== session.user.id) return Response.json({ status: 'starting', steps: [] })
+  return Response.json({ status: run.status, steps: (run.steps ?? []).map((s) => ({ label: s.label, status: s.status })) })
 }

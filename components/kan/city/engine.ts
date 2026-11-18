@@ -15,6 +15,7 @@ import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
 import { buildField, sproutView, stepSprout, type Field, type SproutView } from './field';
 import { CityFx, buildSea, seaColor, type Sea } from './fx';
+import { Workshop } from './workshop';
 import { decorate, THEME_COLORS } from './themes';
 import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePet, type InsidePick, type TvShow } from './inside';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
@@ -199,6 +200,8 @@ export class CityEngine {
   private dragX = 0;
   /** The resident you're talking with. */
   private talking: string | null = null;
+  /** A bot working where you can watch it: at its easel, sketching. */
+  private workshop: { plotId: string; w: Workshop } | null = null;
   private kanLean = 0;
   private kan: Walker | null = null;
   private kanBubble: HTMLDivElement | null = null;
@@ -399,6 +402,34 @@ export class CityEngine {
     c.hold = performance.now() + 30 * 60_000;
   }
 
+  /**
+   * Watch a bot work: it stays out in the open, sets up an easel and sketches while
+   * its run goes, and the camera comes in close. Null packs the easel away.
+   */
+  workOn(plotId: string | null) {
+    if (this.workshop && this.workshop.plotId !== plotId) {
+      const c = this.citizens.get(this.workshop.plotId);
+      if (c) c.fig.group.rotation.z = 0;
+      this.workshop.w.dispose();
+      this.workshop = null;
+    }
+    if (!plotId || this.workshop) return;
+    const c = this.citizens.get(plotId);
+    if (!c) return;
+    c.walker.path = [];
+    c.walker.inside = false;
+    c.walker.obj.visible = true;
+    c.goal = 'talk';
+    c.hold = performance.now() + 30 * 60_000;
+    const w = new Workshop(c.walker.pos, { x: this.camera.position.x, z: this.camera.position.z }, GROUND_Y);
+    this.scene.add(w.group);
+    this.workshop = { plotId, w };
+    if (this.mode === 'map') this.focus(c.walker.pos, Math.max(4.2, this.camera.zoom));
+  }
+
+  /** A step of the bot's work just finished. */
+  workBeat() { this.workshop?.w.beat(); }
+
   /** A line over a resident's head, for a few seconds or as long as it takes to read. */
   botSay(plotId: string, text: string, kicker?: string) {
     this.inside?.say(plotId, text);
@@ -412,6 +443,8 @@ export class CityEngine {
       c.bubble.append(k);
     }
     const b = document.createElement('div');
+    // A bubble is plain words: the chat's markdown stays in the chat.
+    text = text.replace(/\*\*|__|`/g, '');
     b.textContent = text.length > 140 ? `${text.slice(0, 137)}…` : text;
     c.bubble.append(b);
     c.sayUntil = performance.now() + Math.min(14_000, 3500 + text.length * 55);
@@ -833,6 +866,7 @@ export class CityEngine {
 
   dispose() {
     this.disposed = true;
+    this.workshop?.w.dispose();
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibility);
@@ -1487,7 +1521,7 @@ export class CityEngine {
       if (performance.now() < c.sayUntil) continue;
       c.bubble.innerHTML = '';
       // Only the bot at the front of the line speaks up; the rest wait their turn.
-      if (p.bot.status === 'needs' && queue[0]?.channelId === p.channelId) {
+      if (p.bot.status === 'needs' && queue[0]?.channelId === p.channelId && this.workshop?.plotId !== p.channelId) {
         const t = document.createElement('div');
         t.className = 'kc-bubble-kicker';
         t.textContent = queue.length > 1 ? `Needs you · ${queue.length} in line` : 'Needs you';
@@ -1922,6 +1956,7 @@ export class CityEngine {
     } else this.stepPlayer(dt);
     for (const f of this.ticks) f(t, dt);
     this.stepField(t, dt);
+    this.workshop?.w.step(t, dt);
 
     const r = Math.random;
     this.keepApart(dt);
@@ -1930,10 +1965,13 @@ export class CityEngine {
       const w = c.walker;
       const moving = this.step(w, dt, GROUND_Y);
       if (c.hold && performance.now() > c.hold) this.release(c);
-      if (this.talking === c.plotId && !moving) {
+      const atEasel = this.workshop?.plotId === c.plotId;
+      // At its easel: facing the board, rocking a little with each stroke.
+      if (atEasel && !moving) c.fig.group.rotation.z = Math.sin(t * 7) * 0.07;
+      if ((this.talking === c.plotId || atEasel) && !moving) {
         // Turn to face you: your mushroom on foot, else the camera.
         const at = this.player && this.mode === 'walk' ? { x: this.player.x, z: this.player.z } : { x: this.view.position.x, z: this.view.position.z };
-        const want = Math.atan2(at.x - w.pos.x, at.z - w.pos.z);
+        const want = atEasel ? this.workshop!.w.facing : Math.atan2(at.x - w.pos.x, at.z - w.pos.z);
         let d = want - w.obj.rotation.y;
         d = Math.atan2(Math.sin(d), Math.cos(d));
         w.obj.rotation.y += d * Math.min(1, dt * 5);

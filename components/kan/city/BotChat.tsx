@@ -22,6 +22,8 @@ interface Line {
   /** What it made: apps (building or ready) and cards, to open from the chat. */
   apps?: { id: string; title: string; cardId: string; input?: string }[];
   cards?: { id: string; title: string }[];
+  /** Something it asked you for, answered right under its words. */
+  request?: string;
 }
 export interface OpenApp { id: string; title: string; href: string; full?: boolean }
 interface Chat {
@@ -37,7 +39,9 @@ const readMode = (): Mode => {
   try { const m = localStorage.getItem(MODE_KEY); return m === 'speak' || m === 'talk' ? m : 'type'; } catch { return 'type'; }
 };
 
-export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp, pinned }: {
+export interface BotWork { steps: { label: string; status: string }[]; done: boolean }
+
+export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp, requests = [], renderRequest, work, refreshKey }: {
   plot: CityPlot;
   /** Residents next door, who this one can go and talk to. */
   neighbors: CityPlot[];
@@ -47,8 +51,13 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
   onBoard(): void;
   /** Play an app it built: in the drawer, or full screen. */
   onOpenApp(app: OpenApp): void;
-  /** What this bot is waiting on you for, kept at the top of the conversation. */
-  pinned?: React.ReactNode;
+  /** What this bot is waiting on you for: under the words that asked, else kept at the top. */
+  requests?: string[];
+  renderRequest?(id: string): React.ReactNode;
+  /** It's working while you watch: its steps as they happen. */
+  work?: BotWork | null;
+  /** Bump to fetch the thread again (it came back with something to say). */
+  refreshKey?: number;
 }) {
   const id = plot.channelId;
   const name = plot.resident.name;
@@ -150,6 +159,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
   }, [id]);
 
   useEffect(() => { void open(false); }, [open]);
+  const inThread = new Set((chat?.messages ?? []).flatMap((m) => (m.request ? [m.request] : [])));
+  const pinned = requests.filter((r) => !inThread.has(r));
 
   /** Fetch the thread again without clearing it: a build landed and the bot said so. */
   const refresh = useCallback(async () => {
@@ -169,7 +180,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
       });
     } catch { /* next poll */ }
   }, [id, onSaid, speak]);
-  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }); }, [chat?.messages.length, sending]);
+  useEffect(() => { if (refreshKey) void refresh(); }, [refreshKey, refresh]);
+  useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }); }, [chat?.messages.length, sending, work?.steps.length]);
 
   const status = ear.state === 'listening' ? 'Listening… just talk' : ear.state === 'hearing' ? 'Hearing you…' : ear.state === 'thinking' ? 'Writing down what you said…'
     : sending ? `${name} is thinking…` : speaking ? `${name} is talking…` : null;
@@ -181,12 +193,12 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
         <div className="min-w-0 flex-1">
           <h3 className="text-[19px] font-semibold leading-tight text-neutral-50">{name}</h3>
           <p className="text-[12px] text-neutral-500">Runs {plot.name}</p>
-          <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-neutral-400">{plot.resident.personality}</p>
+          {!work && <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-neutral-400">{plot.resident.personality}</p>}
         </div>
       </div>
 
       {/* How to talk. */}
-      <div className="mt-3 flex items-center gap-1 rounded-full bg-white/[0.04] p-1 text-[12px]">
+      <div data-hide={Boolean(work)} className="mt-3 flex data-[hide=true]:hidden items-center gap-1 rounded-full bg-white/[0.04] p-1 text-[12px]">
         {([['type', Keyboard, 'Type'], ['speak', Volume2, 'Out loud'], ['talk', AudioLines, 'Hands free']] as const).map(([m, Icon, label]) => (
           <button
             key={m}
@@ -198,7 +210,7 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
         ))}
       </div>
 
-      {pinned && <div className="flex-shrink-0">{pinned}</div>}
+      {pinned.length > 0 && renderRequest && !work && <div className="mt-3 max-h-[42dvh] flex-shrink-0 overflow-y-auto">{pinned.map((r) => <div key={r}>{renderRequest(r)}</div>)}</div>}
 
       <div ref={list} className="mt-3 min-h-[160px] flex-1 space-y-2.5 overflow-y-auto pr-1">
         {!chat && !error && <p className="flex items-center gap-2 text-[13px] text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /> {name} is coming over…</p>}
@@ -207,6 +219,7 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
             <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-[14px] leading-relaxed ${m.who === 'you' ? 'rounded-br-md bg-violet-600 text-white' : m.who === 'other' ? 'bg-sky-500/10 text-sky-50' : 'rounded-bl-md bg-white/[0.06] text-neutral-100'}`}>
               {m.who !== 'you' && <p className="mb-0.5 text-[11px] font-medium text-violet-300">{m.name}</p>}
               <div className="prose prose-invert prose-sm max-w-none break-words prose-p:my-0.5"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+              {m.request && renderRequest?.(m.request)}
               {/* One tile per app: on the newest message about it ("it's ready"), not again on the one that started it. */}
               {m.apps?.filter((a) => !all.slice(i + 1).some((n) => n.apps?.some((x) => x.id === a.id))).map((a) => <AppTile key={`${m.id}-${a.id}`} app={a} onOpen={onOpenApp} onReady={refresh} />)}
               {m.cards && m.cards.length > 0 && (
@@ -221,6 +234,7 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
             </div>
           </div>
         ))}
+        {work && <WorkLine name={name} work={work} />}
         {status && <p className="flex items-center gap-2 text-[12px] text-neutral-500">{ear.state === 'idle' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="h-2 w-2 animate-pulse rounded-full bg-rose-400" />}{status}</p>}
         {error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-[13px] text-rose-200">{error}</p>}
         {ear.error && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-[13px] text-rose-200">{ear.error}</p>}
@@ -399,4 +413,22 @@ function useListener() {
   const cancel = useCallback(() => { cancelled.current = true; stopRef.current?.(); }, []);
   useEffect(() => () => { cancelled.current = true; stopRef.current?.(); }, []);
   return { state, error, listen, stop, cancel };
+}
+
+/** What it's doing while you watch: the last few steps of its run, ticking off. */
+function WorkLine({ name, work }: { name: string; work: BotWork }) {
+  const steps = work.steps.filter((s) => !/^Thought for/.test(s.label)).slice(-4);
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[88%] rounded-2xl rounded-bl-md border border-violet-400/30 bg-violet-500/10 px-3 py-2 text-[13px] text-neutral-100">
+        <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-violet-300">{work.done ? '✨' : <Loader2 className="h-3 w-3 animate-spin" />} {work.done ? `${name} is coming back with it` : `${name} is working on it`}</p>
+        {!steps.length && <p className="text-neutral-400">Setting up the easel…</p>}
+        {steps.map((s, i) => (
+          <p key={i} className={`flex gap-1.5 leading-snug ${s.status === 'done' ? 'text-neutral-300' : 'text-neutral-100'}`}>
+            <span className="w-3 flex-shrink-0">{s.status === 'done' ? '✓' : s.status === 'error' ? '·' : '…'}</span>{s.label}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
 }

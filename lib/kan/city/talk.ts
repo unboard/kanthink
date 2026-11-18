@@ -32,14 +32,15 @@ interface Made {
   apps?: { id: string; title: string; cardId: string; input?: string }[]
   cards?: { id: string; title: string }[]
 }
-type Msg = NonNullable<typeof cards.$inferSelect['messages']>[number] & { authorName?: string } & Made
+/** request: something it asked you for, answered right under its words. */
+type Msg = NonNullable<typeof cards.$inferSelect['messages']>[number] & { authorName?: string; request?: string } & Made
 
 export interface ChatView {
   resident: Resident
   channelName: string
   cardId: string
   title: string
-  messages: ({ id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string } & Made)[]
+  messages: ({ id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string; request?: string } & Made)[]
 }
 
 /** What the bots call the owner. The owner asked to be called Hodg. */
@@ -99,6 +100,7 @@ function view(resident: Resident, channelName: string, card: { id: string; title
       at: m.createdAt,
       ...(m.apps?.length ? { apps: m.apps } : {}),
       ...(m.cards?.length ? { cards: m.cards } : {}),
+      ...(m.request ? { request: m.request } : {}),
     })),
   }
 }
@@ -436,6 +438,32 @@ function answerTool(o: { ownerId: string; channelId: string; made: Required<Made
       return { content: `Passed on "${r.row.title}". You'll remember why.`, label: `Passed on “${r.row.title}”` }
     },
   }
+}
+
+/**
+ * After a run you watched from its chat: the bot comes back and pitches what it came
+ * up with, in the conversation, with the request itself under its words to answer.
+ */
+export async function pitchToChat(ownerId: string, channelId: string, runId: string, summary: string) {
+  const bot = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { chatCardId: true, name: true } })
+  if (!bot?.chatCardId) return
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, bot.chatCardId), columns: { messages: true } })
+  if (!card) return
+  const owner = await db.query.users.findFirst({ where: eq(users.id, ownerId), columns: { name: true } })
+  const boss = callName(owner)
+  const { botApprovals } = await import('@/lib/db/schema')
+  const asked = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.runId, runId), eq(botApprovals.status, 'pending')) })
+  const ch = await db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true } })
+  const name = residentOf({ id: channelId, name: ch?.name ?? '' }, { name: bot.name }).name
+  const lines: Msg[] = asked.length
+    ? asked.map((a, i) => ({
+      ...botMsg(name, a.kind === 'use_app'
+        ? `${i ? 'And' : `Okay ${boss},`} how about this one? It's free to open.`
+        : `${i ? 'One more:' : `Ta-da! Okay ${boss}, here's my pitch.`} **${a.title}**. Everything’s just below. Want me to build it?`),
+      request: a.id,
+    }))
+    : [botMsg(name, summary.slice(0, 1200))]
+  await db.update(cards).set({ messages: [...((card.messages ?? []) as Msg[]), ...lines] as never, updatedAt: new Date() }).where(eq(cards.id, bot.chatCardId))
 }
 
 const plain = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `

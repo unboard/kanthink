@@ -19,7 +19,7 @@ import { Census } from '@/components/kan/city/Census';
 import { PlayerSheet, Portrait, usePlayers } from '@/components/kan/city/PlayerSheet';
 import { onPlayers, playing as whoIsPlaying } from '@/lib/kan/players';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
-import { BotChat, type OpenApp } from '@/components/kan/city/BotChat';
+import { BotChat, type BotWork, type OpenApp } from '@/components/kan/city/BotChat';
 import { Redecorate } from '@/components/kan/city/Redecorate';
 import type { InsideNear, InsidePet, InsidePick } from '@/components/kan/city/inside';
 import { PET_CSS, PetSheet } from '@/components/kan/city/PetSheet';
@@ -189,6 +189,10 @@ export default function CityPage() {
   const [playing, setPlaying] = useState<string | null>(null);
   /** When the app was opened on a subject, the link that carries it. */
   const [playHref, setPlayHref] = useState<string | null>(null);
+  /** A bot you sent to work from its chat, working where you can watch. */
+  const [watch, setWatch] = useState<(BotWork & { channelId: string; runId: string }) | null>(null);
+  /** Bumped when the bot you're talking to has something new to say in its chat. */
+  const [chatBump, setChatBump] = useState(0);
   /** The Today pill, open under where it was tapped. */
   const [today, setToday] = useState<{ x: number; y: number } | null>(null);
   /** The building you're inside, with its board. */
@@ -422,6 +426,8 @@ export default function CityPage() {
       onLeave: () => onLeaveRef.current(),
     });
     engine.current.setSky(sky);
+    // For poking at the city from the console while developing.
+    if (process.env.NODE_ENV === 'development') (window as unknown as { __kanCity?: CityEngine }).__kanCity = engine.current;
     return undefined;
   }, [state, sky]);
   useEffect(() => () => { engine.current?.dispose(); engine.current = null; }, []);
@@ -439,9 +445,9 @@ export default function CityPage() {
   const leftW = wide && side === 'citizens' ? 312 : 0;
   const rightW = wide ? (panelOpen ? (board && threadOpen ? 584 : 444) : side === 'feed' ? 352 : 0) : 0;
   useEffect(() => {
-    const bottom = wide ? chatH : panelOpen ? window.innerHeight * 0.78 : chatH;
+    const bottom = wide ? chatH : panelOpen ? window.innerHeight * (watch ? 0.4 : 0.78) : chatH;
     engine.current?.setInsets(rightW - leftW, bottom);
-  }, [wide, rightW, leftW, panelOpen, chatH]);
+  }, [wide, rightW, leftW, panelOpen, chatH, watch]);
   useEffect(() => { engine.current?.select(pick ?? (board ? { kind: 'plot', id: board } : null), true); }, [pick, board, rightW, leftW]);
 
   const plots = useMemo(() => shown?.plots ?? [], [shown]);
@@ -550,9 +556,52 @@ export default function CityPage() {
   const reshape = async (id: string) => {
     const a = approvals.find((x) => x.id === id);
     if (!a) return;
-    await decide(id, false, { reason: `Make it a reusable tool instead of a one-off about “${a.title}”: one app that does this for any subject I hand it (it reads window.kanthinkInput.topic and lets me type a new one), so I can keep using it. Propose that build, and then keep offering it on things I share.` });
-    void runNow(a.channelId);
+    const ok = await act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve: false, reason: `Make it a reusable tool instead of a one-off about “${a.title}”: one app that does this for any subject I hand it (it reads window.kanthinkInput.topic and lets me type a new one), so I can keep using it. Propose that build, and then keep offering it on things I share.` })));
+    if (ok) void watchWork(a.channelId, 'Ooh, a tool! Let me sketch it out.');
   };
+  /** Send a bot to work from its chat and stay to watch: it sets up its easel, and comes back with a pitch. */
+  const watchWork = async (channelId: string, line: string) => {
+    setPick({ kind: 'bot', id: channelId });
+    const r = await fetch(`/api/prototypes/kan/bots/${channelId}/run`, json('POST', { tellChat: true })).catch(() => null);
+    const j = r?.ok ? await r.json() : null;
+    if (!j?.runId) { setNote('It couldn’t get started. Try again in a minute.'); return; }
+    setWatch({ channelId, runId: j.runId, steps: [], done: false });
+    engine.current?.botSay(channelId, line);
+  };
+  // Follow the run: each finished step throws sparkles; when it's done the bot packs up and pitches.
+  useEffect(() => {
+    if (!watch || watch.done) return;
+    const { channelId, runId } = watch;
+    let stop = false;
+    let seen = 0;
+    const poll = async () => {
+      const r = await fetch(`/api/prototypes/kan/bots/${channelId}/run?runId=${runId}`).catch(() => null);
+      const j: { status: string; steps: BotWork['steps'] } | null = r?.ok ? await r.json() : null;
+      if (stop || !j) return;
+      const done = j.steps.filter((s) => s.status === 'done').length;
+      if (done > seen) { engine.current?.workBeat(); seen = done; }
+      const now = j.steps.filter((s) => s.status === 'running' && !/^Thought for/.test(s.label)).at(-1);
+      if (now) engine.current?.botSay(channelId, now.label, 'Working on it');
+      const finished = j.status !== 'running' && j.status !== 'starting';
+      setWatch((w) => (w && w.runId === runId ? { ...w, steps: j.steps, done: finished } : w));
+      if (finished) {
+        engine.current?.workBeat();
+        await Promise.all([load(), loadApprovals()]);
+        if (stop) return;
+        setChatBump((n) => n + 1);
+        setTimeout(() => { engine.current?.workOn(null); setWatch((w) => (w?.runId === runId ? null : w)); }, 2500);
+      }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 2000);
+    return () => { stop = true; clearInterval(t); };
+  }, [watch?.runId, watch?.done]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Set up the easel once the sheet has dropped, so the camera frames the bot in what you can see.
+  useEffect(() => { if (watch) engine.current?.workOn(watch.channelId); }, [watch?.runId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Walking away packs up the easel; the run carries on and its pitch waits in the chat.
+  useEffect(() => {
+    if (watch && pick?.kind !== 'bot') { engine.current?.workOn(null); setWatch(null); }
+  }, [pick, watch]);
   function openApp(a: OpenApp) {
     // In the drawer when the city knows the app (it's on the Strip); otherwise, or when asked, full screen.
     const known = data?.apps.some((x) => x.id === a.id);
@@ -988,7 +1037,7 @@ export default function CityPage() {
         />
       )}
       {pick && !board && data && (
-        <PickSheet onClose={() => { setPick(null); setPlaying(null); setPlayHref(null); }} fill={Boolean(selectedBot || playingApp)} wide={Boolean(playingApp)}>
+        <PickSheet onClose={() => { setPick(null); setPlaying(null); setPlayHref(null); }} fill={Boolean(selectedBot || playingApp)} low={Boolean(watch && selectedBot)} wide={Boolean(playingApp)}>
           {selectedBot ? (
             <BotChat
               key={selectedBot.channelId}
@@ -998,11 +1047,13 @@ export default function CityPage() {
               onVisits={(vs) => { for (const v of vs) engine.current?.visit(v.from, v.to); reloadSoon(); }}
               onBoard={() => setBoard(selectedBot.channelId)}
               onOpenApp={openApp}
-              pinned={approvals.some((a) => a.channelId === selectedBot.channelId) ? (
-                <div className="mt-3 max-h-[42dvh] overflow-y-auto">
-                  {approvals.filter((a) => a.channelId === selectedBot.channelId).map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onReshape={(id) => void reshape(id)} compact />)}
-                </div>
-              ) : null}
+              requests={approvals.filter((a) => a.channelId === selectedBot.channelId).map((a) => a.id)}
+              renderRequest={(id) => {
+                const a = approvals.find((x) => x.id === id);
+                return a ? <ApprovalRow a={a} busy={busy} onDecide={(i, ok, extra) => void decide(i, ok, extra)} onReshape={(i) => void reshape(i)} compact /> : null;
+              }}
+              work={watch?.channelId === selectedBot.channelId ? watch : null}
+              refreshKey={chatBump}
             />
           ) : playingApp ? (
             <AppPlayer
@@ -1195,14 +1246,14 @@ function SidePanel({ children, side, onClose, wide }: { children: React.ReactNod
 }
 
 /** Where a picked thing opens: the right side on a wide screen, a bottom sheet on a phone. */
-function PickSheet({ children, onClose, fill = false, wide = false }: { children: React.ReactNode; onClose: () => void; fill?: boolean; wide?: boolean }) {
+function PickSheet({ children, onClose, fill = false, low = false, wide = false }: { children: React.ReactNode; onClose: () => void; fill?: boolean; low?: boolean; wide?: boolean }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className={`pointer-events-auto fixed inset-x-0 bottom-0 pb-[var(--chat-h)] rounded-t-3xl border-t border-white/10 z-40 flex max-h-[78dvh] flex-col overflow-hidden bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:rounded-2xl lg:border lg:pb-0 ${fill ? 'h-[78dvh] lg:h-auto' : ''} ${wide ? 'lg:w-[min(760px,58vw)]' : 'lg:w-[420px]'}`}>
+    <div className={`pointer-events-auto fixed inset-x-0 bottom-0 pb-[var(--chat-h)] rounded-t-3xl border-t border-white/10 z-40 flex max-h-[78dvh] flex-col overflow-hidden bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:rounded-2xl lg:border lg:pb-0 ${low ? 'h-[40dvh] lg:h-auto' : fill ? 'h-[78dvh] lg:h-auto' : ''} transition-[height] duration-500 ${wide ? 'lg:w-[min(760px,58vw)]' : 'lg:w-[420px]'}`}>
       <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20 lg:hidden" />
       <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-neutral-400 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
       <div className={`min-h-0 flex-1 p-4 ${fill ? 'flex flex-col' : 'overflow-y-auto'}`}>{children}</div>
