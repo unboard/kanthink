@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { botRuns, channels } from '@/lib/db/schema'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, desc, eq, ne } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { afterResponse } from '@/lib/afterResponse'
 import { runBot } from '@/lib/kan/bots/run'
@@ -44,8 +44,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ channelI
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const { channelId } = await params
-  const runId = new URL(req.url).searchParams.get('runId') ?? ''
-  const run = await db.query.botRuns.findFirst({ where: and(eq(botRuns.id, runId), eq(botRuns.channelId, channelId)), columns: { ownerId: true, status: true, steps: true } })
+  const runId = new URL(req.url).searchParams.get('runId')
+  // No run named: the one it's on now, if it's working.
+  const run = await db.query.botRuns.findFirst({
+    where: runId ? and(eq(botRuns.id, runId), eq(botRuns.channelId, channelId)) : and(eq(botRuns.channelId, channelId), eq(botRuns.status, 'running'), ne(botRuns.trigger, 'chat')),
+    orderBy: [desc(botRuns.startedAt)],
+    columns: { id: true, ownerId: true, status: true, steps: true },
+  })
   if (!run || run.ownerId !== session.user.id) return Response.json({ status: 'starting', steps: [] })
-  return Response.json({ status: run.status, steps: (run.steps ?? []).map((s) => ({ label: s.label, status: s.status })) })
+  return Response.json({ runId: run.id, status: run.status, steps: (run.steps ?? []).map((s) => ({ label: s.label, status: s.status })) })
 }

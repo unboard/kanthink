@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { botApprovals, botRuns, cards, channels, playgroundApps, users, type BotStepJson } from '@/lib/db/schema'
+import { botApprovals, botRuns, cards, channelBots, channels, playgroundApps, users, type BotStepJson } from '@/lib/db/schema'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { estimateBuildCost, describeModelMenu, buildModelMenu } from '@/lib/playground/estimate'
 import type { PlaygroundProvider } from '@/lib/playground/models'
@@ -18,6 +18,8 @@ import type { BotContext, BotTool } from './tools'
 export type ApprovalRow = typeof botApprovals.$inferSelect
 
 const MILLICENTS_PER_DOLLAR = 100_000
+/** A build that can't cost more than this, inside the bot's budget, needs nobody's yes. */
+export const AUTO_BUILD_MILLICENTS = 25_000
 const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v))
 const usd = (m: number | null | undefined) => `$${((m ?? 0) / MILLICENTS_PER_DOLLAR).toFixed(2)}`
 
@@ -39,7 +41,7 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
   return {
     name: 'propose_build',
     area: 'build',
-    description: `Ask the owner to approve an app build (a new app on a card, or a rebuild of its app). You never build directly: the owner sees what it is, why, the model and the estimated cost, and approves or rejects with a reason. An approved build runs at once; you'll see the result, or the reason it was rejected, next run. Make the case in purpose: who it's for and why it's worth the money. Pick the cheapest model that will do the job well:\n${describeModelMenu(providers)}`,
+    description: `Build an app (a new app on a card, or a rebuild of its app). A small build (at most 25¢, inside your budget) happens at once and you hand it over in your chat; a bigger one waits for the owner, who sees what it is, why, the model and the cost, and approves or rejects with a reason. Make the case in purpose: who it's for and why it's worth the money. Pick the cheapest model that will do the job well:\n${describeModelMenu(providers)}`,
     input_schema: {
       type: 'object',
       properties: {
@@ -66,6 +68,26 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
       if (waiting) return { content: `A build of this card is already waiting for the owner ("${waiting.title}"). Don't ask again.`, label: `Already waiting on you: “${waiting.title}”` }
 
       const est = estimateBuildCost({ modelId, briefChars: size.briefChars + str(input.brief).length, existingCodeChars: size.codeChars })
+      // A small build inside its budget is the bot's own call: it builds now and says so in its chat.
+      const maxMillicents = Math.round(est.maxUsd * MILLICENTS_PER_DOLLAR)
+      if (maxMillicents <= AUTO_BUILD_MILLICENTS && !bot.rehearsal) {
+        const { roomFor } = await import('./spend')
+        const own = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, bot.channelId), columns: { channelId: true, ownerId: true, dailyBudgetCents: true } })
+        const { room } = own ? await roomFor(own) : { room: { left: 0 } }
+        if (room.left >= maxMillicents) {
+          const [auto] = await db.insert(botApprovals).values({
+            channelId: bot.channelId, ownerId: ctx.userId, runId: bot.runId ?? null, kind: 'build_app', status: 'approved', decidedAt: new Date(),
+            cardId: size.card.id, title: str(input.title).slice(0, 120) || size.card.title, purpose: str(input.purpose).slice(0, 1000),
+            brief: str(input.brief).slice(0, 4000) || null, modelId,
+            likelyMillicents: Math.round(est.likelyUsd * MILLICENTS_PER_DOLLAR), maxMillicents,
+          }).returning()
+          await runApprovedBuild(auto.id)
+          const done = await db.query.botApprovals.findFirst({ where: eq(botApprovals.id, auto.id), columns: { status: true, outcome: true, costMillicents: true } })
+          return done?.status === 'done'
+            ? { content: `Built "${auto.title}" (${usd(done.costMillicents)}); small builds are yours to make. It's in your chat, ready to play. If it's a tool, make an episode with it next.`, label: `Built “${auto.title}” (${usd(done.costMillicents)})` }
+            : { content: `The build failed: ${done?.outcome ?? 'unknown'}`, isError: true }
+        }
+      }
       const [row] = await db.insert(botApprovals).values({
         channelId: bot.channelId,
         ownerId: ctx.userId,
@@ -104,48 +126,53 @@ export function appLink(app: { id: string; shareToken: string | null; isPublic: 
   return input ? `${base}?topic=${encodeURIComponent(input.slice(0, 500))}` : base
 }
 
+/** How often a bot may make something new on the same subject. */
+const EPISODE_REPEAT_MS = 14 * 24 * 3600_000
+
 /**
- * Offer to run an app the channel already has on something new. No build, no money:
- * the owner taps Open and the app starts on it. This is how one good app keeps paying
- * off: the stick-figure explainer explains the next thing they share, too.
+ * Make an episode: run an app the channel already has on a new subject, and hand it
+ * over. Nothing is built and nothing is asked: a card for it lands at the end of the
+ * board (the shelf), and the bot says "I made you something" in its chat with the
+ * app under its words, opened on that subject. What the owner thinks of it comes back
+ * as feedback the bot reads next run.
  */
-export function offerAppTool(): BotTool {
+export function makeEpisodeTool(): BotTool {
   return {
-    name: 'offer_app',
+    name: 'make_episode',
     area: 'build',
-    description: 'Offer the owner a run of an app this channel ALREADY HAS, on something new: a topic, a question, a link they shared or mentioned. Costs nothing and builds nothing; they tap Open and the app starts on it. Prefer this to proposing a new app whenever an existing one can do the job. Say in why what prompted it (what they shared or said).',
+    description: 'Make something new with an app this channel ALREADY HAS, on a subject the owner shared or said: a topic, a question, a link. Free and instant: it goes on the channel\'s shelf and you hand it to them in your chat. This is your main way of being useful once you have a tool. One or two per run at most, only when it truly fits.',
     input_schema: {
       type: 'object',
       properties: {
         appId: { type: 'string', description: 'One of the channel’s apps' },
-        input: { type: 'string', description: 'What to hand the app, in a few words: the topic, question or link' },
-        title: { type: 'string', description: 'The offer in a few words, e.g. "Explain how volcanoes work"' },
-        why: { type: 'string', description: 'One sentence: what they shared or said that prompted this' },
+        topic: { type: 'string', description: 'What to start it on, in a few words: the topic, question or link' },
+        title: { type: 'string', description: 'What it is, the way you\'d name an episode, e.g. "How volcanoes work"' },
+        why: { type: 'string', description: 'One short sentence to the owner: what they shared or said that made you think of it' },
       },
-      required: ['appId', 'input', 'title'],
+      required: ['appId', 'topic', 'title'],
     },
     kind: 'write',
-    running: (i) => `Offering “${str(i.title)}”`,
+    running: (i) => `Making “${str(i.title)}”`,
     async run(input, ctx) {
       const bot = ctx as BotContext
-      const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, str(input.appId)), columns: { id: true, channelId: true, title: true, code: true, cardId: true } })
+      const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, str(input.appId)), columns: { id: true, channelId: true, title: true, generationCount: true, cardId: true, shareToken: true, isPublic: true } })
       if (!app || app.channelId !== bot.channelId) return { content: 'That app isn’t in this channel.', isError: true }
-      if (!app.code) return { content: 'That app hasn’t been built yet.', isError: true }
-      const what = str(input.input).trim().slice(0, 500)
-      if (!what) return { content: 'Say what to hand the app.', isError: true }
-      const open = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, bot.channelId), eq(botApprovals.kind, 'use_app'), eq(botApprovals.status, 'pending')) })
-      if (open.some((o) => o.appId === app.id && o.input?.toLowerCase() === what.toLowerCase())) return { content: 'That offer is already waiting.', label: 'Already offered' }
-      if (open.length >= 2) return { content: 'Two offers are already waiting on the owner. Don’t pile on; wait for their answer.', label: 'Two offers already waiting' }
-      const [row] = await db.insert(botApprovals).values({
-        channelId: bot.channelId, ownerId: ctx.userId, runId: bot.runId ?? null, kind: 'use_app',
-        cardId: app.cardId, appId: app.id, input: what,
-        title: str(input.title).slice(0, 120) || `${app.title}: ${what}`,
-        purpose: str(input.why).slice(0, 600) || null,
-      }).returning()
-      return {
-        content: `Offered "${row.title}" with ${app.title}. They'll see it and can open it or say not interested.`,
-        label: `Offered you “${row.title}”`,
-      }
+      if (!app.generationCount) return { content: 'That app hasn’t been built yet.', isError: true }
+      const topic = str(input.topic).trim().slice(0, 500)
+      if (!topic) return { content: 'Say what it’s about.', isError: true }
+      const title = str(input.title).trim().slice(0, 120) || topic
+      const recent = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, bot.channelId), eq(botApprovals.kind, 'use_app')), orderBy: [desc(botApprovals.createdAt)], limit: 40 })
+      if (recent.some((r) => (r.input ?? '').toLowerCase() === topic.toLowerCase() && Date.now() - +(r.createdAt ?? 0) < EPISODE_REPEAT_MS)) return { content: 'You already made that one lately.', label: 'Already made that one' }
+      const why = str(input.why).trim().slice(0, 300)
+      const { addCard, botMsg, sayInChat } = await import('@/lib/kan/city/talk')
+      const href = appLink(app, topic)
+      const cardId = await addCard(bot.channelId, title, [botMsg('Kan', `Made with **${app.title}**, on “${topic}”.${why ? ` ${why}` : ''}\n\n[Open it](${href})`)], 'last')
+      await db.insert(botApprovals).values({
+        channelId: bot.channelId, ownerId: ctx.userId, runId: bot.runId ?? null, kind: 'use_app', status: 'done', outcome: 'Made',
+        cardId, appId: app.id, input: topic, title, purpose: why || null, decidedAt: new Date(),
+      })
+      await sayInChat(bot.channelId, `I made you something: **${title}**.${why ? ` ${why}` : ''}`, { apps: [{ id: app.id, title, cardId: app.cardId, input: topic }] })
+      return { content: `Made "${title}" and handed it to them in your chat. It's on the shelf too.`, label: `Made you “${title}”` }
     },
   }
 }
@@ -162,8 +189,8 @@ export async function approvalsContext(channelId: string): Promise<string> {
     if (r.kind === 'use_app') {
       switch (r.status) {
         case 'pending': return `- OFFER WAITING: "${r.title}". Don't offer it again.`
-        case 'rejected': return `- NOT INTERESTED: "${r.title}". Their reason: ${r.reason || '(none given)'}. Offer less of this.`
-        default: return `- OPENED: "${r.title}". They wanted it; more like this is welcome.`
+        case 'rejected': return `- NOT INTERESTED: "${r.title}"${r.reason ? `. Why: ${r.reason}` : ''}. Make less of this.`
+        default: return r.outcome === 'Loved' ? `- LOVED: "${r.title}"${r.reason ? `. Why: ${r.reason}` : ''}. Make more like this.` : r.outcome === 'Made' ? `- MADE: "${r.title}" (no word from them yet)` : `- OPENED: "${r.title}". More like this is welcome.`
       }
     }
     const model = r.modelId ? ` with ${r.modelId}` : ''

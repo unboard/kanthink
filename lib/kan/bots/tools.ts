@@ -3,7 +3,7 @@ import { appEmails, appMessages, appUsers, channelBots, playgroundApps } from '@
 import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { BUILD_RESERVE_MILLICENTS } from './spend'
-import { offerAppTool, proposeBuildTool } from './approvals'
+import { makeEpisodeTool, proposeBuildTool } from './approvals'
 import type { PlaygroundProvider } from '@/lib/playground/models'
 import { claudeCodeTool, studioTools, voiceTools, type AgentTool, type ToolContext } from '@/lib/kan/agent/tools'
 
@@ -294,7 +294,7 @@ export function botTools(opts: { isAdmin: boolean; isStudio: boolean; canHandOff
   const studio = opts.isStudio ? studioTools().map((t) => ({ ...t, description: ownWord(t.description), area: 'money' as BotArea })) : []
   const handOff = opts.canHandOff ? [{ ...claudeCodeTool, description: ownWord(claudeCodeTool.description), area: 'build' as BotArea }] : []
   const propose = proposeBuildTool(opts.providers ?? ['google', 'openai'])
-  return [...board, propose, offerAppTool(), ...peopleTools, ...moneyTools, ...studio, ...handOff, ...selfTools]
+  return [...board, propose, makeEpisodeTool(), ...peopleTools, ...moneyTools, ...studio, ...handOff, ...selfTools]
 }
 
 /**

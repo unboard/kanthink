@@ -105,8 +105,8 @@ function view(resident: Resident, channelName: string, card: { id: string; title
   }
 }
 
-async function addCard(channelId: string, title: string, messages: Msg[]) {
-  const col = await db.query.columns.findFirst({ where: eq(columns.channelId, channelId), orderBy: [asc(columns.position)], columns: { id: true } })
+export async function addCard(channelId: string, title: string, messages: Msg[], end: 'first' | 'last' = 'first') {
+  const col = await db.query.columns.findFirst({ where: eq(columns.channelId, channelId), orderBy: [end === 'last' ? desc(columns.position) : asc(columns.position)], columns: { id: true } })
   if (!col) return null
   const top = await db.query.cards.findFirst({ where: inColumnBucket(col.id, 'active'), orderBy: [desc(cards.position)], columns: { position: true } })
   const id = nanoid()
@@ -121,6 +121,25 @@ async function addCard(channelId: string, title: string, messages: Msg[]) {
 
 export function botMsg(name: string, text: string): Msg {
   return { id: nanoid(), type: 'ai_response', content: text, authorName: name, createdAt: new Date().toISOString() }
+}
+
+/**
+ * What you thought of something a bot made: more like this, or not interested. It's
+ * what the bot learns your taste from, so it goes in its notes and in the record it
+ * reads every run.
+ */
+export async function feedback(ownerId: string, channelId: string, f: { appId: string; input: string; liked: boolean; why?: string }) {
+  const found = await owned(ownerId, channelId)
+  if (!found) return { error: 'Not yours.' }
+  const { botApprovals } = await import('@/lib/db/schema')
+  const row = (await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, channelId), eq(botApprovals.kind, 'use_app')), orderBy: [desc(botApprovals.createdAt)], limit: 40 }))
+    .find((r) => r.appId === f.appId && (r.input ?? '').toLowerCase() === f.input.toLowerCase())
+  const why = (f.why ?? '').trim().slice(0, 500) || null
+  const set = f.liked ? { status: 'done' as const, outcome: 'Loved', reason: why } : { status: 'rejected' as const, reason: why, outcome: 'Not interested' }
+  if (row) await db.update(botApprovals).set({ ...set, decidedAt: new Date() }).where(eq(botApprovals.id, row.id))
+  else await db.insert(botApprovals).values({ channelId, ownerId, kind: 'use_app', appId: f.appId, input: f.input, title: f.input, ...set, decidedAt: new Date() })
+  await noteFor(channelId, `${f.liked ? 'They loved' : 'Not interested in'} "${f.input}"${why ? `: ${why}` : ''}.`).catch(() => {})
+  return { ok: true }
 }
 
 /** The bot says something in its own chat, unprompted: a build started, a build landed. */
@@ -262,7 +281,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
   const tools: BotTool[] = [
     ...guardTools(base, ctx), noteTool(channelId), scheduleTool(ownerId, channelId), jobTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
     buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made, said: [...before, mine] }),
-    openAppTool({ channelId, made }), answerTool({ ownerId, channelId, made }),
+    openAppTool({ ownerId, channelId, made }), answerTool({ ownerId, channelId, made }),
   ]
   const { botApprovals } = await import('@/lib/db/schema')
   const waiting = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, channelId), eq(botApprovals.status, 'pending')), columns: { id: true, kind: true, title: true, purpose: true, input: true } })
@@ -389,7 +408,7 @@ function buildTool(o: { ownerId: string; channelId: string; resident: Resident; 
 }
 
 /** Open one of the channel's apps on something: the tool, used again, at no cost. */
-function openAppTool(o: { channelId: string; made: Required<Made> }): BotTool {
+function openAppTool(o: { ownerId: string; channelId: string; made: Required<Made> }): BotTool {
   return {
     name: 'open_app',
     area: 'build',
@@ -410,6 +429,12 @@ function openAppTool(o: { channelId: string; made: Required<Made> }): BotTool {
       if (!app.generationCount) return { content: 'That app hasn\'t been built yet.', isError: true }
       const topic = String(i.topic ?? '').trim().slice(0, 500)
       o.made.apps.push({ id: app.id, title: topic ? `${app.title}: ${topic}` : app.title, cardId: app.cardId, ...(topic ? { input: topic } : {}) })
+      // On a subject, it's an episode: it goes on the shelf, and your more/less teaches the bot.
+      if (topic) {
+        const { botApprovals } = await import('@/lib/db/schema')
+        const shelf = await addCard(o.channelId, `${app.title}: ${topic}`.slice(0, 120), [botMsg('Kan', `Made with **${app.title}**, on “${topic}”, from a chat.`)], 'last')
+        await db.insert(botApprovals).values({ channelId: o.channelId, ownerId: o.ownerId, kind: 'use_app', status: 'done', outcome: 'Opened', cardId: shelf, appId: app.id, input: topic, title: topic, decidedAt: new Date() }).catch(() => {})
+      }
       return { content: `It's ready for them to open below${topic ? `, started on "${topic}"` : ''}.`, label: `Opened ${app.title}` }
     },
   }

@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { appStatus, openChat, say } from '@/lib/kan/city/talk'
+import { appStatus, feedback, openChat, say } from '@/lib/kan/city/talk'
 
 export const runtime = 'nodejs'
 // A turn can start an app build, which finishes after the reply.
@@ -21,14 +21,20 @@ export async function GET(req: Request) {
  *   { channelId, action: 'open' }        the conversation you're in, or a new one it opens with a question
  *   { channelId, action: 'new' }         a fresh conversation
  *   { channelId, action: 'say', text }   say something; it answers, and acts if you asked it to
+ *   { channelId, action: 'feedback', appId, input, liked, why? }  what you thought of something it made
  */
 export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   await ensureSchema()
-  const body = await req.json().catch(() => ({})) as { channelId?: string; action?: string; text?: string }
+  const body = await req.json().catch(() => ({})) as { channelId?: string; action?: string; text?: string; appId?: string; input?: string; liked?: boolean; why?: string }
   if (!body.channelId) return Response.json({ error: 'Which bot?' }, { status: 400 })
   const userId = session.user.id
+  if (body.action === 'feedback') {
+    if (!body.appId || !body.input) return Response.json({ error: 'About what?' }, { status: 400 })
+    const r = await feedback(userId, body.channelId, { appId: body.appId, input: body.input, liked: Boolean(body.liked), why: body.why })
+    return Response.json(r, { status: 'error' in r ? 400 : 200 })
+  }
   const out = body.action === 'say'
     ? (body.text?.trim() ? await say(userId, body.channelId, body.text.trim()) : { error: 'Say something.' })
     : await openChat(userId, body.channelId, { fresh: body.action === 'new' })

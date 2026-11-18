@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { AppWindow, ArrowUp, AudioLines, Keyboard, Loader2, Maximize2, Mic, Play, Plus, Square, StickyNote, Volume2 } from 'lucide-react';
+import { AppWindow, ArrowUp, ThumbsUp, AudioLines, Keyboard, Loader2, Maximize2, Mic, Play, Plus, Square, StickyNote, Volume2 } from 'lucide-react';
 import { ShroomBot } from './ShroomBot';
 import { hash } from '@/lib/kan/city/layout';
 import type { CityPlot } from './types';
@@ -221,7 +221,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
               <div className="prose prose-invert prose-sm max-w-none break-words prose-p:my-0.5"><ReactMarkdown>{m.text}</ReactMarkdown></div>
               {m.request && renderRequest?.(m.request)}
               {/* One tile per app: on the newest message about it ("it's ready"), not again on the one that started it. */}
-              {m.apps?.filter((a) => !all.slice(i + 1).some((n) => n.apps?.some((x) => x.id === a.id))).map((a) => <AppTile key={`${m.id}-${a.id}`} app={a} onOpen={onOpenApp} onReady={refresh} />)}
+              {/* Episodes of one app are different things, so a tile is an app on a subject. */}
+              {m.apps?.filter((a) => !all.slice(i + 1).some((n) => n.apps?.some((x) => x.id === a.id && x.input === a.input))).map((a) => <AppTile key={`${m.id}-${a.id}-${a.input ?? ''}`} channelId={id} app={a} onOpen={onOpenApp} onReady={refresh} />)}
               {m.cards && m.cards.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {m.cards.map((c) => (
@@ -281,7 +282,12 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp,
  * An app a bot built from the chat: building (with what the builder's doing now),
  * then ready to play in the drawer or full screen.
  */
-function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string; input?: string }; onOpen(a: OpenApp): void; onReady(): void }) {
+function AppTile({ channelId, app, onOpen, onReady }: { channelId: string; app: { id: string; title: string; input?: string }; onOpen(a: OpenApp): void; onReady(): void }) {
+  const [felt, setFelt] = useState<'more' | 'less' | null>(null);
+  const tell = (liked: boolean) => {
+    setFelt(liked ? 'more' : 'less');
+    void fetch('/api/prototypes/kan/city/talk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId, action: 'feedback', appId: app.id, input: app.input, liked }) }).catch(() => {});
+  };
   const [s, setS] = useState<{ status: 'building' | 'ready' | 'failed'; step: string | null; href: string; title: string } | null>(null);
   const was = useRef<string | null>(null);
   useEffect(() => {
@@ -326,6 +332,17 @@ function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string; i
         <div className="flex gap-1.5 border-t border-white/10 px-2 py-2">
           <button onClick={() => onOpen({ id: app.id, title, href })} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-500 px-2 py-1.5 text-[12px] font-medium text-white hover:bg-violet-400"><Play className="h-3.5 w-3.5" /> Play here</button>
           <button onClick={() => onOpen({ id: app.id, title, href, full: true })} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
+        </div>
+      )}
+      {/* What it made for you: say whether you want more like it. That's how it learns your taste. */}
+      {ready && app.input && (
+        <div className="flex items-center gap-1.5 px-2 pb-2 text-[12px]">
+          {felt ? <span className="px-1 text-neutral-400">{felt === 'more' ? 'Got it, more like this.' : 'Got it, less like this.'}</span> : (
+            <>
+              <button onClick={() => tell(true)} className="flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-1 text-neutral-200 hover:bg-white/5"><ThumbsUp className="h-3 w-3" /> More like this</button>
+              <button onClick={() => tell(false)} className="rounded-full px-2.5 py-1 text-neutral-500 hover:bg-white/5 hover:text-neutral-300">Not interested</button>
+            </>
+          )}
         </div>
       )}
     </div>

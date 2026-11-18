@@ -558,22 +558,16 @@ export default function CityPage() {
     if (!offer && approve && a && pick?.kind === 'bot' && pick.id === a.channelId) setBuilding({ channelId: a.channelId, id });
     return act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve, ...extra })), offer ? (approve ? undefined : 'Got it. It’ll offer less of that.') : approve ? 'Approved. The crane’s going up.' : 'Passed. The bot will read why.', a?.channelId);
   };
-  /** Ask for the tool instead: pass on the one-off, say why, and send the bot back to work on it now. */
-  const reshape = async (id: string) => {
-    const a = approvals.find((x) => x.id === id);
-    if (!a) return;
-    const ok = await act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve: false, reason: `Make it a reusable tool instead of a one-off about “${a.title}”: one app that does this for any subject I hand it (it reads window.kanthinkInput.topic and lets me type a new one), so I can keep using it. Propose that build, and then keep offering it on things I share.` })));
-    if (ok) void watchWork(a.channelId, 'Ooh, a tool! Let me sketch it out.');
-  };
-  /** Send a bot to work from its chat and stay to watch: it sets up its easel, and comes back with a pitch. */
-  const watchWork = async (channelId: string, line: string) => {
-    setPick({ kind: 'bot', id: channelId });
-    const r = await fetch(`/api/prototypes/kan/bots/${channelId}/run`, json('POST', { tellChat: true })).catch(() => null);
-    const j = r?.ok ? await r.json() : null;
-    if (!j?.runId) { setNote('It couldn’t get started. Try again in a minute.'); return; }
-    setWatch({ channelId, runId: j.runId, steps: [], done: false });
-    engine.current?.botSay(channelId, line);
-  };
+  // Talking to a bot that's at work: it stays out at its easel and you follow its run.
+  const workingBot = selectedBot?.bot.status === 'working' ? selectedBot.channelId : null;
+  useEffect(() => {
+    if (!workingBot) return;
+    let stop = false;
+    void fetch(`/api/prototypes/kan/bots/${workingBot}/run`).then((r) => (r.ok ? r.json() : null)).then((j: { runId?: string } | null) => {
+      if (!stop && j?.runId) setWatch((w) => (w?.runId === j.runId ? w : { channelId: workingBot, runId: j.runId!, steps: [], done: false }));
+    }).catch(() => {});
+    return () => { stop = true; };
+  }, [workingBot]);
   // Follow the run: each finished step throws sparkles; when it's done the bot packs up and pitches.
   useEffect(() => {
     if (!watch || watch.done) return;
@@ -1081,7 +1075,7 @@ export default function CityPage() {
               requests={approvals.filter((a) => a.channelId === selectedBot.channelId).map((a) => a.id)}
               renderRequest={(id) => {
                 const a = approvals.find((x) => x.id === id);
-                return a ? <ApprovalRow a={a} busy={busy} onDecide={(i, ok, extra) => void decide(i, ok, extra)} onReshape={(i) => void reshape(i)} compact /> : null;
+                return a ? <ApprovalRow a={a} busy={busy} onDecide={(i, ok, extra) => void decide(i, ok, extra)} compact /> : null;
               }}
               work={watch?.channelId === selectedBot.channelId ? watch : null}
               refreshKey={chatBump}
@@ -1102,7 +1096,6 @@ export default function CityPage() {
               onOff={() => void turnOff(selectedPlot.channelId)}
               onRun={() => void runNow(selectedPlot.channelId)}
               onDecide={(id, ok, extra) => void decide(id, ok, extra)}
-              onReshape={(id) => void reshape(id)}
               onBoard={() => setBoard(selectedPlot.channelId)}
               onMove={(folderId) => void moveTo(selectedPlot.channelId, folderId)}
               onNewHood={() => { setGather({ name: '', ids: [selectedPlot.channelId] }); setPick(null); }}
@@ -1112,7 +1105,7 @@ export default function CityPage() {
               onEnter={() => void enterBuilding(selectedPlot.channelId)}
             />
           ) : pick.kind === 'townhall' ? (
-            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onReshape={(id) => void reshape(id)} onLook={() => void look()} onStep={(id, kind, key, ok) => void stepPass(id, kind, key, ok)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
+            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onStep={(id, kind, key, ok) => void stepPass(id, kind, key, ok)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
           ) : pick.kind === 'sprout' ? (
@@ -1425,7 +1418,7 @@ function Feed({ data, onGo }: { data: CityData; onGo(id: string): void }) {
   );
 }
 
-function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onReshape, onBoard, onMove, onNewHood, onGo, onTalk, onRelocate, onEnter }: {
+function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk, onRelocate, onEnter }: {
   p: CityPlot;
   data: CityData;
   approvals: Approval[];
@@ -1434,7 +1427,6 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onR
   onOff(): void;
   onRun(): void;
   onDecide(id: string, ok: boolean, extra?: { reason?: string; modelId?: string }): void;
-  onReshape(id: string): void;
   onBoard(): void;
   onMove(folderId: string | null): void;
   onNewHood(): void;
@@ -1526,7 +1518,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onR
         {!p.bot.on && <p className="mt-2 text-[11px] text-neutral-600">A run costs about $0.10–$0.30 and comes out of its daily budget.</p>}
       </div>
 
-      {approvals.map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={onDecide} onReshape={onReshape} />)}
+      {approvals.map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={onDecide} />)}
 
       {/* Its neighborhood: who its bot may help, and where it could move. */}
       <div className="mt-3 rounded-xl border border-white/10 p-3">
@@ -1636,11 +1628,9 @@ function InvitePanel({ host, plots, here, onInvite }: { host: CityPlot; plots: C
   );
 }
 
-function ApprovalRow({ a, busy, onDecide, onReshape, showWhere, compact }: {
+function ApprovalRow({ a, busy, onDecide, showWhere, compact }: {
   a: Approval; busy: string | null;
   onDecide: (id: string, ok: boolean, extra?: { reason?: string; modelId?: string }) => void;
-  /** Ask for a reusable tool instead of this one-off. */
-  onReshape?: (id: string) => void;
   showWhere?: boolean;
   /** Pinned in the bot's chat: tighter, so the conversation keeps the room. */
   compact?: boolean;
@@ -1676,7 +1666,6 @@ function ApprovalRow({ a, busy, onDecide, onReshape, showWhere, compact }: {
         <div className="mt-2 flex gap-2">
           <button disabled={busy !== null} onClick={() => onDecide(a.id, true, modelId && modelId !== a.modelId ? { modelId } : {})} className="rounded-full bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-amber-400 disabled:opacity-50">{mine ? 'Approving…' : 'Build it'}</button>
           <button disabled={busy !== null} onClick={() => setRejecting(true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-300 hover:bg-white/5">Not now</button>
-          {onReshape && !a.isTool && <button disabled={busy !== null} onClick={() => onReshape(a.id)} title="One app for any subject, kept and reused" className="rounded-full border border-violet-400/40 px-3.5 py-1.5 text-xs text-violet-100 hover:bg-violet-500/15 disabled:opacity-50">Make it a tool</button>}
         </div>
       )}
     </div>
@@ -1813,12 +1802,11 @@ function PlanCard({ pass, busy, onStep, onDismiss, onRemember, onAsk }: {
   );
 }
 
-function TownHallPanel({ data, approvals, busy, onDecide, onReshape, onLook, onStep, onDismiss, onRemember, onGo, onAsk }: {
+function TownHallPanel({ data, approvals, busy, onDecide, onLook, onStep, onDismiss, onRemember, onGo, onAsk }: {
   data: CityData;
   approvals: Approval[];
   busy: string | null;
   onDecide: (id: string, ok: boolean, extra?: { reason?: string; modelId?: string }) => void;
-  onReshape: (id: string) => void;
   onLook: () => void;
   onStep: (id: string, kind: 'area' | 'filing', key: string, ok: boolean) => void;
   onDismiss: (id: string) => void;
@@ -1845,7 +1833,7 @@ function TownHallPanel({ data, approvals, busy, onDecide, onReshape, onLook, onS
         </div>
       ))}
 
-      {approvals.map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={onDecide} onReshape={onReshape} showWhere />)}
+      {approvals.map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={onDecide} showWhere />)}
 
       {th.asks.map((a, i) => (
         <div key={i} className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">

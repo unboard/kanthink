@@ -81,6 +81,8 @@ const PERSONAL_SPACE = 2.4;
 interface Citizen {
   plotId: string;
   status: BotStatus;
+  /** It made you something you haven't seen yet: it says so over its head. */
+  made?: boolean;
   fig: ReturnType<typeof botFigure>;
   walker: Walker;
   /** Where it's headed, so a new status only reroutes when the goal changes. */
@@ -1530,7 +1532,15 @@ export class CityEngine {
         const w = p.waiting[0];
         b.textContent = w ? (w.kind === 'use_app' ? `Want “${w.title}”?` : `Can I build “${w.title}”?`) : p.bot.asks[0] ?? '';
         c.bubble.append(t, b);
+      } else if (p.made && this.workshop?.plotId !== p.channelId) {
+        const t = document.createElement('div');
+        t.className = 'kc-bubble-kicker';
+        t.textContent = 'New for you';
+        const b = document.createElement('div');
+        b.textContent = `I made you “${p.made.title}”`;
+        c.bubble.append(t, b);
       }
+      c.made = Boolean(p.made);
     }
     for (const [id, c] of this.citizens) {
       if (present.has(id)) continue;
@@ -2686,7 +2696,7 @@ export class CityEngine {
       const pos = c.walker.obj.position.clone().setY(GROUND_Y + 3.4);
       ask(c.label, pos, visible && (fpv ? pos.distanceTo(this.persp.position) < 45 : zoom > (w < 640 ? 2.4 : 1.25)), 7);
       const saying = performance.now() < c.sayUntil;
-      ask(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs') && c.bubble.childElementCount > 0, 0, -4, true);
+      ask(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs' || Boolean(c.made)) && c.bubble.childElementCount > 0, 0, -4, true);
     }
     for (const j of this.jobViews.values()) ask(j.bubble, j.at, j.bubble.childElementCount > 0 && this.mode === 'map', 0, -2, true);
     if (this.kan && this.kanBubble) ask(this.kanBubble, this.kan.obj.position.clone().setY(this.kan.obj.position.y + 4.2), this.kanSays, 0, -30, true);

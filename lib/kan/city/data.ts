@@ -190,7 +190,8 @@ export async function cityFor(userId: string) {
   // Old Town: channels nobody's touched in two weeks, with no bot on duty, move
   // together to the edge of the island, lights off. Nothing about them changes; the
   // first time one is used again it moves back into town.
-  const QUIET_MS = 14 * 24 * HOUR
+  const DAY_MADE_MS = 24 * HOUR
+const QUIET_MS = 14 * 24 * HOUR
   const quiet = new Set(areas.filter((a) => !a.botOn && !a.recentActivity && !a.fixed
     && (+(a.lastActivityAt ?? 0) < now - QUIET_MS) && (madeAt.get(a.channelId) ?? 0) < now - QUIET_MS).map((a) => a.channelId))
 
@@ -293,6 +294,8 @@ export async function cityFor(userId: string) {
       // Your own time here in the last day, from Kanwatch.
       yourTime: focusOf(p.channelId),
       waiting: waiting.map((w) => ({ id: w.id, title: w.title, kind: w.kind })),
+      // Something it made you in the last day that you haven't said anything about yet.
+      made: (() => { const m = approvals.find((x) => x.channelId === p.channelId && x.kind === 'use_app' && x.outcome === 'Made' && now - +(x.createdAt ?? 0) < DAY_MADE_MS); return m ? { title: m.title } : null })(),
     }
   })
 
@@ -336,8 +339,14 @@ export async function cityFor(userId: string) {
   }
   for (const a of approvals) {
     const offer = a.kind === 'use_app'
-    feed.push({ at: +(a.createdAt ?? 0), kind: 'ask', channelId: a.channelId, text: offer ? `offered “${clip(a.title, 60)}”` : `wants to build “${clip(a.title, 60)}”` })
-    if (a.decidedAt) feed.push({ at: +a.decidedAt, kind: 'you', channelId: a.channelId, text: a.status === 'rejected' ? `You passed on “${clip(a.title, 60)}”` : offer ? `You opened “${clip(a.title, 60)}”` : `You approved “${clip(a.title, 60)}”` })
+    if (offer) {
+      // Things it made you, and what you thought of them.
+      feed.push({ at: +(a.createdAt ?? 0), kind: 'bot', channelId: a.channelId, text: `made you “${clip(a.title, 60)}”` })
+      if (a.decidedAt && (a.status === 'rejected' || a.outcome === 'Loved')) feed.push({ at: +a.decidedAt + 1, kind: 'you', channelId: a.channelId, text: a.status === 'rejected' ? `Not interested in “${clip(a.title, 60)}”` : `You loved “${clip(a.title, 60)}”` })
+      continue
+    }
+    feed.push({ at: +(a.createdAt ?? 0), kind: 'ask', channelId: a.channelId, text: a.status === 'approved' || (a.decidedAt && +a.decidedAt - +(a.createdAt ?? 0) < 5000) ? `is building “${clip(a.title, 60)}”` : `wants to build “${clip(a.title, 60)}”` })
+    if (a.decidedAt && +a.decidedAt - +(a.createdAt ?? 0) >= 5000) feed.push({ at: +a.decidedAt, kind: 'you', channelId: a.channelId, text: a.status === 'rejected' ? `You passed on “${clip(a.title, 60)}”` : `You approved “${clip(a.title, 60)}”` })
   }
   const shroomTitle = new Map(shroomRows.map((s) => [s.id, s.title]))
   for (const r of shroomRuns) {
