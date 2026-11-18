@@ -355,7 +355,7 @@ export const approvalTools: AgentTool[] = [
     running: () => 'Checking what your bots want to build',
     async run(_input, ctx) {
       const { pendingApprovals } = await import('@/lib/kan/bots/approvals')
-      const rows = (await pendingApprovals(ctx.userId)).filter((r) => r.status === 'pending')
+      const rows = (await pendingApprovals(ctx.userId)).filter((r) => r.status === 'pending' && r.kind === 'build_app')
       if (!rows.length) return { content: 'No builds are waiting on them.', label: 'Nothing waiting' }
       const lines = rows.map((r) => `- [${r.id}] "${r.title}" (channelId:${r.channelId}) with ${r.modelId}: about $${((r.likelyMillicents ?? 0) / 100_000).toFixed(2)}, at most $${((r.maxMillicents ?? 0) / 100_000).toFixed(2)}. Why: ${r.purpose ?? '(none given)'}`)
       return { content: lines.join('\n'), label: `${rows.length} build${rows.length === 1 ? '' : 's'} waiting on you` }

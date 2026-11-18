@@ -28,7 +28,8 @@ const HISTORY = 24
 
 /** What a message made, shown under it in the chat as things you can open. */
 interface Made {
-  apps?: { id: string; title: string; cardId: string }[]
+  /** input: what an app was opened on, handed to it as ?topic=. */
+  apps?: { id: string; title: string; cardId: string; input?: string }[]
   cards?: { id: string; title: string }[]
 }
 type Msg = NonNullable<typeof cards.$inferSelect['messages']>[number] & { authorName?: string } & Made
@@ -64,7 +65,7 @@ export async function channelBrief(channelId: string): Promise<string> {
   const [channel, cols, apps, lastRun] = await Promise.all([
     db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true, description: true, aiInstructions: true } }),
     db.query.columns.findMany({ where: eq(columns.channelId, channelId), orderBy: [asc(columns.position)], columns: { id: true, name: true } }),
-    db.query.playgroundApps.findMany({ where: eq(playgroundApps.channelId, channelId), columns: { title: true }, limit: 8 }),
+    db.query.playgroundApps.findMany({ where: and(eq(playgroundApps.channelId, channelId), eq(playgroundApps.isArchived, false)), columns: { id: true, title: true, summary: true }, limit: 8 }),
     db.query.botRuns.findFirst({ where: and(eq(botRuns.channelId, channelId), eq(botRuns.status, 'done')), orderBy: [desc(botRuns.startedAt)], columns: { summary: true, trigger: true } }),
   ])
   if (!channel) return ''
@@ -79,7 +80,7 @@ export async function channelBrief(channelId: string): Promise<string> {
     channel.description ? `What it's for: ${channel.description.slice(0, 400)}` : '',
     channel.aiInstructions ? `Standing instructions: ${channel.aiInstructions.slice(0, 900)}` : '',
     `Board (newest first):\n${board.join('\n')}`,
-    apps.length ? `Apps: ${apps.map((a) => a.title).join(', ')}` : 'No apps yet.',
+    apps.length ? `Apps (your tools; open one on a subject with open_app):\n${apps.map((a) => `- [${a.id}] ${a.title}${a.summary ? ` — ${a.summary.replace(/\s+/g, ' ').slice(0, 140)}` : ''}`).join('\n')}` : 'No apps yet.',
     lastRun?.summary && lastRun.trigger !== 'chat' ? `Your last report: ${lastRun.summary.slice(0, 500)}` : '',
   ].filter(Boolean).join('\n')
 }
@@ -247,7 +248,10 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
   const tools: BotTool[] = [
     ...guardTools(base, ctx), noteTool(channelId), scheduleTool(ownerId, channelId), jobTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
     buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made, said: [...before, mine] }),
+    openAppTool({ channelId, made }), answerTool({ ownerId, channelId, made }),
   ]
+  const { botApprovals } = await import('@/lib/db/schema')
+  const waiting = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, channelId), eq(botApprovals.status, 'pending')), columns: { id: true, kind: true, title: true, purpose: true, input: true } })
 
   const system = [
     `You are ${resident.name}, a little mushroom bot who lives in Kan City and runs the "${channel.name}" channel. Your personality (let it show in how you talk; never describe it): ${resident.personality}`,
@@ -261,6 +265,8 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     `- When ${boss} asks for something you can do with your tools, do it, then say what you did in a few words. Never claim you did something you didn't.`,
     `- If ${boss} asks you to go talk to another bot, use visit_bot, then tell ${boss} what came of it.`,
     `- Build an app only when ${boss} has said yes to a specific one you already described in this chat, by name, in a sentence (what it is and what it does), or asked for one in their own words. A "yes" to an open question is not a yes to an app you haven't described yet: describe it and ask. Once they've said yes to it, build it right away with build_app and a full brief, by the same name. Don't just write the idea on a card: ${boss} wants something to open. Say it's building and that you'll tell them when it's ready.`,
+    `- Apps are tools, not one-offs: one app that does its kind of thing for anything it's handed (an explainer explains any topic, a lesson app teaches any lesson). When ${boss} wants something one of your apps can do, open it on that subject with open_app instead of building another. When you do build, build the tool: it reads its subject from window.kanthinkInput.topic and lets them type a new one. Say so in the brief.`,
+    waiting.length ? `- You're waiting on ${boss} for: ${waiting.map((w) => `[${w.id}] ${w.kind === 'use_app' ? `offer to open “${w.title}”` : `build “${w.title}”`}${w.purpose ? ` (${w.purpose.slice(0, 160)})` : ''}`).join('; ')}. If they answer it here, record it with answer_my_request. If they want a build reshaped (say, into a reusable tool), answer no with their reason, then describe the new version and build it when they say yes.` : '',
     `- An app is one standalone screen. It can't change Kanthink itself, sign anyone in, or reach the board's real data. When a card asks for that kind of work (accounts, servers, presence, the product's own plumbing), say it's work for Claude Code, not an app. Never build a stand-in that pretends to do it.`,
     neighborBots.length
       ? `- You live in the ${hood.name} neighborhood. Your neighbors: ${neighborBots.map((b) => `${b.name} (runs ${neighborRows[0].find((c) => c.id === b.channelId)?.name})`).join(', ')}. Bots never leave their neighborhood.`
@@ -364,6 +370,70 @@ function buildTool(o: { ownerId: string; channelId: string; resident: Resident; 
       const { afterResponse } = await import('@/lib/afterResponse')
       afterResponse(() => runChatBuild({ ...o, appId: app.id, cardId: card!.id, title, brief }))
       return { content: `The build of "${title}" has started on the card "${card.title}". It takes a minute or two; you'll announce it in the chat when it's ready.`, label: `Building ${title}`, cardId: card.id }
+    },
+  }
+}
+
+/** Open one of the channel's apps on something: the tool, used again, at no cost. */
+function openAppTool(o: { channelId: string; made: Required<Made> }): BotTool {
+  return {
+    name: 'open_app',
+    area: 'build',
+    description: 'Open one of your channel\'s apps for the boss, started on a subject (a topic, a question, a link). Free and instant: nothing is built. Use it whenever an app you already have can do what they want, instead of building a new one.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        appId: { type: 'string', description: 'The app\'s id, from your channel' },
+        topic: { type: 'string', description: 'What to start it on, in a few words' },
+      },
+      required: ['appId'],
+    },
+    kind: 'write',
+    running: (i) => `Opening it on ${String(i.topic ?? 'that')}`,
+    async run(i) {
+      const app = await db.query.playgroundApps.findFirst({ where: and(eq(playgroundApps.id, String(i.appId ?? '')), eq(playgroundApps.channelId, o.channelId)), columns: { id: true, title: true, cardId: true, generationCount: true } })
+      if (!app) return { content: 'That app isn\'t in your channel.', isError: true }
+      if (!app.generationCount) return { content: 'That app hasn\'t been built yet.', isError: true }
+      const topic = String(i.topic ?? '').trim().slice(0, 500)
+      o.made.apps.push({ id: app.id, title: topic ? `${app.title}: ${topic}` : app.title, cardId: app.cardId, ...(topic ? { input: topic } : {}) })
+      return { content: `It's ready for them to open below${topic ? `, started on "${topic}"` : ''}.`, label: `Opened ${app.title}` }
+    },
+  }
+}
+
+/** Answer what this bot asked for, on the boss's word in the chat. */
+function answerTool(o: { ownerId: string; channelId: string; made: Required<Made> }): BotTool {
+  return {
+    name: 'answer_my_request',
+    area: 'build',
+    description: 'Record the boss\'s answer to something you asked them for (a build waiting on approval, or an app run you offered). Only on their clear word. "yes" approves (a build starts at once and is charged to you; an offer opens). "no" passes, with their reason in their words.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        requestId: { type: 'string' },
+        answer: { type: 'string', enum: ['yes', 'no'] },
+        reason: { type: 'string', description: 'Why not, in their words, when no' },
+      },
+      required: ['requestId', 'answer'],
+    },
+    kind: 'write',
+    running: (i) => (i.answer === 'yes' ? 'Taking your yes' : 'Taking your no'),
+    async run(i) {
+      const { decideApproval, runApprovedBuild } = await import('@/lib/kan/bots/approvals')
+      const r = await decideApproval(String(i.requestId ?? ''), o.ownerId, { approve: i.answer === 'yes', reason: i.reason ? String(i.reason) : undefined })
+      if ('error' in r) return { content: String(r.error), isError: true }
+      if (r.row.channelId !== o.channelId) return { content: 'That request isn\'t yours.', isError: true }
+      if (r.row.status === 'approved') {
+        const { afterResponse } = await import('@/lib/afterResponse')
+        afterResponse(() => runApprovedBuild(r.row.id))
+        return { content: `Approved. "${r.row.title}" is building now; it takes a minute or two.`, label: `Approved “${r.row.title}”` }
+      }
+      if (r.row.kind === 'use_app' && r.row.status === 'done' && r.row.appId) {
+        const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, r.row.appId), columns: { id: true, title: true, cardId: true } })
+        if (app) o.made.apps.push({ id: app.id, title: r.row.title, cardId: app.cardId, ...(r.row.input ? { input: r.row.input } : {}) })
+        return { content: `Done. "${r.row.title}" is ready for them to open below.`, label: `Opened “${r.row.title}”` }
+      }
+      return { content: `Passed on "${r.row.title}". You'll remember why.`, label: `Passed on “${r.row.title}”` }
     },
   }
 }

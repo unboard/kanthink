@@ -98,6 +98,58 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
   }
 }
 
+/** Where an app opens, handed something to work on: a topic, a question, a link. */
+export function appLink(app: { id: string; shareToken: string | null; isPublic: boolean | null }, input?: string | null) {
+  const base = app.isPublic && app.shareToken ? `/play/${app.shareToken}` : `/play/preview/${app.id}`
+  return input ? `${base}?topic=${encodeURIComponent(input.slice(0, 500))}` : base
+}
+
+/**
+ * Offer to run an app the channel already has on something new. No build, no money:
+ * the owner taps Open and the app starts on it. This is how one good app keeps paying
+ * off: the stick-figure explainer explains the next thing they share, too.
+ */
+export function offerAppTool(): BotTool {
+  return {
+    name: 'offer_app',
+    area: 'build',
+    description: 'Offer the owner a run of an app this channel ALREADY HAS, on something new: a topic, a question, a link they shared or mentioned. Costs nothing and builds nothing; they tap Open and the app starts on it. Prefer this to proposing a new app whenever an existing one can do the job. Say in why what prompted it (what they shared or said).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        appId: { type: 'string', description: 'One of the channel’s apps' },
+        input: { type: 'string', description: 'What to hand the app, in a few words: the topic, question or link' },
+        title: { type: 'string', description: 'The offer in a few words, e.g. "Explain how volcanoes work"' },
+        why: { type: 'string', description: 'One sentence: what they shared or said that prompted this' },
+      },
+      required: ['appId', 'input', 'title'],
+    },
+    kind: 'write',
+    running: (i) => `Offering “${str(i.title)}”`,
+    async run(input, ctx) {
+      const bot = ctx as BotContext
+      const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, str(input.appId)), columns: { id: true, channelId: true, title: true, code: true, cardId: true } })
+      if (!app || app.channelId !== bot.channelId) return { content: 'That app isn’t in this channel.', isError: true }
+      if (!app.code) return { content: 'That app hasn’t been built yet.', isError: true }
+      const what = str(input.input).trim().slice(0, 500)
+      if (!what) return { content: 'Say what to hand the app.', isError: true }
+      const open = await db.query.botApprovals.findMany({ where: and(eq(botApprovals.channelId, bot.channelId), eq(botApprovals.kind, 'use_app'), eq(botApprovals.status, 'pending')) })
+      if (open.some((o) => o.appId === app.id && o.input?.toLowerCase() === what.toLowerCase())) return { content: 'That offer is already waiting.', label: 'Already offered' }
+      if (open.length >= 2) return { content: 'Two offers are already waiting on the owner. Don’t pile on; wait for their answer.', label: 'Two offers already waiting' }
+      const [row] = await db.insert(botApprovals).values({
+        channelId: bot.channelId, ownerId: ctx.userId, runId: bot.runId ?? null, kind: 'use_app',
+        cardId: app.cardId, appId: app.id, input: what,
+        title: str(input.title).slice(0, 120) || `${app.title}: ${what}`,
+        purpose: str(input.why).slice(0, 600) || null,
+      }).returning()
+      return {
+        content: `Offered "${row.title}" with ${app.title}. They'll see it and can open it or say not interested.`,
+        label: `Offered you “${row.title}”`,
+      }
+    },
+  }
+}
+
 /** For the bot's prompt: what's waiting on the owner, and what they decided lately. */
 export async function approvalsContext(channelId: string): Promise<string> {
   const rows = await db.query.botApprovals.findMany({
@@ -107,6 +159,13 @@ export async function approvalsContext(channelId: string): Promise<string> {
   })
   if (!rows.length) return ''
   const line = (r: ApprovalRow) => {
+    if (r.kind === 'use_app') {
+      switch (r.status) {
+        case 'pending': return `- OFFER WAITING: "${r.title}". Don't offer it again.`
+        case 'rejected': return `- NOT INTERESTED: "${r.title}". Their reason: ${r.reason || '(none given)'}. Offer less of this.`
+        default: return `- OPENED: "${r.title}". They wanted it; more like this is welcome.`
+      }
+    }
     const model = r.modelId ? ` with ${r.modelId}` : ''
     switch (r.status) {
       case 'pending': return `- WAITING: build "${r.title}"${model}, ~${usd(r.likelyMillicents)}. Don't ask again.`
@@ -144,8 +203,10 @@ export async function decideApproval(id: string, ownerId: string, d: { approve: 
     set.status = 'rejected'
     set.reason = (d.reason ?? '').trim().slice(0, 1000) || null
   } else {
-    set.status = 'approved'
-    if (d.modelId && d.modelId !== row.modelId && row.cardId) {
+    // An offer costs nothing to say yes to: opening it is the whole of it.
+    set.status = row.kind === 'use_app' ? 'done' : 'approved'
+    if (row.kind === 'use_app') set.outcome = 'Opened'
+    else if (d.modelId && d.modelId !== row.modelId && row.cardId) {
       const size = await buildSize(row.cardId)
       const est = estimateBuildCost({ modelId: d.modelId, briefChars: (size?.briefChars ?? 0) + (row.brief?.length ?? 0), existingCodeChars: size?.codeChars })
       set.modelId = est.modelId
@@ -166,7 +227,7 @@ export async function decideApproval(id: string, ownerId: string, d: { approve: 
  */
 export async function runApprovedBuild(approvalId: string): Promise<void> {
   const row = await db.query.botApprovals.findFirst({ where: eq(botApprovals.id, approvalId) })
-  if (!row || row.status !== 'approved' || !row.cardId) return
+  if (!row || row.kind !== 'build_app' || row.status !== 'approved' || !row.cardId) return
   const owner = await db.query.users.findFirst({ where: eq(users.id, row.ownerId), columns: { id: true, name: true, email: true } })
   if (!owner) return
 

@@ -35,7 +35,7 @@ import type { Metadata } from 'next';
 interface PageProps {
   params: Promise<{ appId: string }>;
   /** `?v=<versionId>` previews one release instead of the draft. */
-  searchParams: Promise<{ v?: string }>;
+  searchParams: Promise<{ v?: string; topic?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
 
 export default async function PlaygroundPreviewPage({ params, searchParams }: PageProps) {
   const { appId } = await params;
-  const { v: versionId } = await searchParams;
+  const { v: versionId, topic } = await searchParams;
 
   const session = await auth();
   if (!session?.user?.id) notFound();
@@ -108,6 +108,7 @@ export default async function PlaygroundPreviewPage({ params, searchParams }: Pa
   const draftSaved = draftData ? await readAll(app.id, draftData.member.id, 'draft') : [];
 
   const srcDoc = buildPlaygroundDoc(code, {
+    input: topic ? { topic: topic.slice(0, 500) } : null,
     title,
     style: version ? version.style ?? null : app.style ?? null,
     uploadUrl: `${origin}/api/playground/upload`,

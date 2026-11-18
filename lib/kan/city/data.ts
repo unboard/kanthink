@@ -292,7 +292,7 @@ export async function cityFor(userId: string) {
       building: appBuilding.get(p.channelId) ?? (building.has(p.channelId) ? 'an app you approved' : null),
       // Your own time here in the last day, from Kanwatch.
       yourTime: focusOf(p.channelId),
-      waiting: waiting.map((w) => ({ id: w.id, title: w.title })),
+      waiting: waiting.map((w) => ({ id: w.id, title: w.title, kind: w.kind })),
     }
   })
 
@@ -335,8 +335,9 @@ export async function cityFor(userId: string) {
     for (const ask of r.asks ?? []) feed.push({ at: +(r.endedAt ?? r.startedAt ?? 0) + 1, kind: 'ask', channelId: r.channelId, text: clip(ask, 140) })
   }
   for (const a of approvals) {
-    feed.push({ at: +(a.createdAt ?? 0), kind: 'ask', channelId: a.channelId, text: `wants to build “${clip(a.title, 60)}”` })
-    if (a.decidedAt) feed.push({ at: +a.decidedAt, kind: 'you', channelId: a.channelId, text: a.status === 'rejected' ? `You passed on “${clip(a.title, 60)}”` : `You approved “${clip(a.title, 60)}”` })
+    const offer = a.kind === 'use_app'
+    feed.push({ at: +(a.createdAt ?? 0), kind: 'ask', channelId: a.channelId, text: offer ? `offered “${clip(a.title, 60)}”` : `wants to build “${clip(a.title, 60)}”` })
+    if (a.decidedAt) feed.push({ at: +a.decidedAt, kind: 'you', channelId: a.channelId, text: a.status === 'rejected' ? `You passed on “${clip(a.title, 60)}”` : offer ? `You opened “${clip(a.title, 60)}”` : `You approved “${clip(a.title, 60)}”` })
   }
   const shroomTitle = new Map(shroomRows.map((s) => [s.id, s.title]))
   for (const r of shroomRuns) {

@@ -32,6 +32,8 @@ import {
 export function buildPlaygroundDoc(
   code: string,
   options?: {
+    /** What the app was opened on (?topic= in its link): read as window.kanthinkInput. */
+    input?: { topic?: string } | null;
     title?: string;
     uploadUrl?: string;
     aiUrl?: string;
@@ -169,7 +171,7 @@ ${styleHead.css}
 <body>
 <div id="root"></div>
 <div id="__kpg_error"><span class="label">Runtime error</span><pre id="__kpg_error_msg" style="white-space:pre-wrap;margin:0;"></pre></div>
-<script>window.__kpg_seed = {};/*__KPG_SEED__*/</script>
+<script>window.__kpg_seed = {};window.kanthinkInput = ${JSON.stringify(options?.input ?? {}).replace(/</g, '\\u003c')};/*__KPG_SEED__*/</script>
 <script>
   // Storage shim — this iframe runs with an opaque origin (no allow-same-origin),
   // so reading window.localStorage / sessionStorage throws SecurityError. Without

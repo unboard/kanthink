@@ -1469,7 +1469,8 @@ export class CityEngine {
         label.style.setProperty('--dot', fig.color);
         const bubble = document.createElement('div');
         bubble.className = 'kc-bubble';
-        bubble.addEventListener('click', () => this.cb.onPick({ kind: 'townhall' }));
+        // What it's asking is between you and it: tapping opens its own conversation.
+        bubble.addEventListener('click', () => this.cb.onPick({ kind: 'bot', id: p.channelId }));
         this.labels.appendChild(bubble);
         c = { plotId: p.channelId, status: p.bot.status, fig, label, bubble, goal: '', hold: 0, sayUntil: 0, walker: { obj: fig.group, pos: { x: home.x, z: home.z }, off: { x: 0, z: 0 }, path: [], speed: 4.2 + (hash(p.channelId) % 10) / 10, lateral: ((hash(p.channelId) % 7) - 3) * 0.45, wait: 0, phase: Math.random() * 6 } };
         this.citizens.set(p.channelId, c);
@@ -1491,7 +1492,8 @@ export class CityEngine {
         t.className = 'kc-bubble-kicker';
         t.textContent = queue.length > 1 ? `Needs you · ${queue.length} in line` : 'Needs you';
         const b = document.createElement('div');
-        b.textContent = p.waiting[0] ? `Can I build “${p.waiting[0].title}”?` : p.bot.asks[0] ?? '';
+        const w = p.waiting[0];
+        b.textContent = w ? (w.kind === 'use_app' ? `Want “${w.title}”?` : `Can I build “${w.title}”?`) : p.bot.asks[0] ?? '';
         c.bubble.append(t, b);
       }
     }

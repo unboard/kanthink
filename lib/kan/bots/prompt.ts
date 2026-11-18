@@ -68,11 +68,22 @@ export async function buildBotPrompt(opts: {
       columns: { id: true, title: true, columnId: true, tags: true, summary: true, isPendingReview: true, updatedAt: true },
     }),
     db.query.instructionCards.findMany({ where: eq(instructionCards.channelId, opts.channelId), columns: { title: true, action: true, runMode: true, isEnabled: true, lastExecutedAt: true } }),
-    db.query.playgroundApps.findMany({ where: eq(playgroundApps.channelId, opts.channelId), columns: { id: true, title: true, cardId: true } }),
+    db.query.playgroundApps.findMany({ where: and(eq(playgroundApps.channelId, opts.channelId), eq(playgroundApps.isArchived, false)), columns: { id: true, title: true, cardId: true, summary: true, generationCount: true } }),
     db.query.botRuns.findMany({ where: eq(botRuns.channelId, opts.channelId), orderBy: [desc(botRuns.startedAt)], limit: 4, columns: { startedAt: true, summary: true, status: true, trigger: true } }),
     approvalsContext(opts.channelId).catch(() => ''),
   ])
   const colName = new Map(cols.map((c) => [c.id, c.name]))
+  const tools = apps.filter((a) => a.generationCount > 0)
+  // What they shared and said lately, so a tool can be offered on it. Only worth reading when there's a tool to offer.
+  let lately: string[] = []
+  if (tools.length) {
+    const { gatherInputs } = await import('@/lib/kan/attention/inputs')
+    lately = (await gatherInputs(opts.ownerId, new Date(now.getTime() - 7 * 24 * 3600_000)).catch(() => []))
+      .filter((i) => i.kind === 'share' || i.kind === 'chat' || i.kind === 'voice')
+      .sort((a, b) => +b.at - +a.at).slice(0, 12)
+      .map((i) => `- ${i.kind} ${when(i.at)}: ${i.text.replace(/\s+/g, ' ').slice(0, 220)}`)
+  }
+  const toolLines = tools.map((a) => `- [${a.id}] ${a.title}${a.summary ? ` — ${a.summary.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`)
   const appOf = new Map(apps.map((a) => [a.cardId, a]))
   const tz = opts.timeZone || 'America/Chicago'
   const when = (d: Date) => d.toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -125,7 +136,11 @@ ${opts.memory?.trim() || '(none — this is your first run. Get to know the chan
 
 ## Your recent reports
 ${pastRuns.join('\n') || '(none yet)'}
-${proposals ? `\n## Builds you proposed, and what the owner decided\n${proposals}\n` : ''}
+## Tools, not one-offs
+An app here should be a tool: one app that does its kind of thing for anything it's handed, not one subject baked in. An explainer app explains any topic; a lesson app teaches any lesson; a recreation app remakes whatever it's given. When you propose a build, make it the tool: it reads its subject from window.kanthinkInput.topic when it opens, starts on it straight away, and lets them type a new one. Never propose a one-off app for a single subject.
+Once the channel has its tool, keep it paying off: when something they shared or said fits it, use **offer_app** with that subject instead of proposing another app. Offers cost nothing. Rebuild a tool only to make it better at its whole job. If they say an offer isn't interesting, offer less of that; if they open one, more like it is welcome.
+${toolLines.length ? `\nYour tools:\n${toolLines.join('\n')}\n` : ''}${lately.length ? `\nWhat ${opts.ownerName || 'the owner'} shared and said this week (offer a tool on one only when it truly fits; most won't):\n${lately.join('\n')}\n` : ''}
+${proposals ? `\n## Builds you proposed and things you offered, and what the owner decided\n${proposals}\n` : ''}
 
 ## What's in the channel now
 Columns: ${cols.map((c) => c.name).join(' → ') || 'none'}

@@ -20,7 +20,7 @@ type Mode = 'type' | 'speak' | 'talk';
 interface Line {
   id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string;
   /** What it made: apps (building or ready) and cards, to open from the chat. */
-  apps?: { id: string; title: string; cardId: string }[];
+  apps?: { id: string; title: string; cardId: string; input?: string }[];
   cards?: { id: string; title: string }[];
 }
 export interface OpenApp { id: string; title: string; href: string; full?: boolean }
@@ -37,7 +37,7 @@ const readMode = (): Mode => {
   try { const m = localStorage.getItem(MODE_KEY); return m === 'speak' || m === 'talk' ? m : 'type'; } catch { return 'type'; }
 };
 
-export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp }: {
+export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp, pinned }: {
   plot: CityPlot;
   /** Residents next door, who this one can go and talk to. */
   neighbors: CityPlot[];
@@ -47,6 +47,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp 
   onBoard(): void;
   /** Play an app it built: in the drawer, or full screen. */
   onOpenApp(app: OpenApp): void;
+  /** What this bot is waiting on you for, kept at the top of the conversation. */
+  pinned?: React.ReactNode;
 }) {
   const id = plot.channelId;
   const name = plot.resident.name;
@@ -196,6 +198,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp 
         ))}
       </div>
 
+      {pinned && <div className="flex-shrink-0">{pinned}</div>}
+
       <div ref={list} className="mt-3 min-h-[160px] flex-1 space-y-2.5 overflow-y-auto pr-1">
         {!chat && !error && <p className="flex items-center gap-2 text-[13px] text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /> {name} is coming over…</p>}
         {chat?.messages.map((m, i, all) => (
@@ -263,7 +267,7 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp 
  * An app a bot built from the chat: building (with what the builder's doing now),
  * then ready to play in the drawer or full screen.
  */
-function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string }; onOpen(a: OpenApp): void; onReady(): void }) {
+function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string; input?: string }; onOpen(a: OpenApp): void; onReady(): void }) {
   const [s, setS] = useState<{ status: 'building' | 'ready' | 'failed'; step: string | null; href: string; title: string } | null>(null);
   const was = useRef<string | null>(null);
   useEffect(() => {
@@ -288,7 +292,9 @@ function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string };
   }, [app.id, onReady]);
 
   const ready = s?.status === 'ready';
-  const title = s?.title || app.title;
+  // Opened on a subject: the tile says which, and the app starts on it.
+  const title = app.input ? app.title : s?.title || app.title;
+  const href = s && app.input ? `${s.href}${s.href.includes('?') ? '&' : '?'}topic=${encodeURIComponent(app.input)}` : s?.href ?? '';
   return (
     <div className={`mt-2 overflow-hidden rounded-xl border ${ready ? 'border-violet-400/50 bg-violet-500/10' : 'border-white/10 bg-black/20'}`}>
       <div className="flex items-center gap-2.5 px-3 py-2.5">
@@ -304,8 +310,8 @@ function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string };
       </div>
       {ready && s && (
         <div className="flex gap-1.5 border-t border-white/10 px-2 py-2">
-          <button onClick={() => onOpen({ id: app.id, title, href: s.href })} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-500 px-2 py-1.5 text-[12px] font-medium text-white hover:bg-violet-400"><Play className="h-3.5 w-3.5" /> Play here</button>
-          <button onClick={() => onOpen({ id: app.id, title, href: s.href, full: true })} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
+          <button onClick={() => onOpen({ id: app.id, title, href })} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-500 px-2 py-1.5 text-[12px] font-medium text-white hover:bg-violet-400"><Play className="h-3.5 w-3.5" /> Play here</button>
+          <button onClick={() => onOpen({ id: app.id, title, href, full: true })} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
         </div>
       )}
     </div>

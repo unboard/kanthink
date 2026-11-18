@@ -93,6 +93,7 @@ const SYSTEM_PROMPT = `You generate complete single-file React applications that
 - window.kanthinkData IS available: real per-customer storage on the server, which follows a person to any device they sign in on. See CUSTOMER STORAGE below. This is the one that lets you honestly say "your progress is saved".
 - window.kanthinkDownload IS available: saves a file to the person's device — PNG, CSV, JSON, SVG, PDF bytes, anything. The iframe has allow-downloads, so this genuinely works. Handing somebody a file is NOT something this runtime lacks — see SAVING A FILE below.
 - window.kanthinkPay MAY be available: when the publisher charges for something inside the app rather than for opening it. See CHARGING FOR AN ACTION below. Taking payments is NOT something this runtime lacks — do not write it off as unsupported.
+- window.kanthinkInput is ALWAYS defined: an object, usually empty. When the app is opened on something (its link carries ?topic=…), window.kanthinkInput.topic holds it. An app that works on a subject (explain a topic, teach a lesson, remake a thing) must read it on load and start on it straight away, with no extra tap, and still let the person type a new subject. That is what makes one app a reusable tool rather than a one-off.
 - fetch() works for public CORS-enabled APIs only.
 
 CODE RULES (strict — your output runs unmodified):

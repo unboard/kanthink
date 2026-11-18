@@ -30,7 +30,7 @@ import type { Metadata } from 'next';
 
 interface PageProps {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ purchase?: string; order?: string; messages?: string }>;
+  searchParams: Promise<{ purchase?: string; order?: string; messages?: string; topic?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -54,7 +54,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PlayPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { purchase, order, messages } = await searchParams;
+  const { purchase, order, messages, topic } = await searchParams;
 
   const app = await findPublishedApp(token);
   if (!app) notFound();
@@ -150,6 +150,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   // The bar, chat and sign-in take the app's own colors, and the chat shows its maker.
   const chrome = await hostChrome(app, release.style);
   const srcDoc = buildPlaygroundDoc(release.code, {
+    input: topic ? { topic: topic.slice(0, 500) } : null,
     title,
     style: release.style ?? null,
     uploadUrl: `${origin}/api/playground/upload`,

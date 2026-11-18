@@ -2133,7 +2133,8 @@ export const botApprovals = sqliteTable('bot_approvals', {
   ownerId: text('owner_id').notNull(),
   /** The run that asked. */
   runId: text('run_id'),
-  kind: text('kind').$type<'build_app'>().notNull(),
+  /** build_app: spend money on a build. use_app: run an app it already has, on something you shared or said. */
+  kind: text('kind').$type<'build_app' | 'use_app'>().notNull(),
   status: text('status').$type<'pending' | 'approved' | 'rejected' | 'done' | 'failed'>().notNull().default('pending'),
   cardId: text('card_id'),
   /** What it is, in a few words. */
@@ -2147,6 +2148,9 @@ export const botApprovals = sqliteTable('bot_approvals', {
   maxMillicents: integer('max_millicents'),
   /** What it actually cost, once done. */
   costMillicents: integer('cost_millicents'),
+  /** use_app: the app to open, and what to hand it (a topic, a link). */
+  appId: text('app_id'),
+  input: text('input'),
   /** The owner's reason, when rejected. */
   reason: text('reason'),
   /** What came of it: a build's result, or why it failed. */
