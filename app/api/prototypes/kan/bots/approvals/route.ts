@@ -22,6 +22,8 @@ export async function GET() {
   const ids = [...new Set(rows.map((r) => r.channelId))]
   const names = ids.length ? await db.query.channels.findMany({ where: inArray(channels.id, ids), columns: { id: true, name: true } }) : []
   const nameOf = new Map(names.map((c) => [c.id, c.name]))
+  // A build proposed after you asked this bot for a tool is the tool: no point asking again.
+  const askedForTool = (r: (typeof rows)[number]) => rows.some((x) => x.channelId === r.channelId && x.status === 'rejected' && (x.reason ?? '').startsWith('Make it a reusable tool') && +(x.decidedAt ?? 0) <= +(r.createdAt ?? 0))
   const appIds = [...new Set(rows.map((r) => r.appId).filter((x): x is string => !!x))]
   const apps = appIds.length ? await db.query.playgroundApps.findMany({ where: inArray(playgroundApps.id, appIds), columns: { id: true, title: true, shareToken: true, isPublic: true } }) : []
   const appOf = new Map(apps.map((a) => [a.id, a]))
@@ -33,6 +35,7 @@ export async function GET() {
       ...r,
       channelName: nameOf.get(r.channelId) ?? 'A bot',
       models: r.status === 'pending' && r.kind === 'build_app' ? await estimatesFor(r, providers) : [],
+      isTool: r.kind === 'build_app' && askedForTool(r),
       app: r.appId && appOf.get(r.appId) ? { id: r.appId, title: appOf.get(r.appId)!.title, href: appLink(appOf.get(r.appId)!, r.input) } : null,
     }))),
   })

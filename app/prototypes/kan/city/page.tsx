@@ -52,6 +52,8 @@ interface Approval {
   kind: 'build_app' | 'use_app';
   input: string | null;
   app: { id: string; title: string; href: string } | null;
+  /** Proposed after you asked for a tool: it already is one. */
+  isTool?: boolean;
   title: string;
   purpose: string | null;
   modelId: string | null;
@@ -1645,7 +1647,7 @@ function ApprovalRow({ a, busy, onDecide, onReshape, showWhere, compact }: {
         <div className="mt-2 flex gap-2">
           <button disabled={busy !== null} onClick={() => onDecide(a.id, true, modelId && modelId !== a.modelId ? { modelId } : {})} className="rounded-full bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-amber-400 disabled:opacity-50">{mine ? 'Approving…' : 'Build it'}</button>
           <button disabled={busy !== null} onClick={() => setRejecting(true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-300 hover:bg-white/5">Not now</button>
-          {onReshape && <button disabled={busy !== null} onClick={() => onReshape(a.id)} title="One app for any subject, kept and reused" className="rounded-full border border-violet-400/40 px-3.5 py-1.5 text-xs text-violet-100 hover:bg-violet-500/15 disabled:opacity-50">Make it a tool</button>}
+          {onReshape && !a.isTool && <button disabled={busy !== null} onClick={() => onReshape(a.id)} title="One app for any subject, kept and reused" className="rounded-full border border-violet-400/40 px-3.5 py-1.5 text-xs text-violet-100 hover:bg-violet-500/15 disabled:opacity-50">Make it a tool</button>}
         </div>
       )}
     </div>

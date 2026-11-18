@@ -201,7 +201,7 @@ export class CityEngine {
   /** The resident you're talking with. */
   private talking: string | null = null;
   /** A bot working where you can watch it: at its easel, sketching. */
-  private workshop: { plotId: string; w: Workshop } | null = null;
+  private workshop: { plotId: string; w: Workshop; follow: boolean } | null = null;
   private kanLean = 0;
   private kan: Walker | null = null;
   private kanBubble: HTMLDivElement | null = null;
@@ -423,8 +423,9 @@ export class CityEngine {
     c.hold = performance.now() + 30 * 60_000;
     const w = new Workshop(c.walker.pos, { x: this.camera.position.x, z: this.camera.position.z }, GROUND_Y);
     this.scene.add(w.group);
-    this.workshop = { plotId, w };
-    if (this.mode === 'map') this.focus(c.walker.pos, Math.max(4.2, this.camera.zoom));
+    // The camera follows it in close for as long as it works, until you take the map yourself.
+    this.workshop = { plotId, w, follow: true };
+    this.focusAnim = null;
   }
 
   /** A step of the bot's work just finished. */
@@ -1938,6 +1939,20 @@ export class CityEngine {
       return;
     }
 
+    const ws = this.workshop;
+    if (ws?.follow && this.mode === 'map' && !this.focusAnim) {
+      const c = this.citizens.get(ws.plotId);
+      if (c) {
+        const k = Math.min(1, dt * 2.2);
+        const z = this.camera.zoom + (4.2 - this.camera.zoom) * k;
+        const target = this.controls.target.clone().lerp(this.aimAt(c.walker.pos, z), k);
+        const offset = this.camera.position.clone().sub(this.controls.target);
+        this.controls.target.copy(target);
+        this.camera.position.copy(target).add(offset);
+        this.camera.zoom = z;
+        this.camera.updateProjectionMatrix();
+      }
+    }
     if (this.focusAnim) {
       const f = this.focusAnim;
       f.t = Math.min(1, f.t + dt * 1.8);
@@ -2749,7 +2764,7 @@ export class CityEngine {
     return ((door ?? hits[0])?.object.userData.pick as Pick | undefined) ?? null;
   }
 
-  private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; this.dragX = e.clientX; this.focusAnim = null; };
+  private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; this.dragX = e.clientX; this.focusAnim = null; if (this.workshop) this.workshop.follow = false; };
   private ndc(clientX: number, clientY: number) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
@@ -2847,15 +2862,19 @@ export class CityEngine {
 
   private focus(p: Vec, zoom: number) {
     const z1 = Math.max(this.camera.zoom, zoom);
+    this.focusAnim = { from: this.controls.target.clone(), to: this.aimAt(p, z1), z0: this.camera.zoom, z1, t: 0 };
+  }
+
+  /** Where to point the map camera so p sits in the part of the screen you can see. */
+  private aimAt(p: Vec, z1: number) {
     // Aim off-center so what you picked sits in the part of the screen you can see.
     const w = this.host.clientWidth || 1;
     const perPx = (this.camera.right - this.camera.left) / z1 / w;
     const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).setY(0).normalize();
     const fwd = this.controls.target.clone().sub(this.camera.position).setY(0).normalize();
-    const to = new THREE.Vector3(p.x, 0, p.z)
+    return new THREE.Vector3(p.x, 0, p.z)
       .addScaledVector(right, (this.insets.right / 2) * perPx)
       .addScaledVector(fwd, -((this.insets.bottom / 2) * perPx) / Math.cos(0.96));
-    this.focusAnim = { from: this.controls.target.clone(), to, z0: this.camera.zoom, z1, t: 0 };
   }
 
   private pickPosition(p: Pick): Vec | null {
