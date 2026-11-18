@@ -241,12 +241,19 @@ export async function runApprovedBuild(approvalId: string): Promise<void> {
     readable: [row.channelId], scope: [row.channelId], sessionCardIds: [], recentTurns: [],
   }
   const prompt = [row.purpose && `Purpose: ${row.purpose}`, row.brief].filter(Boolean).join('\n\n') || undefined
+  // The app's row exists before the build, so the chat can show it building and then ready to play.
+  const { resolveAppForAutomatedBuild } = await import('@/lib/playground/appRecord')
+  const { sayInChat } = await import('@/lib/kan/city/talk')
+  const app = await resolveAppForAutomatedBuild({ cardId: row.cardId, userId: owner.id, title: row.title }).catch(() => null)
+  const tile = app ? { apps: [{ id: app.id, title: app.title || row.title, cardId: row.cardId }] } : {}
+  await sayInChat(row.channelId, `On it! Building **${row.title}** now. It takes a minute or two, and I'll tell you the moment it's ready.`, tile).catch(() => {})
   try {
     const data = await callAction('build_app', { cardId: row.cardId, prompt, modelId: row.modelId ?? undefined }, ctx)
     const cost = typeof data.costUsd === 'number' ? Math.ceil(data.costUsd * MILLICENTS_PER_DOLLAR) : 0
     const ok = !data.error && !/^Failed/.test(data.result ?? '')
     const outcome = (data.result || data.error || '').slice(0, 500)
     await db.update(botApprovals).set({ status: ok ? 'done' : 'failed', costMillicents: cost, outcome }).where(eq(botApprovals.id, row.id))
+    await sayInChat(row.channelId, ok ? `Ta-da! **${row.title}** is ready. Tap Play to try it.` : `Hmm, the build of **${row.title}** hit a snag: ${outcome.slice(0, 200)}`, ok ? tile : {}).catch(() => {})
     const href = data.channelId && data.cardId ? `/channel/${data.channelId}/card/${data.cardId}` : undefined
     await db.update(botRuns).set({
       status: ok ? 'done' : 'error',

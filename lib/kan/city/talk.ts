@@ -123,6 +123,18 @@ export function botMsg(name: string, text: string): Msg {
   return { id: nanoid(), type: 'ai_response', content: text, authorName: name, createdAt: new Date().toISOString() }
 }
 
+/** The bot says something in its own chat, unprompted: a build started, a build landed. */
+export async function sayInChat(channelId: string, text: string, extra: Made = {}) {
+  const bot = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { chatCardId: true, name: true } })
+  if (!bot?.chatCardId) return
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, bot.chatCardId), columns: { messages: true } })
+  if (!card) return
+  const ch = await db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true } })
+  const name = residentOf({ id: channelId, name: ch?.name ?? '' }, { name: bot.name }).name
+  const msg: Msg = { ...botMsg(name, text), ...extra }
+  await db.update(cards).set({ messages: [...((card.messages ?? []) as Msg[]), msg] as never, updatedAt: new Date() }).where(eq(cards.id, bot.chatCardId))
+}
+
 /** Notes a bot keeps between runs and chats, appended to rather than replaced. */
 export async function noteFor(channelId: string, line: string) {
   const row = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { memory: true } })

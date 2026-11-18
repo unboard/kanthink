@@ -195,6 +195,8 @@ export default function CityPage() {
   const [watch, setWatch] = useState<(BotWork & { channelId: string; runId: string }) | null>(null);
   /** Bumped when the bot you're talking to has something new to say in its chat. */
   const [chatBump, setChatBump] = useState(0);
+  /** A build you approved from a bot's chat, building while you watch. */
+  const [building, setBuilding] = useState<{ channelId: string; id: string } | null>(null);
   /** The Today pill, open under where it was tapped. */
   const [today, setToday] = useState<{ x: number; y: number } | null>(null);
   /** The building you're inside, with its board. */
@@ -447,9 +449,9 @@ export default function CityPage() {
   const leftW = wide && side === 'citizens' ? 312 : 0;
   const rightW = wide ? (panelOpen ? (board && threadOpen ? 584 : 444) : side === 'feed' ? 352 : 0) : 0;
   useEffect(() => {
-    const bottom = wide ? chatH : panelOpen ? window.innerHeight * (watch ? 0.4 : 0.78) : chatH;
+    const bottom = wide ? chatH : panelOpen ? window.innerHeight * (watch || building ? 0.4 : 0.78) : chatH;
     engine.current?.setInsets(rightW - leftW, bottom);
-  }, [wide, rightW, leftW, panelOpen, chatH, watch]);
+  }, [wide, rightW, leftW, panelOpen, chatH, watch, building]);
   useEffect(() => { engine.current?.select(pick ?? (board ? { kind: 'plot', id: board } : null), true); }, [pick, board, rightW, leftW]);
 
   const plots = useMemo(() => shown?.plots ?? [], [shown]);
@@ -552,6 +554,8 @@ export default function CityPage() {
     const offer = a?.kind === 'use_app';
     // Saying yes to an offer is opening it.
     if (offer && approve && a?.app) openApp({ id: a.app.id, title: a.title, href: a.app.href });
+    // Saying yes to a build from its chat: stay, and watch it get made.
+    if (!offer && approve && a && pick?.kind === 'bot' && pick.id === a.channelId) setBuilding({ channelId: a.channelId, id });
     return act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve, ...extra })), offer ? (approve ? undefined : 'Got it. It’ll offer less of that.') : approve ? 'Approved. The crane’s going up.' : 'Passed. The bot will read why.', a?.channelId);
   };
   /** Ask for the tool instead: pass on the one-off, say why, and send the bot back to work on it now. */
@@ -591,18 +595,43 @@ export default function CityPage() {
         await Promise.all([load(), loadApprovals()]);
         if (stop) return;
         setChatBump((n) => n + 1);
-        setTimeout(() => { engine.current?.workOn(null); setWatch((w) => (w?.runId === runId ? null : w)); }, 2500);
+        setTimeout(() => setWatch((w) => (w?.runId === runId ? null : w)), 2500);
       }
     };
     void poll();
     const t = setInterval(() => void poll(), 2000);
     return () => { stop = true; clearInterval(t); };
   }, [watch?.runId, watch?.done]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A build you approved from the chat: the bot works at its easel, its chat shows the app building, then ready.
+  useEffect(() => {
+    if (!building) return;
+    const { channelId, id } = building;
+    engine.current?.botSay(channelId, 'Building it! Watch this.');
+    let stop = false;
+    const bump = setTimeout(() => setChatBump((n) => n + 1), 2500);
+    const poll = async () => {
+      const r = await fetch('/api/prototypes/kan/bots/approvals').catch(() => null);
+      const j: { approvals?: { id: string; status: string }[] } | null = r?.ok ? await r.json() : null;
+      const st = j?.approvals?.find((x) => x.id === id)?.status;
+      if (stop || !st || st === 'approved' || st === 'pending') return;
+      stop = true;
+      engine.current?.workBeat();
+      setChatBump((n) => n + 1);
+      void load();
+      setTimeout(() => setBuilding((b) => (b?.id === id ? null : b)), 2500);
+    };
+    const t = setInterval(() => void poll(), 4000);
+    return () => { stop = true; clearInterval(t); clearTimeout(bump); };
+  }, [building?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (building && !(pick?.kind === 'bot' && pick.id === building.channelId)) setBuilding(null);
+  }, [pick, building]);
   // Set up the easel once the sheet has dropped, so the camera frames the bot in what you can see.
-  useEffect(() => { if (watch) engine.current?.workOn(watch.channelId); }, [watch?.runId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const atEasel = watch?.channelId ?? building?.channelId ?? null;
+  useEffect(() => { engine.current?.workOn(atEasel); }, [atEasel]);
   // Walking away packs up the easel; the run carries on and its pitch waits in the chat.
   useEffect(() => {
-    if (watch && pick?.kind !== 'bot') { engine.current?.workOn(null); setWatch(null); }
+    if (watch && pick?.kind !== 'bot') setWatch(null);
   }, [pick, watch]);
   function openApp(a: OpenApp) {
     // In the drawer when the city knows the app (it's on the Strip); otherwise, or when asked, full screen.
@@ -1039,7 +1068,7 @@ export default function CityPage() {
         />
       )}
       {pick && !board && data && (
-        <PickSheet onClose={() => { setPick(null); setPlaying(null); setPlayHref(null); }} fill={Boolean(selectedBot || playingApp)} low={Boolean(watch && selectedBot)} wide={Boolean(playingApp)}>
+        <PickSheet onClose={() => { setPick(null); setPlaying(null); setPlayHref(null); }} fill={Boolean(selectedBot || playingApp)} low={Boolean((watch || building) && selectedBot)} wide={Boolean(playingApp)}>
           {selectedBot ? (
             <BotChat
               key={selectedBot.channelId}
