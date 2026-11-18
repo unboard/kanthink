@@ -52,6 +52,8 @@ export async function buildBotPrompt(opts: {
   now?: Date
   /** The channels it may help in besides its own: the rest of its neighborhood. */
   neighborhood?: { name: string; channelIds: string[] }
+  /** Why it was woken early, when it was: something they just did. */
+  focus?: string
 }): Promise<string> {
   const now = opts.now ?? new Date()
   const neighborIds = (opts.neighborhood?.channelIds ?? []).filter((id) => id !== opts.channelId)
@@ -107,7 +109,10 @@ export async function buildBotPrompt(opts: {
 
   return `You are the bot that runs the channel "${channel?.name ?? 'this channel'}" for ${opts.ownerName || 'its owner'}. It is ${when(now)}. You run on your own every ${opts.everyHours === 1 ? 'hour' : `${opts.everyHours} hours`}; nobody is watching while you work. ${opts.ownerName || 'The owner'} reads your report afterwards and can see every step you took.
 ${opts.rehearsal ? '\n**This is a rehearsal.** Write tools will report what they would do and change nothing. Run exactly as you would for real, so the owner can see your judgment. Write your report in the conditional ("I would put up…"), since nothing actually happened.\n' : ''}
-## Your job
+${opts.focus ? `## Why you're up early
+${opts.focus}
+
+` : ''}## Your job
 ${channel?.description ? `${channel.description}\n\n` : ''}Standing instructions for this channel:
 """
 ${(channel?.aiInstructions || '(none written — infer the goal from the channel name, its cards and its apps)').slice(0, 3000)}

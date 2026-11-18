@@ -14,6 +14,9 @@ import { canEditChannel } from '@/lib/api/permissions'
 import { getOrCreateQuickSaveChannel, BOOKMARK_INSTRUCTIONS } from '@/lib/inbox/quickSaveChannel'
 import { nanoid } from 'nanoid'
 
+// After the save, the bot whose tool fits the share may wake and make something, builds included.
+export const maxDuration = 800
+
 /**
  * Resolve where a shared item should land.
  *
@@ -221,6 +224,9 @@ export async function POST(req: NextRequest) {
         eventType: 'card_created_in',
         cardId,
       })
+      // The bot whose tool fits what you shared gets up now, not on tomorrow's round.
+      const { wakeForShare } = await import('@/lib/kan/bots/wake')
+      await wakeForShare(userId, [cardTitle, url, trimmedNote && `They said: ${trimmedNote}`].filter(Boolean).join('\n'))
     })
 
     return NextResponse.json({

@@ -39,7 +39,7 @@ export function nextRunAfter(bot: Pick<BotRow, 'everyHours'>, from: Date): Date 
   return new Date(from.getTime() + Math.max(1, bot.everyHours ?? 24) * 3600_000)
 }
 
-export async function runBot(channelId: string, opts: { trigger: 'scheduled' | 'manual' | 'rehearsal'; runId?: string; now?: Date; tellChat?: boolean }): Promise<{ runId: string; status: string }> {
+export async function runBot(channelId: string, opts: { trigger: 'scheduled' | 'manual' | 'rehearsal'; runId?: string; now?: Date; tellChat?: boolean; focus?: string }): Promise<{ runId: string; status: string }> {
   const now = opts.now ?? new Date()
   const runId = opts.runId ?? crypto.randomUUID()
   const rehearsal = opts.trigger === 'rehearsal'
@@ -119,6 +119,7 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
     channelId, ownerId: owner.id, ownerName: owner.name, tools: all, memory: bot.memory, everyHours: bot.everyHours ?? 24,
     budgetLeftCents: Math.floor(room.left / MILLICENTS_PER_CENT), isStudio, rehearsal, timeZone: owner.timezone, now,
     neighborhood: { name: hood.name, channelIds: reach },
+    focus: opts.focus,
   })
 
   // The trace, written through to the row so the log page can follow along.
