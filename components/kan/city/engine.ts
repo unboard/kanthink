@@ -12,7 +12,7 @@ import {
   zooGate,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
-import { buildStrip, inRect, type Strip } from './strip';
+import { buildMarket as buildStrip, inRect, NEW_MS, type Market as Strip } from './market';
 import { buildField, sproutView, stepSprout, type Field, type SproutView } from './field';
 import { CityFx, buildSea, seaColor, type Sea } from './fx';
 import { Workshop } from './workshop';
@@ -166,7 +166,7 @@ export interface PlayerKit {
 /** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
-/** The place you're next to in first person: a building, or an app on the Strip. */
+/** The place you're next to in first person: a building, or an app in the Market. */
 export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo' | 'sprout'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
@@ -1109,7 +1109,7 @@ export class CityEngine {
       });
     }
 
-    // The Strip, off the near edge of town.
+    // The Market, off the near edge of town.
     this.strip = buildStrip(grid, data.apps);
     this.appLabels.clear();
     if (this.strip) {
@@ -1120,13 +1120,16 @@ export class CityEngine {
         const label = this.makeLabel(lot.app.title, 'app', () => this.cb.onPick({ kind: 'app', id: lot.app.id }));
         const b = label.querySelector('.kc-badge') as HTMLSpanElement;
         const money = lot.app.earnedCents > 0 ? `$${Math.round(lot.app.earnedCents / 100).toLocaleString()} earned` : lot.app.price ?? '';
-        b.textContent = money;
-        b.dataset.tone = lot.app.tier === 'earning' ? 'gold' : lot.app.tier === 'selling' ? 'selling' : '';
-        b.style.display = money ? '' : 'none';
+        // Made in the last few days: say so, ahead of the price.
+        const fresh = Boolean(lot.app.at && Date.now() - lot.app.at < NEW_MS);
+        b.textContent = fresh ? 'New' : money;
+        b.dataset.tone = fresh ? 'new' : lot.app.tier === 'earning' ? 'gold' : lot.app.tier === 'selling' ? 'selling' : '';
+        b.style.display = b.textContent ? '' : 'none';
+        label.dataset.fresh = fresh ? '1' : '';
         label.dataset.tier = lot.app.tier;
         this.appLabels.set(lot.app.id, label);
       }
-      const gl = this.makeLabel('The Strip', 'strip', () => this.focusStrip());
+      const gl = this.makeLabel('The Market', 'strip', () => this.focusStrip());
       this.fixedLabels.push({ el: gl, pos: new THREE.Vector3(this.strip.gate.x, 10.5, this.strip.gate.z), always: true });
     }
     // The Sprout Field, out west, down a dirt road.
@@ -2685,7 +2688,8 @@ export class CityEngine {
         if (!el) continue;
         const pos = new THREE.Vector3(lot.center.x, lot.top + 1, lot.center.z);
         const picked = sel === lot.app.id || (this.selected?.kind === 'app' && this.selected.id === lot.app.id);
-        const show = fpv ? pos.distanceTo(this.persp.position) < (this.mode === 'walk' ? 32 : 55) : picked || (lot.app.tier !== 'free' ? zoom > 0.9 : zoom > 1.9 * (w < 640 ? 1.3 : 1));
+        const fresh = el.dataset.fresh === '1';
+        const show = fpv ? pos.distanceTo(this.persp.position) < (this.mode === 'walk' ? 32 : 55) : picked || (lot.app.tier !== 'free' || fresh ? zoom > 0.9 : zoom > 1.9 * (w < 640 ? 1.3 : 1));
         el.dataset.selected = this.selected?.kind === 'app' && this.selected.id === lot.app.id ? '1' : '';
         ask(el, pos, show, picked ? 1 : lot.app.tier !== 'free' ? 5 : 6, 0, picked);
       }

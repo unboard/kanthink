@@ -123,7 +123,7 @@ export async function buildAppFromRead(userId: string, readId: string, channelId
   // Minutes of work: let it run past the response, and say so when it lands.
   afterResponse(async () => {
     await generatePlaygroundApp(
-      { appId: app.id, prompt: 'Build an app from this card and its thread.', notifyWhenDone: true },
+      { appId: app.id, prompt: 'Build an app from this card and its thread.', notifyWhenDone: true, from: 'Kan' },
       { user: { id: userId } },
       { skipPreflight: true },
     );

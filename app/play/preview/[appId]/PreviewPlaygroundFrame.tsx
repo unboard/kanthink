@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { RefreshCw, Eye } from 'lucide-react';
 import { useAppStorage } from '@/lib/playground/useAppStorage';
+import { ChangeAppPanel } from './ChangeAppPanel';
 
 interface Props {
   srcDoc: string;
@@ -14,6 +15,8 @@ interface Props {
   versionLabel?: string | null;
   /** Whether that release is the one customers are currently served. */
   versionIsLive?: boolean;
+  /** They can edit it: offer to change it right here. */
+  canEdit?: boolean;
 }
 
 /**
@@ -24,7 +27,7 @@ interface Props {
  * published yet. The iframe gets everything else.
  */
 export function PreviewPlaygroundFrame({
-  srcDoc, title, isPublished, appId, versionLabel, versionIsLive,
+  srcDoc, title, isPublished, appId, versionLabel, versionIsLive, canEdit,
 }: Props) {
   // A draft's own bucket, separate from the published app's, so trying a save in
   // preview cannot overwrite what customers have stored.
@@ -62,6 +65,8 @@ export function PreviewPlaygroundFrame({
             </span>
           )}
         </div>
+        <div className="flex items-center gap-1.5">
+        {canEdit && appId && !versionLabel && <ChangeAppPanel appId={appId} />}
         <button
           onClick={() => setRunId((n) => n + 1)}
           title="Restart the app"
@@ -70,6 +75,7 @@ export function PreviewPlaygroundFrame({
           <RefreshCw className="w-3.5 h-3.5" />
           Restart
         </button>
+        </div>
       </div>
       <iframe
         ref={frameRef}

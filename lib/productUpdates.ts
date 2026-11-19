@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'market-change-apps-canvas',
+    date: '2026-11-19',
+    kind: 'capability',
+    title: 'The Market, and changing an app where you play it',
+    body: 'Your apps live in the Market now, each in a shop built for what it does, with balloons on anything new. Open an app full screen and press Change this app to describe a change (with screenshots). Canvas apps are built on one polished infinite canvas.',
+  },
+  {
     id: 'kan-chat-edits-apps-and-images',
     date: '2026-11-19',
     kind: 'workflow',

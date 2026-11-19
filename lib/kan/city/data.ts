@@ -160,7 +160,7 @@ export async function cityFor(userId: string) {
     return { minutes: Math.round(f.seconds / 60), mode, lastAt: f.last }
   }
 
-  // The Strip: every app you've built, and what each one earns.
+  // The Market: every app you've built, and what each one earns.
   const builtApps = apps.filter((a) => !a.isArchived && a.generationCount > 0)
   const appIds = builtApps.map((a) => a.id)
   const [purchases, orders, people] = appIds.length ? await Promise.all([
@@ -420,7 +420,7 @@ const QUIET_MS = 14 * 24 * HOUR
       recent: arrivals.slice(0, 8).map((a) => ({ kind: a.kind, text: clip(a.text, 120), at: +a.at })),
     },
     feed: feed.slice(0, 80),
-    // Money first: what earns gets the best lots on the Strip, then what's for sale, then
+    // Money first: what earns gets the best lots in the Market, then what's for sale, then
     // the rest, oldest first, so a lot only changes hands when the money does.
     apps: builtApps.map((a) => {
       const cents = earned.get(a.id) ?? 0

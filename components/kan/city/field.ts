@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { hash } from '@/lib/kan/city/layout';
 import { Grid, type Vec } from './grid';
 import { botFigure, dyn, mat, sign, tree, type BotFig } from './models';
-import type { Rect } from './strip';
+import type { Rect } from './market';
 import type { CityData } from './types';
 
 /**

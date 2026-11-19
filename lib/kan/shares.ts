@@ -146,7 +146,7 @@ export async function actOnShare(ownerId: string, cardId: string): Promise<{ mov
     const { nanoid } = await import('nanoid')
     const fresh = await db.query.cards.findFirst({ where: eq(cards.id, card.id), columns: { messages: true } })
     await db.update(cards).set({
-      messages: [...(fresh?.messages ?? []), { id: nanoid(), type: 'note', content: `**Kan is making your own version: ${out.title}**\n\n${out.brief}`, createdAt: new Date().toISOString() }] as typeof cards.$inferInsert.messages,
+      messages: [...(fresh?.messages ?? []), { id: nanoid(), type: 'note', content: `**Making your own version: ${out.title}**\n\n${out.brief}`, authorName: 'Kan', createdAt: new Date().toISOString() }] as typeof cards.$inferInsert.messages,
       updatedAt: new Date(),
     }).where(eq(cards.id, card.id))
 
@@ -164,7 +164,7 @@ export async function actOnShare(ownerId: string, cardId: string): Promise<{ mov
     if (!app) return { move: 'make', why: 'no app record' }
     await kanSays(ownerId, 'reach', `${out.say}\n\n_Building it now. I'll put it right here when it's ready._`, { refs })
     await generatePlaygroundApp(
-      { appId: app.id, prompt: `Build their own working version of what they shared.\n\n${out.brief}`, modelId: model.id, notifyWhenDone: false },
+      { appId: app.id, prompt: `Build their own working version of what they shared.\n\n${out.brief}`, modelId: model.id, notifyWhenDone: false, from: 'Kan' },
       { user: { id: ownerId } },
       { skipPreflight: true },
     )

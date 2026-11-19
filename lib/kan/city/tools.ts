@@ -72,7 +72,7 @@ export const cityTools: AgentTool[] = [
       afterResponse(async () => {
         try {
           const res = await generatePlaygroundApp(
-            { appId: app.id, prompt: change, imageUrls: images.length ? images : undefined },
+            { appId: app.id, prompt: change, imageUrls: images.length ? images : undefined, from: 'Kan, from your chat' },
             { user: { id: ctx.userId } },
             { skipPreflight: true },
           )

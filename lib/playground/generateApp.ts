@@ -49,6 +49,7 @@ import { activeMode as activePaymentMode } from '@/lib/playground/payments/setti
 import { codeSignals } from '@/lib/playground/payments/check';
 import { reviewPayments } from '@/lib/playground/payments/review';
 import { after } from 'next/server';
+import { CANVAS_PROMPT, isCanvasApp } from '@/lib/playground/skills/canvas';
 
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
 // cleanly exceed 60s. 800s is the Vercel Pro ceiling (300s is only the default),
@@ -596,6 +597,11 @@ export interface GenerateRequest {
    * drawer: a notification about the screen you are looking at is just noise.
    */
   notifyWhenDone?: boolean;
+  /**
+   * Who wrote this brief when it wasn't the person: "Kan", or a bot's name. The
+   * thread shows it as theirs instead of as the person's own words. Server callers only.
+   */
+  from?: string;
   // Optional: if the iframe captured a runtime error, include it so Gemini can fix.
   lastError?: string;
   // Optional: caller can choose a model. Falls back to the default.
@@ -651,6 +657,12 @@ type GenerateOptions = {
   /** Force a full rewrite. Used when a caller needs the whole file regenerated. */
   skipPatch?: boolean;
 };
+
+/** A brief's author: the person, or Kan / a bot when one of them wrote it. */
+function authorOf(body: GenerateRequest, userId: string): { authorId?: string; authorName?: string } {
+  const from = body.from?.trim().slice(0, 60);
+  return from ? { authorName: from } : { authorId: userId };
+}
 
 export async function generatePlaygroundApp(
   body: GenerateRequest,
@@ -975,7 +987,7 @@ async function runGeneration(
       type: 'question' as const,
       content: body.prompt,
       imageUrls: turnImages.length > 0 ? turnImages : undefined,
-      authorId: session.user.id,
+      ...authorOf(body, session.user.id),
       createdAt: new Date().toISOString(),
     };
     const answer = {
@@ -1011,7 +1023,7 @@ async function runGeneration(
       type: 'question' as const,
       content: body.prompt,
       imageUrls: turnImages.length > 0 ? turnImages : undefined,
-      authorId: session.user.id,
+      ...authorOf(body, session.user.id),
       createdAt: new Date().toISOString(),
     };
     const aiMessageObj = {
@@ -1174,7 +1186,10 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   // The style rides with the runtime section, so every call path (patch, rewrite,
   // the capability retry) is briefed the same way.
+  // Skills: an app of a known shape is built on the piece of the kit made for it.
+  const canvasApp = isCanvasApp(body.prompt, currentCode, threadContext, card.title, ...cardMessages.map((m) => m.content));
   const runtimeSection = buildRuntimeSection(seeded.deps)
+    + (canvasApp ? `\n\n${CANVAS_PROMPT}` : '')
     + (resolvedStyle ? `\n\n${stylePrompt(resolvedStyle)}` : '')
     + `\n\n${paymentContract(payments.settings)}`;
 
@@ -1447,7 +1462,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     type: 'question' as const,
     content: body.prompt,
     imageUrls: turnImages.length > 0 ? turnImages : undefined,
-    authorId: session.user.id,
+    ...authorOf(body, session.user.id),
     createdAt: new Date().toISOString(),
   };
   // A pinned model we could not call is worth one line in the thread. Silently

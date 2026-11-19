@@ -288,6 +288,15 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
 }
 
 function UserMessageHeader({ message, session }: { message: CardMessage; session: Session | null }) {
+  // Written by Kan or a bot on the person's behalf (a build brief, a note): say so.
+  if (!message.authorId && message.authorName) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+        <KanthinkIcon size={14} className="text-violet-500 dark:text-violet-400" />
+        {message.authorName}
+      </span>
+    );
+  }
   const isCurrentUser = message.authorId ? message.authorId === session?.user?.id : true;
   const avatarUrl = message.authorImage ?? (isCurrentUser ? session?.user?.image : null);
   const displayName = isCurrentUser ? 'You' : (message.authorName ?? 'Unknown');

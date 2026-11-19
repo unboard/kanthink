@@ -628,7 +628,7 @@ export default function CityPage() {
     if (watch && pick?.kind !== 'bot') setWatch(null);
   }, [pick, watch]);
   function openApp(a: OpenApp) {
-    // In the drawer when the city knows the app (it's on the Strip); otherwise, or when asked, full screen.
+    // In the drawer when the city knows the app (it’s in the Market); otherwise, or when asked, full screen.
     const known = data?.apps.some((x) => x.id === a.id);
     if (a.full || !known) { setViewing({ title: a.title, href: a.href }); if (!known) reloadSoon(); return; }
     setPick({ kind: 'app', id: a.id });
@@ -801,7 +801,7 @@ export default function CityPage() {
               {strip.n > 0 && (
                 <TodayRow
                   icon={<CircleDollarSign className="h-3.5 w-3.5 text-yellow-300" />}
-                  label={`${strip.n} apps on the Strip`}
+                  label={`${strip.n} apps in the Market`}
                   value={strip.earned ? `$${Math.round(strip.earned / 100).toLocaleString()} earned` : 'Free'}
                   onClick={() => { setToday(null); setMode('map'); setPick(null); setBoard(null); setTimeout(() => engine.current?.focusStrip(), 0); }}
                 />
@@ -1162,7 +1162,7 @@ export default function CityPage() {
       {viewing && (
         <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950">
           <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2 pt-[max(8px,env(safe-area-inset-top))]">
-            <button onClick={() => setViewing(null)} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[13px] text-neutral-300 hover:bg-white/10"><ChevronLeft className="h-4 w-4" /> Back to the Strip</button>
+            <button onClick={() => setViewing(null)} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[13px] text-neutral-300 hover:bg-white/10"><ChevronLeft className="h-4 w-4" /> Back to the Market</button>
             <span className="min-w-0 flex-1 truncate text-center text-[14px] font-semibold">{viewing.title}</span>
             <a href={viewing.href} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] text-neutral-500 hover:text-neutral-200">New tab <ArrowUpRight className="h-3.5 w-3.5" /></a>
           </div>
@@ -2004,7 +2004,7 @@ function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps
   const tier = tierOf(app);
   return (
     <div>
-      <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">The Strip · from {channel}</p>
+      <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">The Market · from {channel}</p>
       <h3 className="mt-0.5 pr-8 text-[19px] font-semibold leading-tight text-neutral-50">{app.title}</h3>
       <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${tier.cls}`}><tier.Icon className="h-3.5 w-3.5" /> {tier.label}</span>
       {app.tagline && <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{app.tagline}</p>}
@@ -2022,7 +2022,8 @@ function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={onOpen} className="flex items-center gap-1.5 rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500"><Play className="h-3.5 w-3.5" /> Play here</button>
         <button onClick={onFull} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
-        <a href={app.editHref} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5"><Pencil className="h-3.5 w-3.5" /> Edit app</a>
+        <button onClick={() => onAsk(`In “${app.title}”, change: `, true)} className="flex items-center gap-1.5 rounded-full border border-violet-400/50 px-3.5 py-1.5 text-xs text-violet-100 hover:bg-violet-500/10"><Pencil className="h-3.5 w-3.5" /> Change it</button>
+        <a href={app.editHref} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-400 hover:bg-white/5">Open in editor</a>
         {app.tier !== 'earning' && (
           <button onClick={() => onAsk(`How could the app “${app.title}” start making money? Look at it and its channel and give me the one best move.`)} className="rounded-full border border-yellow-400/40 px-3.5 py-1.5 text-xs text-yellow-100 hover:bg-yellow-400/10">How could it earn?</button>
         )}

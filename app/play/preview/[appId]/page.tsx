@@ -137,6 +137,7 @@ export default async function PlaygroundPreviewPage({ params, searchParams }: Pa
       // Named so nobody mistakes an old release for the draft they were editing.
       versionLabel={version ? `Version ${version.version}` : null}
       versionIsLive={version ? version.id === app.publishedVersionId : false}
+      canEdit={permission.canEdit}
     />
   );
 }

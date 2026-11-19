@@ -15,7 +15,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 
 const h = React.createElement;
-const { useState, useEffect, useRef, useId, forwardRef, createContext, useContext, useSyncExternalStore, Children, isValidElement, cloneElement } = React;
+const { useState, useEffect, useLayoutEffect, useImperativeHandle, useRef, useId, forwardRef, createContext, useContext, useSyncExternalStore, Children, isValidElement, cloneElement } = React;
 
 // --- cn: join classes, letting later ones win over earlier ones in the same group ---
 
@@ -476,4 +476,445 @@ const PAGE_PAD = { compact: 'px-4 py-4', comfortable: 'px-4 py-6 sm:px-6', airy:
 export function Page({ width = 'md', className, children }) {
   const pad = PAGE_PAD[style().density] || PAGE_PAD.comfortable;
   return h('main', { className: cn('mx-auto w-full', PAGE_WIDTH[width] || PAGE_WIDTH.md, pad, className) }, children);
+}
+
+// --- InfiniteCanvas: the canvas every canvas-shaped app is built on ---
+//
+// One component, maintained here, so every app that puts things on a board gets the
+// same polished behavior: pan and zoom without edges, transformer handles (resize
+// from any side or corner, rotate), drag, shift-click and marquee selection, undo
+// and redo, freehand ink, nudging, layering, and images dropped or pasted in.
+// Items are controlled: the app owns the array and saves it; the canvas reports
+// every change through onChange. Contract documented in CANVAS_PROMPT
+// (lib/playground/skills/canvas.ts). Change one, change the other.
+
+const CANVAS_MIN_ZOOM = 0.1;
+const CANVAS_MAX_ZOOM = 8;
+const CANVAS_MIN_SIZE = 8;
+const CANVAS_HISTORY = 100;
+const clampZoom = (z) => Math.min(CANVAS_MAX_ZOOM, Math.max(CANVAS_MIN_ZOOM, z));
+const rad = (deg) => (deg * Math.PI) / 180;
+const rot = (x, y, deg) => { const a = rad(deg), c = Math.cos(a), s = Math.sin(a); return { x: x * c - y * s, y: x * s + y * c }; };
+const canvasId = () => Math.random().toString(36).slice(2, 10);
+const typing = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+
+function bboxOf(items) {
+  if (!items.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const it of items) {
+    // A rotated item's corners, so fit and group boxes hold all of it.
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = rot((sx * it.w) / 2, (sy * it.h) / 2, it.rotation || 0);
+      x0 = Math.min(x0, cx + p.x); y0 = Math.min(y0, cy + p.y); x1 = Math.max(x1, cx + p.x); y1 = Math.max(y1, cy + p.y);
+    }
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function inkPath(points) {
+  if (!points || !points.length) return '';
+  if (points.length < 3) return `M${points[0][0]},${points[0][1]} ` + points.map((p) => `L${p[0]},${p[1]}`).join(' ');
+  let d = `M${points[0][0]},${points[0][1]}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const mx = (points[i][0] + points[i + 1][0]) / 2, my = (points[i][1] + points[i + 1][1]) / 2;
+    d += ` Q${points[i][0]},${points[i][1]} ${mx},${my}`;
+  }
+  const last = points[points.length - 1];
+  return d + ` L${last[0]},${last[1]}`;
+}
+
+function Ink({ item }) {
+  return h('svg', { width: '100%', height: '100%', viewBox: `0 0 ${item.vw || item.w} ${item.vh || item.h}`, preserveAspectRatio: 'none', style: { overflow: 'visible', display: 'block' } },
+    h('path', { d: inkPath(item.points), fill: 'none', stroke: item.color || 'currentColor', strokeWidth: item.size || 4, strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' }));
+}
+
+const ICON = {
+  select: 'M5 3l14 8-6 2-2 6z',
+  hand: 'M8 13V5.5a1.5 1.5 0 013 0V12m0-6.5v-1a1.5 1.5 0 013 0V12m0-5.5a1.5 1.5 0 013 0V12m0-3a1.5 1.5 0 013 0v5a7 7 0 01-7 7h-1a7 7 0 01-5.6-2.8L4.6 15a1.5 1.5 0 012.4-1.8L8 14.5',
+  draw: 'M3 21c3-1 5-3 7-6l8-8a2.1 2.1 0 00-3-3l-8 8c-3 2-5 4-6 7zM14 6l3 3',
+  undo: 'M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3',
+  redo: 'M15 14l5-5-5-5M20 9H9a5 5 0 000 10h3',
+  minus: 'M5 12h14',
+  plus: 'M12 5v14M5 12h14',
+  fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+};
+const canvasIcon = (d) => h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d }));
+const PEN_COLORS = ['#111827', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ffffff'];
+
+export const InfiniteCanvas = forwardRef(function InfiniteCanvas({
+  items = [], onChange, renderItem,
+  selection: selectionProp, onSelectionChange,
+  tool: toolProp, onToolChange,
+  onDropFiles, onItemDoubleClick,
+  penColor: penColorProp, penSize = 4,
+  toolbar = true, background = 'dots', className, children,
+}, ref) {
+  const rootRef = useRef(null);
+  const [view, setView] = useState({ x: 0, y: 0, z: 1 });
+  const viewRef = useRef(view); viewRef.current = view;
+  const itemsRef = useRef(items); itemsRef.current = items;
+  const [selInner, setSelInner] = useState([]);
+  const selection = selectionProp ?? selInner;
+  const selRef = useRef(selection); selRef.current = selection;
+  const setSelection = (ids) => { setSelInner(ids); onSelectionChange && onSelectionChange(ids); };
+  const [toolInner, setToolInner] = useState('select');
+  const tool = toolProp ?? toolInner;
+  const setTool = (t) => { setToolInner(t); onToolChange && onToolChange(t); };
+  const [penInner, setPenInner] = useState(PEN_COLORS[0]);
+  const penColor = penColorProp ?? penInner;
+  const [spaceDown, setSpaceDown] = useState(false);
+  const [marquee, setMarquee] = useState(null);
+  const [draft, setDraft] = useState(null); // ink being drawn, in world points
+  const [busy, setBusy] = useState(null); // 'pan' | 'move' | 'resize' | 'rotate' while dragging
+  const past = useRef([]); const future = useRef([]);
+  const [, bump] = useState(0);
+  const pointers = useRef(new Map());
+
+  const emit = (next) => { onChange && onChange(next); };
+  /** A finished change: remembered for undo. */
+  const commit = (next, before = itemsRef.current) => {
+    past.current.push(before); if (past.current.length > CANVAS_HISTORY) past.current.shift();
+    future.current = [];
+    emit(next); bump((n) => n + 1);
+  };
+  const undo = () => { const prev = past.current.pop(); if (!prev) return; future.current.push(itemsRef.current); emit(prev); bump((n) => n + 1); };
+  const redo = () => { const next = future.current.pop(); if (!next) return; past.current.push(itemsRef.current); emit(next); bump((n) => n + 1); };
+
+  const screenToWorld = (sx, sy) => {
+    const r = rootRef.current.getBoundingClientRect(), v = viewRef.current;
+    return { x: (sx - r.left - v.x) / v.z, y: (sy - r.top - v.y) / v.z };
+  };
+  const zoomAt = (sx, sy, z) => {
+    const r = rootRef.current.getBoundingClientRect(), v = viewRef.current, nz = clampZoom(z);
+    const px = sx - r.left, py = sy - r.top;
+    setView({ z: nz, x: px - ((px - v.x) / v.z) * nz, y: py - ((py - v.y) / v.z) * nz });
+  };
+  const zoomBy = (f) => { const r = rootRef.current.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, viewRef.current.z * f); };
+  const fit = (list = itemsRef.current) => {
+    const el = rootRef.current; if (!el) return;
+    const r = el.getBoundingClientRect(), b = bboxOf(list);
+    if (!b || !r.width) { setView({ x: r.width / 2, y: r.height / 2, z: 1 }); return; }
+    const pad = 80, z = clampZoom(Math.min((r.width - pad * 2) / Math.max(b.w, 1), (r.height - pad * 2) / Math.max(b.h, 1), 1));
+    setView({ z, x: r.width / 2 - (b.x + b.w / 2) * z, y: r.height / 2 - (b.y + b.h / 2) * z });
+  };
+  const center = () => { const r = rootRef.current.getBoundingClientRect(); return screenToWorld(r.left + r.width / 2, r.top + r.height / 2); };
+
+  useImperativeHandle(ref, () => ({
+    zoomToFit: () => fit(), zoomTo: (z) => zoomBy(z / viewRef.current.z), getView: () => viewRef.current, setView,
+    screenToWorld, center, undo, redo, select: setSelection,
+    centerOn: (id) => { const it = itemsRef.current.find((i) => i.id === id); if (!it) return; const r = rootRef.current.getBoundingClientRect(), z = viewRef.current.z; setView({ z, x: r.width / 2 - (it.x + it.w / 2) * z, y: r.height / 2 - (it.y + it.h / 2) * z }); },
+    /** Add items as one undoable change, centered on the view unless they say where. */
+    add: (list) => { const arr = Array.isArray(list) ? list : [list]; const c = center(); const placed = arr.map((it) => ({ id: canvasId(), rotation: 0, ...it, x: it.x ?? c.x - (it.w || 200) / 2, y: it.y ?? c.y - (it.h || 200) / 2 })); commit([...itemsRef.current, ...placed]); setSelection(placed.map((p) => p.id)); return placed; },
+  }));
+
+  // First paint: everything in view.
+  useLayoutEffect(() => { fit(); }, []);
+
+  // Wheel: pan; pinch or ctrl/cmd + wheel: zoom at the pointer. Non-passive so the page never scrolls.
+  useEffect(() => {
+    const el = rootRef.current;
+    const onWheel = (e) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, viewRef.current.z * Math.exp(-e.deltaY * 0.01));
+      else setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Keys, while the canvas has focus or nothing else does.
+  useEffect(() => {
+    const down = (e) => {
+      if (typing(document.activeElement)) return;
+      const mod = e.metaKey || e.ctrlKey, sel = selRef.current, all = itemsRef.current;
+      if (e.code === 'Space' && !e.repeat) { setSpaceDown(true); e.preventDefault(); return; }
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+      if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); setSelection(all.map((i) => i.id)); return; }
+      if (mod && e.key.toLowerCase() === 'd' && sel.length) {
+        e.preventDefault();
+        const copies = all.filter((i) => sel.includes(i.id)).map((i) => ({ ...i, id: canvasId(), x: i.x + 24, y: i.y + 24 }));
+        commit([...all, ...copies]); setSelection(copies.map((c) => c.id)); return;
+      }
+      if (mod && e.key === '0') { e.preventDefault(); zoomBy(1 / viewRef.current.z); return; }
+      if (e.shiftKey && e.key === '!') { fit(); return; }
+      if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomBy(1.25); return; }
+      if (mod && e.key === '-') { e.preventDefault(); zoomBy(0.8); return; }
+      if (mod) return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) { e.preventDefault(); commit(all.filter((i) => !sel.includes(i.id) || i.locked)); setSelection([]); return; }
+      if (e.key === 'Escape') { setSelection([]); setTool('select'); return; }
+      if (e.key === 'v' || e.key === 'V') { setTool('select'); return; }
+      if (e.key === 'h' || e.key === 'H') { setTool('hand'); return; }
+      if (e.key === 'p' || e.key === 'P' || e.key === 'd' || e.key === 'D') { setTool('draw'); return; }
+      if ((e.key === ']' || e.key === '[') && sel.length) {
+        const picked = all.filter((i) => sel.includes(i.id)), rest = all.filter((i) => !sel.includes(i.id));
+        commit(e.key === ']' ? [...rest, ...picked] : [...picked, ...rest]); return;
+      }
+      const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (arrows[e.key] && sel.length) {
+        e.preventDefault();
+        const [dx, dy] = arrows[e.key], step = e.shiftKey ? 10 : 1;
+        commit(all.map((i) => (sel.includes(i.id) && !i.locked ? { ...i, x: i.x + dx * step, y: i.y + dy * step } : i)));
+      }
+    };
+    const up = (e) => { if (e.code === 'Space') setSpaceDown(false); };
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  });
+
+  // Images pasted anywhere land in the middle of the view.
+  useEffect(() => {
+    if (!onDropFiles) return;
+    const paste = (e) => {
+      if (typing(document.activeElement)) return;
+      const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
+      if (files.length) { e.preventDefault(); onDropFiles(files, center()); }
+    };
+    window.addEventListener('paste', paste);
+    return () => window.removeEventListener('paste', paste);
+  }, [onDropFiles]);
+
+  /** Follow one drag until the pointer lets go. */
+  const track = (move, end) => {
+    const mv = (e) => move(e);
+    const up = (e) => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); setBusy(null); end && end(e); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  };
+
+  const startPan = (e) => {
+    setBusy('pan');
+    const sx = e.clientX, sy = e.clientY, v0 = viewRef.current;
+    track((m) => setView({ ...v0, x: v0.x + m.clientX - sx, y: v0.y + m.clientY - sy }));
+  };
+
+  // Two fingers: pinch to zoom and pan together.
+  const pinch = useRef(null);
+  const onPointerDownCapture = (e) => {
+    if (e.pointerType !== 'touch') return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, v: viewRef.current };
+      e.stopPropagation();
+      const mv = (m) => {
+        if (!pointers.current.has(m.pointerId) || !pinch.current) return;
+        pointers.current.set(m.pointerId, { x: m.clientX, y: m.clientY });
+        const [p, q] = [...pointers.current.values()], s = pinch.current;
+        const d = Math.hypot(p.x - q.x, p.y - q.y), mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+        const r = rootRef.current.getBoundingClientRect(), z = clampZoom(s.v.z * (d / s.d));
+        const wx = (s.mx - r.left - s.v.x) / s.v.z, wy = (s.my - r.top - s.v.y) / s.v.z;
+        setView({ z, x: mx - r.left - wx * z, y: my - r.top - wy * z });
+      };
+      const up = (u) => { pointers.current.delete(u.pointerId); if (pointers.current.size < 2) { pinch.current = null; window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); } };
+      window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    }
+  };
+  useEffect(() => {
+    const drop = (e) => pointers.current.delete(e.pointerId);
+    window.addEventListener('pointerup', drop); window.addEventListener('pointercancel', drop);
+    return () => { window.removeEventListener('pointerup', drop); window.removeEventListener('pointercancel', drop); };
+  }, []);
+
+  const onBackgroundDown = (e) => {
+    if (pinch.current) return;
+    rootRef.current.focus({ preventScroll: true });
+    if (e.button === 1 || e.button === 2 || tool === 'hand' || spaceDown || (e.pointerType === 'touch' && tool === 'select')) { e.preventDefault(); startPan(e); return; }
+    if (e.button !== 0) return;
+    if (tool === 'draw') { startInk(e); return; }
+    // Marquee: everything it touches is selected (shift adds).
+    const start = screenToWorld(e.clientX, e.clientY), base = e.shiftKey ? selRef.current : [];
+    if (!e.shiftKey) setSelection([]);
+    track((m) => {
+      const p = screenToWorld(m.clientX, m.clientY);
+      const box = { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y), w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y) };
+      setMarquee(box);
+      const hit = itemsRef.current.filter((i) => { const b = bboxOf([i]); return b.x < box.x + box.w && b.x + b.w > box.x && b.y < box.y + box.h && b.y + b.h > box.y; }).map((i) => i.id);
+      setSelection([...new Set([...base, ...hit])]);
+    }, () => setMarquee(null));
+  };
+
+  const startInk = (e) => {
+    const pts = [screenToWorld(e.clientX, e.clientY)];
+    setDraft(pts.slice());
+    track((m) => { pts.push(screenToWorld(m.clientX, m.clientY)); setDraft(pts.slice()); }, () => {
+      setDraft(null);
+      if (pts.length < 2) return;
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), pad = penSize;
+      const x = Math.min(...xs) - pad, y = Math.min(...ys) - pad, w = Math.max(...xs) - x + pad, hgt = Math.max(...ys) - y + pad;
+      const item = { id: canvasId(), type: 'ink', x, y, w, h: hgt, vw: w, vh: hgt, rotation: 0, color: penColor, size: penSize, points: pts.map((p) => [p.x - x, p.y - y]) };
+      commit([...itemsRef.current, item]);
+    });
+  };
+
+  const onItemDown = (e, it) => {
+    if (pinch.current) return;
+    if (tool === 'hand' || spaceDown || e.button === 1) { e.preventDefault(); e.stopPropagation(); startPan(e); return; }
+    if (tool === 'draw' || e.button !== 0) return;
+    e.stopPropagation();
+    rootRef.current.focus({ preventScroll: true });
+    let sel = selRef.current;
+    if (e.shiftKey) { sel = sel.includes(it.id) ? sel.filter((s) => s !== it.id) : [...sel, it.id]; setSelection(sel); return; }
+    if (!sel.includes(it.id)) { sel = [it.id]; setSelection(sel); }
+    const before = itemsRef.current, start = screenToWorld(e.clientX, e.clientY);
+    let moved = false;
+    track((m) => {
+      const p = screenToWorld(m.clientX, m.clientY), dx = p.x - start.x, dy = p.y - start.y;
+      if (!moved && Math.hypot(dx, dy) * viewRef.current.z < 3) return;
+      moved = true; setBusy('move');
+      emit(before.map((i) => (sel.includes(i.id) && !i.locked ? { ...i, x: i.x + dx, y: i.y + dy } : i)));
+    }, () => { if (moved) commit(itemsRef.current, before); });
+  };
+
+  // Resize one item from a handle, in its own rotated frame; the opposite side stays put.
+  const onHandleDown = (e, it, dx, dy) => {
+    e.stopPropagation(); e.preventDefault();
+    const before = itemsRef.current, th = it.rotation || 0;
+    const c0 = { x: it.x + it.w / 2, y: it.y + it.h / 2 }, ax = (-dx * it.w) / 2, ay = (-dy * it.h) / 2;
+    const ratio = it.keepRatio || it.type === 'image';
+    setBusy('resize');
+    track((m) => {
+      const pw = screenToWorld(m.clientX, m.clientY), p = rot(pw.x - c0.x, pw.y - c0.y, -th);
+      let w = dx ? Math.max(CANVAS_MIN_SIZE, dx * (p.x - ax)) : it.w, hh = dy ? Math.max(CANVAS_MIN_SIZE, dy * (p.y - ay)) : it.h;
+      if (dx && dy && (ratio !== m.shiftKey)) { const s = Math.max(w / it.w, hh / it.h); w = it.w * s; hh = it.h * s; }
+      const cl = { x: dx ? ax + (dx * w) / 2 : 0, y: dy ? ay + (dy * hh) / 2 : 0 }, cw = rot(cl.x, cl.y, th);
+      const cx = c0.x + cw.x, cy = c0.y + cw.y;
+      emit(before.map((i) => (i.id === it.id ? { ...i, x: cx - w / 2, y: cy - hh / 2, w, h: hh } : i)));
+    }, () => commit(itemsRef.current, before));
+  };
+
+  const onRotateDown = (e, it) => {
+    e.stopPropagation(); e.preventDefault();
+    const before = itemsRef.current, c = { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+    setBusy('rotate');
+    track((m) => {
+      const p = screenToWorld(m.clientX, m.clientY);
+      let deg = (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI + 90;
+      if (m.shiftKey) deg = Math.round(deg / 15) * 15;
+      deg = ((deg % 360) + 360) % 360;
+      emit(before.map((i) => (i.id === it.id ? { ...i, rotation: deg } : i)));
+    }, () => commit(itemsRef.current, before));
+  };
+
+  // Several selected: scale them all from the group box's opposite corner.
+  const onGroupHandleDown = (e, box, dx, dy) => {
+    e.stopPropagation(); e.preventDefault();
+    const before = itemsRef.current, sel = selRef.current;
+    const ax = dx > 0 ? box.x : box.x + box.w, ay = dy > 0 ? box.y : box.y + box.h;
+    setBusy('resize');
+    track((m) => {
+      const p = screenToWorld(m.clientX, m.clientY);
+      let sx = dx ? Math.max(0.05, (dx * (p.x - ax)) / box.w) : 1, sy = dy ? Math.max(0.05, (dy * (p.y - ay)) / box.h) : 1;
+      if (dx && dy && !m.shiftKey) { const s = Math.max(sx, sy); sx = s; sy = s; }
+      emit(before.map((i) => (sel.includes(i.id) && !i.locked ? { ...i, x: ax + (i.x - ax) * sx, y: ay + (i.y - ay) * sy, w: i.w * sx, h: i.h * sy } : i)));
+    }, () => commit(itemsRef.current, before));
+  };
+
+  const onDragOver = (e) => { if (onDropFiles && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); };
+  const onDrop = (e) => {
+    if (!onDropFiles) return;
+    const files = Array.from(e.dataTransfer.files || []);
+    if (!files.length) return;
+    e.preventDefault();
+    onDropFiles(files, screenToWorld(e.clientX, e.clientY));
+  };
+
+  const z = view.z;
+  const selected = items.filter((i) => selection.includes(i.id));
+  const handles = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
+  const handleCursor = (dx, dy, th) => {
+    const names = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'];
+    const a = (((Math.atan2(dy, dx) * 180) / Math.PI + th) % 180 + 180) % 180;
+    return names[Math.round(a / 45) % 4];
+  };
+  const handleEl = (key, style, onDown, cursor, edge) => h('div', {
+    key, onPointerDown: onDown,
+    style: { position: 'absolute', width: edge ? 10 : 12, height: edge ? 10 : 12, transform: 'translate(-50%, -50%)', cursor, touchAction: 'none', ...style },
+    className: 'rounded-[3px] border-2 border-primary bg-background shadow-sm',
+  });
+
+  let overlay = null;
+  if (selected.length === 1 && !busy?.startsWith('pan')) {
+    const it = selected[0], th = it.rotation || 0;
+    const cx = (it.x + it.w / 2) * z + view.x, cy = (it.y + it.h / 2) * z + view.y;
+    overlay = h('div', { style: { position: 'absolute', left: cx, top: cy, width: it.w * z, height: it.h * z, transform: `translate(-50%, -50%) rotate(${th}deg)`, pointerEvents: 'none' } },
+      h('div', { className: 'absolute inset-0 rounded-[2px] border-2 border-primary' }),
+      it.locked ? null : h('div', { style: { pointerEvents: 'auto' } },
+        h('div', { key: 'stem', className: 'absolute bg-primary', style: { left: '50%', top: -24, width: 2, height: 22, transform: 'translateX(-50%)' } }),
+        handleEl('rot', { left: '50%', top: -28, borderRadius: 999 }, (e) => onRotateDown(e, it), 'grab'),
+        ...handles.map(([dx, dy]) => handleEl(`${dx}${dy}`, { left: `${(dx + 1) * 50}%`, top: `${(dy + 1) * 50}%` }, (e) => onHandleDown(e, it, dx, dy), handleCursor(dx, dy, th), !dx || !dy))));
+  } else if (selected.length > 1) {
+    const b = bboxOf(selected);
+    overlay = h('div', { style: { position: 'absolute', left: b.x * z + view.x, top: b.y * z + view.y, width: b.w * z, height: b.h * z, pointerEvents: 'none' } },
+      h('div', { className: 'absolute inset-0 rounded-[2px] border-2 border-dashed border-primary' }),
+      h('div', { style: { pointerEvents: 'auto' } },
+        ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([dx, dy]) => handleEl(`g${dx}${dy}`, { left: `${(dx + 1) * 50}%`, top: `${(dy + 1) * 50}%` }, (e) => onGroupHandleDown(e, b, dx, dy), handleCursor(dx, dy, 0)))));
+  }
+
+  const grid = 24 * z;
+  const bg = background === 'dots'
+    ? { backgroundImage: 'radial-gradient(circle, rgb(var(--foreground, 136 136 136) / 0.28) 1px, transparent 1.2px)', backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${view.x}px ${view.y}px` }
+    : background === 'grid'
+      ? { backgroundImage: 'linear-gradient(to right, rgb(var(--foreground, 136 136 136) / 0.1) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--foreground, 136 136 136) / 0.1) 1px, transparent 1px)', backgroundSize: `${grid}px ${grid}px`, backgroundPosition: `${view.x}px ${view.y}px` }
+      : {};
+  const cursor = busy === 'pan' ? 'grabbing' : tool === 'hand' || spaceDown ? 'grab' : tool === 'draw' ? 'crosshair' : 'default';
+
+  const tb = (label, icon, onClick, active, disabled) => h('button', {
+    type: 'button', title: label, 'aria-label': label, onClick, disabled,
+    className: cn('flex h-10 w-10 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent disabled:opacity-30', active && 'bg-primary text-primary-foreground hover:bg-primary'),
+  }, canvasIcon(icon));
+  const sep = (k) => h('span', { key: k, className: 'mx-1 h-6 w-px bg-border' });
+
+  return h('div', {
+    ref: rootRef, tabIndex: 0, className: cn('relative h-full w-full select-none overflow-hidden bg-background outline-none', className),
+    style: { touchAction: 'none', cursor, ...bg },
+    onPointerDownCapture, onPointerDown: onBackgroundDown, onContextMenu: (e) => e.preventDefault(), onDragOver, onDrop,
+  },
+    h('div', { style: { position: 'absolute', left: 0, top: 0, transformOrigin: '0 0', transform: `translate(${view.x}px, ${view.y}px) scale(${z})` } },
+      items.map((it) => h('div', {
+        key: it.id,
+        onPointerDown: (e) => onItemDown(e, it),
+        onDoubleClick: onItemDoubleClick ? (e) => { e.stopPropagation(); onItemDoubleClick(it); } : undefined,
+        style: { position: 'absolute', left: it.x, top: it.y, width: it.w, height: it.h, transform: it.rotation ? `rotate(${it.rotation}deg)` : undefined, cursor: tool === 'select' && !spaceDown ? (it.locked ? 'default' : 'move') : undefined, touchAction: 'none' },
+      }, it.type === 'ink' ? h(Ink, { item: it }) : renderItem ? renderItem(it, { selected: selection.includes(it.id), zoom: z }) : null)),
+      draft ? h('svg', { style: { position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }, width: 1, height: 1 },
+        h('path', { d: inkPath(draft.map((p) => [p.x, p.y])), fill: 'none', stroke: penColor, strokeWidth: penSize, strokeLinecap: 'round', strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' })) : null),
+    marquee ? h('div', { className: 'pointer-events-none absolute rounded-[2px] border border-primary bg-primary/10', style: { left: marquee.x * z + view.x, top: marquee.y * z + view.y, width: marquee.w * z, height: marquee.h * z } }) : null,
+    overlay,
+    children,
+    toolbar ? h('div', { onPointerDown: (e) => e.stopPropagation(), className: 'absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-lg backdrop-blur' },
+      tb('Select (V)', ICON.select, () => setTool('select'), tool === 'select'),
+      tb('Pan (H, or hold space)', ICON.hand, () => setTool('hand'), tool === 'hand'),
+      tb('Draw (P)', ICON.draw, () => setTool('draw'), tool === 'draw'),
+      tool === 'draw' && !penColorProp ? h('span', { className: 'flex items-center gap-1 px-1' }, PEN_COLORS.map((c) => h('button', {
+        key: c, type: 'button', 'aria-label': `Ink ${c}`, onClick: () => setPenInner(c),
+        className: cn('h-6 w-6 rounded-full border border-border', penColor === c && 'ring-2 ring-primary ring-offset-1 ring-offset-card'), style: { background: c },
+      }))) : null,
+      sep('s1'),
+      tb('Undo (⌘Z)', ICON.undo, undo, false, !past.current.length),
+      tb('Redo (⇧⌘Z)', ICON.redo, redo, false, !future.current.length),
+      sep('s2'),
+      tb('Zoom out', ICON.minus, () => zoomBy(0.8)),
+      h('button', { type: 'button', title: 'Reset to 100%', onClick: () => zoomBy(1 / viewRef.current.z), className: 'h-10 min-w-[3.5rem] rounded-md px-1 text-xs tabular-nums text-muted-foreground hover:bg-accent' }, `${Math.round(z * 100)}%`),
+      tb('Zoom in', ICON.plus, () => zoomBy(1.25)),
+      tb('Fit everything (⇧1)', ICON.fit, () => fit())) : null);
+});
+
+/** Read an image file as an item for InfiniteCanvas, sized from the image itself. */
+export function imageItem(file, at, maxSide = 360) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Not an image'));
+      img.onload = () => {
+        const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.round(img.width * s), hh = Math.round(img.height * s);
+        resolve({ id: canvasId(), type: 'image', src: reader.result, x: (at?.x ?? 0) - w / 2, y: (at?.y ?? 0) - hh / 2, w, h: hh, rotation: 0, keepRatio: true });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }

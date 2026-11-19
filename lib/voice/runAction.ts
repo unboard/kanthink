@@ -1031,6 +1031,8 @@ export async function runVoiceAction(actor: VoiceActor, body: ActionRequest) {
             prompt: args.prompt || 'Build an app from this card and its thread.',
             // Unknown ids fall back to Auto inside the generator.
             modelId: args.modelId || undefined,
+            // Kan (or a bot) wrote this brief, not the person.
+            from: 'Kan',
           },
           { user: { id: session.user.id } },
           // Hands-free: never stop to ask a clarifying question.

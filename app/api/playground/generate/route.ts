@@ -28,7 +28,8 @@ export async function POST(request: Request) {
   const body: GenerateRequest = await request.json();
 
   try {
-    return await generatePlaygroundApp(body, { user: { id: session.user.id } });
+    // Only the server says a brief came from Kan or a bot.
+    return await generatePlaygroundApp({ ...body, from: undefined }, { user: { id: session.user.id } });
   } finally {
     // Clearing the card's "Building the app…" shimmer belongs here rather than in
     // the browser.
