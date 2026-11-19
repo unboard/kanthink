@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
       channelId: requestedChannelId,
       columnId: requestedColumnId,
       rememberDestination,
+      share: sharePrefs,
     } = body
 
     if (!url && !text && !providedTitle) {
@@ -227,7 +228,15 @@ export async function POST(req: NextRequest) {
       // Every share gets something back: Kan makes their own version, has a bot make
       // an episode, or says the one thing worth taking from it, in its thread.
       const { actOnShare } = await import('@/lib/kan/shares')
-      await actOnShare(userId, cardId)
+      const { INTENTS, EFFORTS } = await import('@/lib/kan/shares')
+      const sp = (sharePrefs ?? {}) as Record<string, unknown>
+      await actOnShare(userId, cardId, {
+        intent: INTENTS.find((i) => i === sp.intent),
+        effort: EFFORTS.find((e) => e === sp.effort),
+        briefFirst: sp.briefFirst === true,
+        emailThoughts: sp.emailThoughts === true,
+        explainer: sp.explainer === true,
+      })
     })
 
     return NextResponse.json({

@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'share-says-why',
+    date: '2026-11-19',
+    kind: 'workflow',
+    title: 'Say why you’re sharing something',
+    body: 'Sharing to Kanthink now asks why: keep it in your brain, make something like it, recreate it, or understand it. Making asks how much effort and can send you a brief first; learning can email Kan’s take and make an explainer.',
+  },
+  {
     id: 'market-change-apps-canvas',
     date: '2026-11-19',
     kind: 'capability',

@@ -39,7 +39,6 @@ describe('canvas skill', () => {
   })
 
   it('the kit exports what the prompt promises', async () => {
-    // @ts-expect-error plain ES module served to apps
     const kit: Record<string, unknown> = await import('../public/kit/v1.js')
     expect(typeof kit.InfiniteCanvas).toBe('object') // forwardRef
     expect(typeof kit.imageItem).toBe('function')
