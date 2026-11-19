@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, AudioLines, Check, ChevronDown, ExternalLink, Loader2, Mail, MapPin, Pencil, Send, Square, X } from 'lucide-react';
+import { ArrowUp, AudioLines, Check, ChevronDown, ExternalLink, ImagePlus, Loader2, Mail, MapPin, Pencil, Send, Square, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { formatElapsed } from '@/components/kan/KanTrace';
@@ -42,7 +42,7 @@ export interface ChatStep {
 }
 
 type Turn =
-  | { id: string; sid?: string; role: 'user'; text: string; about?: string }
+  | { id: string; sid?: string; role: 'user'; text: string; about?: string; images?: string[] }
   | {
     id: string; sid?: string; role: 'kan'; text: string; steps: ChatStep[]; suggestions: { label: string; prompt: string }[]; memo?: string; error?: string; startedAt: number; endedAt?: number;
     /** Kan spoke first: something it found, or a plan to answer. */
@@ -54,7 +54,7 @@ type Turn =
 function toTurn(m: KanMessage): Turn {
   const at = +new Date(m.createdAt ?? Date.now());
   const d = m.data ?? {};
-  if (m.role === 'you') return { id: m.id, sid: m.id, role: 'user', text: m.text, about: d.about };
+  if (m.role === 'you') return { id: m.id, sid: m.id, role: 'user', text: m.text, about: d.about, images: d.images };
   return {
     id: m.id, sid: m.id, role: 'kan', text: m.text, memo: d.memo, error: d.error, startedAt: at, endedAt: at,
     steps: (d.steps ?? []).map((x, i) => ({ id: `${m.id}:${i}`, label: x.label, status: x.error ? 'error' : 'done', href: x.href, write: x.write, startedAt: at })),
@@ -112,6 +112,25 @@ export const CityChat = forwardRef<CityChatHandle, {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [cardIds, setCardIds] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
+  // Images attached to the next message: uploading ones have no url yet.
+  const [attached, setAttached] = useState<{ id: string; preview: string; url?: string; error?: boolean }[]>([]);
+  const attachedRef = useRef(attached);
+  attachedRef.current = attached;
+  const [composing, setComposing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const attach = useCallback((files: FileList | File[] | null) => {
+    for (const file of Array.from(files ?? []).filter((f) => f.type.startsWith('image/')).slice(0, 6)) {
+      const id = uid();
+      setAttached((a) => [...a, { id, preview: URL.createObjectURL(file) }].slice(-6));
+      setComposing(true);
+      const form = new FormData();
+      form.append('file', file);
+      void fetch('/api/upload-image', { method: 'POST', body: form })
+        .then((r) => r.json())
+        .then((d: { url?: string }) => setAttached((a) => a.map((x) => (x.id === id ? { ...x, url: d.url, error: !d.url } : x))))
+        .catch(() => setAttached((a) => a.map((x) => (x.id === id ? { ...x, error: true } : x))));
+    }
+  }, []);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
@@ -193,13 +212,17 @@ export const CityChat = forwardRef<CityChatHandle, {
   cardIdsRef.current = cardIds;
 
   const send = useCallback(async (text: string): Promise<string | null> => {
-    const content = text.trim();
+    const images = attachedRef.current.map((a) => a.url).filter((u): u is string => Boolean(u));
+    const content = text.trim() || (images.length ? 'Here.' : '');
     if (!content || busyRef.current) return null;
+    if (attachedRef.current.some((a) => !a.url && !a.error)) return null; // still uploading
     setDraft('');
+    setAttached([]);
+    setComposing(false);
     if (inputRef.current) inputRef.current.style.height = 'auto';
     const f = focusRef.current;
     const about = f?.name;
-    const user: Turn = { id: uid(), role: 'user', text: content, about };
+    const user: Turn = { id: uid(), role: 'user', text: content, about, images: images.length ? images : undefined };
     const kanId = uid();
     const kan: Turn = { id: kanId, role: 'kan', text: '', steps: [], suggestions: [], startedAt: Date.now() };
     // What the turn comes to, kept here too, to save once it's over.
@@ -229,6 +252,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           city: { focus: f },
           voice: voiceOn.current,
+          images: images.length ? images : undefined,
         }),
         signal: controller.signal,
       });
@@ -302,7 +326,7 @@ export const CityChat = forwardRef<CityChatHandle, {
         const r = await fetch(THREAD, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: [
-            { role: 'you', text: content, data: { about } },
+            { role: 'you', text: content, data: { about, images: images.length ? images : undefined } },
             { role: 'kan', text: acc.text, data: { memo: acc.memo, error: acc.error, suggestions: acc.suggestions, emails: acc.emails.length ? acc.emails : undefined, steps: acc.steps.map((x) => ({ label: x.label, write: x.write, href: x.href, error: x.status === 'error' })) } },
           ] }),
         });
@@ -406,6 +430,11 @@ export const CityChat = forwardRef<CityChatHandle, {
               {turns.map((t) => t.role === 'user' ? (
                 <div key={t.id} className="flex flex-col items-end gap-1">
                   {t.about && <span className="flex items-center gap-1 text-[11px] text-neutral-500"><MapPin className="h-3 w-3" /> {t.about}</span>}
+                  {t.images?.length ? (
+                    <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+                      {t.images.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="" className="h-20 w-20 rounded-xl object-cover ring-1 ring-white/10" /></a>)}
+                    </div>
+                  ) : null}
                   <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-violet-600/25 px-3.5 py-2 text-[14px] leading-relaxed text-neutral-100">{t.text}</p>
                 </div>
               ) : (
@@ -476,8 +505,11 @@ export const CityChat = forwardRef<CityChatHandle, {
         ) : (
         <form
           onSubmit={(e) => { e.preventDefault(); void send(draft); }}
-          className="flex items-end gap-1.5 rounded-[26px] border border-white/12 bg-neutral-950/85 py-1.5 pl-2 pr-1.5 shadow-2xl backdrop-blur-xl focus-within:border-violet-400/50"
+          onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
+          onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); attach(e.dataTransfer.files); } }}
+          className={`flex items-end gap-1.5 border border-white/12 bg-neutral-950/85 py-1.5 pl-2 pr-1.5 shadow-2xl backdrop-blur-xl focus-within:border-violet-400/50 ${composing ? 'rounded-[22px]' : 'rounded-[26px]'}`}
         >
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { attach(e.target.files); e.target.value = ''; }} />
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -495,9 +527,22 @@ export const CityChat = forwardRef<CityChatHandle, {
                 <button type="button" onClick={onClearFocus} aria-label="Talk about the whole city" className="rounded-full p-0.5 text-neutral-500 hover:text-neutral-200"><X className="h-3 w-3" /></button>
               </span>
             )}
+            {attached.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-1 pb-1 pt-2">
+                {attached.map((a) => (
+                  <div key={a.id} className="relative">
+                    <img src={a.preview} alt="" className={`h-14 w-14 rounded-lg object-cover ring-1 ${a.error ? 'ring-red-400' : 'ring-white/10'} ${a.url ? '' : 'opacity-50'}`} />
+                    {!a.url && !a.error && <Loader2 className="absolute inset-0 m-auto h-4 w-4 animate-spin text-white" />}
+                    <button type="button" onClick={() => setAttached((all) => all.filter((x) => x.id !== a.id))} aria-label="Remove image" className="absolute -right-1.5 -top-1.5 rounded-full bg-neutral-800 p-0.5 text-neutral-300 ring-1 ring-white/15 hover:text-white"><X className="h-3 w-3" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={draft}
+              onPaste={(e) => { const files = Array.from(e.clipboardData.files); if (files.some((f) => f.type.startsWith('image/'))) { e.preventDefault(); attach(files); } }}
+              onBlur={() => { if (!draft.trim() && !attachedRef.current.length) setComposing(false); }}
               onChange={(e) => {
                 setDraft(e.target.value);
                 e.target.style.height = 'auto';
@@ -507,12 +552,15 @@ export const CityChat = forwardRef<CityChatHandle, {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(draft); }
                 if (e.key === 'Escape') setOpen(false);
               }}
-              onFocus={() => { if (turns.length) setOpen(true); }}
-              rows={1}
+              onFocus={() => { setComposing(true); if (turns.length) setOpen(true); }}
+              rows={composing ? 3 : 1}
               placeholder={focus?.name ? `Ask about ${focus.name}…` : 'Ask Kan, or tell your bots…'}
-              className="block max-h-[160px] min-h-[24px] w-full resize-none bg-transparent px-1.5 py-2 text-[15px] text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
+              className={`block max-h-[200px] w-full resize-none bg-transparent px-1.5 py-2 text-[15px] text-neutral-100 placeholder:text-neutral-500 focus:outline-none ${composing ? 'min-h-[72px]' : 'min-h-[24px]'}`}
             />
           </div>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => fileRef.current?.click()} aria-label="Attach an image" title="Attach an image (or paste or drop one)" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-violet-300 hover:bg-white/5">
+            <ImagePlus className="h-[18px] w-[18px]" />
+          </button>
           <VoiceMicButton
             size="md"
             onTranscription={(t) => {
@@ -532,7 +580,7 @@ export const CityChat = forwardRef<CityChatHandle, {
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
-            <button type="submit" disabled={!draft.trim()} aria-label="Send" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500 text-white hover:bg-violet-400 disabled:opacity-30">
+            <button type="submit" disabled={(!draft.trim() && !attached.some((a) => a.url)) || attached.some((a) => !a.url && !a.error)} aria-label="Send" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500 text-white hover:bg-violet-400 disabled:opacity-30">
               <ArrowUp className="h-4 w-4" />
             </button>
           )}

@@ -35,6 +35,60 @@ async function findOwnChannel(ref: string, ctx: ToolContext) {
 
 export const cityTools: AgentTool[] = [
   {
+    name: 'change_app',
+    description: 'Change one of their apps: the ones Kan made from what they shared, a bot built, or they built. Use whenever they ask for something different in an app ("make the canvas bigger", "add an undo", "it should use my photos"), naming it as they did. Attached images go along as references. The rebuild takes a minute or two and lands in this thread with the link; tell them it is on its way and stop.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        app: { type: 'string', description: 'The app, as they named it, e.g. "Visual Remix Studio"' },
+        change: { type: 'string', description: 'What to change, in full and in their words, specific enough to build from' },
+        imageUrls: { type: 'array', items: { type: 'string' }, description: 'Image URLs they attached that belong with the change' },
+      },
+      required: ['app', 'change'],
+    },
+    kind: 'write',
+    running: (i) => `Changing “${str(i.app).slice(0, 40)}”`,
+    async run(input, ctx) {
+      const { playgroundApps } = await import('@/lib/db/schema')
+      const { loadAccess } = await import('@/lib/voice/resolveReference')
+      const access = await loadAccess(ctx.userId)
+      const writable = [...access.writable]
+      if (!writable.length) return { content: 'They have no apps they can change.', isError: true }
+      const apps = await db.query.playgroundApps.findMany({
+        where: and(inArray(playgroundApps.channelId, writable), eq(playgroundApps.isArchived, false)),
+        orderBy: [desc(playgroundApps.updatedAt)],
+        limit: 300,
+        columns: { id: true, title: true, cardId: true, shareToken: true, isPublic: true },
+      })
+      const q = str(input.app).toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+      const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()
+      const app = apps.find((a) => norm(a.title) === q) ?? apps.find((a) => norm(a.title).includes(q) || (q.length > 3 && q.includes(norm(a.title))))
+      if (!app) return { content: `No app called “${str(input.app)}”. Recent ones: ${apps.slice(0, 8).map((a) => a.title).join(', ')}.`, isError: true }
+      const images = (Array.isArray(input.imageUrls) ? input.imageUrls : []).map(str).filter((u) => /^https:\/\//.test(u)).slice(0, 6)
+      const change = str(input.change).trim()
+      const [{ afterResponse }, { generatePlaygroundApp }, { kanSays }, { appLink }] = await Promise.all([
+        import('@/lib/afterResponse'), import('@/lib/playground/generateApp'), import('@/lib/kan/thread/store'), import('@/lib/kan/bots/approvals'),
+      ])
+      afterResponse(async () => {
+        try {
+          const res = await generatePlaygroundApp(
+            { appId: app.id, prompt: change, imageUrls: images.length ? images : undefined },
+            { user: { id: ctx.userId } },
+            { skipPreflight: true },
+          )
+          const out = await res.json().catch(() => ({}))
+          await kanSays(ctx.userId, 'work', out?.error
+            ? `I couldn’t change **${app.title}**: ${out.error}`
+            : `**${app.title}** is updated: ${change.length > 140 ? `${change.slice(0, 139)}…` : change}`,
+          out?.error ? {} : { links: [{ title: app.title, url: appLink(app) }] })
+        } catch (err) {
+          await kanSays(ctx.userId, 'work', `I couldn’t change **${app.title}**: ${err instanceof Error ? err.message : 'something went wrong'}`, {}).catch(() => {})
+        }
+      })
+      return { content: `Started changing “${app.title}”${images.length ? ` with ${images.length} image${images.length === 1 ? '' : 's'}` : ''}. It lands in this thread with the link in a minute or two.`, label: `Changing “${app.title}”` }
+    },
+  },
+  {
     name: 'arrange_interior',
     description: 'Rearrange the inside of a channel’s building, which they can walk around: each column is a room with its cards on the walls, apps are arcade cabinets. Change the floor plan, how a room shows its cards, the floor, the lights, the wall color, lobby features (including a cat tower and toys), the pets who live there, room accent colors, and which rooms come first. Pets are alive: they walk around, chase toys, climb the cat tower, nap, have faces, and come say hi. This is how anything inside a building gets made, so never hand a change inside a building to Claude Code; if something asked for isn’t on the list, do the closest thing and say what you did. Only what you pass changes; cards, columns and the bot are untouched. Set reset to go back to the default layout.',
     input_schema: {

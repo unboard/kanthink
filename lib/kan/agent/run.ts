@@ -32,6 +32,8 @@ export interface RunOptions {
   onUsage?: (usage: Usage) => void
   /** Rounds of tool calls before the loop gives up. A bot doing a whole run needs more than a chat turn. */
   maxRounds?: number
+  /** Images they attached to their latest message (public URLs), shown to the model with it. */
+  images?: string[]
 }
 
 export interface Usage {
@@ -112,7 +114,11 @@ async function runClaude(opts: RunOptions, runTool: RunTool, did: string[], tall
   const { tools, send } = opts
   const model = opts.model ?? AGENT_MODEL
   const client = new Anthropic({ apiKey: opts.apiKey })
-  const messages: Anthropic.Beta.BetaMessageParam[] = opts.history.map((m) => ({ role: m.role, content: m.content }))
+  const messages: Anthropic.Beta.BetaMessageParam[] = opts.history.map((m, i) => (
+    opts.images?.length && i === opts.history.length - 1 && m.role === 'user'
+      ? { role: m.role, content: [...opts.images.map((url) => ({ type: 'image' as const, source: { type: 'url' as const, url } })), { type: 'text' as const, text: m.content }] }
+      : { role: m.role, content: m.content }
+  ))
 
   for (let round = 0; round < (opts.maxRounds ?? MAX_ROUNDS); round++) {
     if (round > 0 && opts.shouldStop?.(tally.usage)) { tally.stopped = true; break }
@@ -204,7 +210,11 @@ async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[], tall
   const { tools, send } = opts
   const model = opts.model ?? OPENAI_AGENT_MODEL
   const client = new OpenAI({ apiKey: opts.apiKey })
-  const input: OpenAI.Responses.ResponseInputItem[] = opts.history.map((m) => ({ role: m.role, content: m.content }))
+  const input: OpenAI.Responses.ResponseInputItem[] = opts.history.map((m, i): OpenAI.Responses.ResponseInputItem => (
+    opts.images?.length && i === opts.history.length - 1 && m.role === 'user'
+      ? { role: 'user', content: [...opts.images.map((url) => ({ type: 'input_image' as const, image_url: url, detail: 'auto' as const })), { type: 'input_text' as const, text: m.content }] }
+      : { role: m.role, content: m.content }
+  ))
   const functions: OpenAI.Responses.Tool[] = [
     ...tools.map((t): OpenAI.Responses.FunctionTool => ({
       type: 'function', name: t.name, description: t.description, parameters: t.input_schema as Record<string, unknown>, strict: false,

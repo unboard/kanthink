@@ -59,6 +59,7 @@ function clean(d: KanMessageData): KanMessageData {
     memo: s(d.memo, 4000),
     error: s(d.error, 300),
     steps: Array.isArray(d.steps) ? d.steps.slice(0, 40).map((x) => ({ label: s(x.label, 200) ?? '', write: Boolean(x.write), href: s(x.href, 300), error: Boolean(x.error) })) : undefined,
+    images: Array.isArray(d.images) ? d.images.filter((u) => typeof u === 'string' && u.startsWith('https://')).slice(0, 6).map((u) => u.slice(0, 500)) : undefined,
     emails: Array.isArray(d.emails) ? d.emails.slice(0, 4).map((x) => ({
       to: s(x.to, 320) ?? '', subject: s(x.subject, 300) ?? '', body: s(x.body, 20_000) ?? '', style: s(x.style, 20),
       recipientName: s(x.recipientName, 80), cardTitle: s(x.cardTitle, 200), cardId: s(x.cardId, 64), ctaText: s(x.ctaText, 80), ctaUrl: s(x.ctaUrl, 500),

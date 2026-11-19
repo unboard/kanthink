@@ -174,7 +174,7 @@ export async function actOnShare(ownerId: string, cardId: string): Promise<{ mov
       return { move: 'make', why: 'build failed' }
     }
     const { appLink } = await import('@/lib/kan/bots/approvals')
-    await kanSays(ownerId, 'reach', `**${built.title || out.title}** is ready. Play with it and tell me what to change.`, {
+    await kanSays(ownerId, 'reach', `**${built.title || out.title}** is ready. Play with it, then tell me here what to change. A screenshot helps.`, {
       refs, links: [{ title: built.title || out.title, url: appLink(built) }],
     })
     const { sendPushToUser } = await import('@/lib/notifications/push')

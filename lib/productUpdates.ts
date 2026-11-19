@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'kan-chat-edits-apps-and-images',
+    date: '2026-11-19',
+    kind: 'workflow',
+    title: 'Change any app by asking Kan, with images',
+    body: 'In Kan City, tell Kan what to change in one of your apps and it rebuilds it; the update lands in the chat with the link. Attach, paste or drop images into Kan’s chat box to show what you mean.',
+  },
+  {
     id: 'shares-get-answered',
     date: '2026-11-19',
     kind: 'capability',

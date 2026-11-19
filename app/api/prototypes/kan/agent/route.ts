@@ -28,6 +28,8 @@ interface AgentRequest {
   city?: { focus?: { channelId?: string; name?: string; kind?: string } | null }
   /** They are talking, not typing: the reply is read aloud. */
   voice?: boolean
+  /** Images attached to the latest message, already uploaded (Cloudinary URLs). */
+  images?: string[]
 }
 
 export async function POST(request: Request) {
@@ -48,6 +50,11 @@ ${m.content}`
   }
   if (history[0]?.role === 'assistant') history.unshift({ role: 'user', content: '(Our thread so far.)' })
   if (history.at(-1)?.role !== 'user') return Response.json({ error: 'Say something first' }, { status: 400 })
+  const images = (body.images || []).filter((u) => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, 6)
+  // The URLs ride along in words too, so a tool (changing an app, making a card) can use them.
+  if (images.length) history[history.length - 1].content += `
+
+[They attached ${images.length === 1 ? 'an image' : `${images.length} images`}: ${images.join(' ')}]`
 
   const { keys, error: keyError, quotaMessage } = await resolveProviderKeys(userId)
   // Claude first; OpenAI when that's all the account can reach.
@@ -84,7 +91,7 @@ ${m.content}`
         try { controller.enqueue(encoder.encode(JSON.stringify(e) + '\n')) } catch { /* client went away */ }
       }
       try {
-        const { did, madeCards } = await runAgent({ provider, apiKey: key.apiKey, system, history, tools, ctx, send, signal: request.signal })
+        const { did, madeCards } = await runAgent({ provider, apiKey: key.apiKey, system, history, tools, ctx, send, signal: request.signal, images })
         if (key.source !== 'byok') await recordUsage(userId, 'kan-agent').catch(() => {})
         send({ t: 'done', memo: did.length ? did.join('\n') : undefined, cardIds: madeCards })
       } catch (err) {

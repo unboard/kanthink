@@ -2248,6 +2248,8 @@ export interface KanMessageData {
   refs?: string[]
   /** Emails Kan drafted that turn, and whether they were sent. */
   emails?: { to: string; subject: string; body: string; style?: string; recipientName?: string; cardTitle?: string; cardId?: string; ctaText?: string; ctaUrl?: string; status?: 'ready' | 'sending' | 'sent' | 'failed' }[]
+  /** Images they attached to a message. */
+  images?: string[]
   /** A link to open, for a reach-out about one page. */
   links?: { title: string; url: string }[]
   passId?: string
