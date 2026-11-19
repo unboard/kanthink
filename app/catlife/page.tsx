@@ -1,21 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Spectral } from 'next/font/google';
+import { fraunces, spectral } from '@/app/fonts';
 import dynamic from 'next/dynamic';
 
 const CatLife = dynamic(() => import('./CatLife'));
-
-const fraunces = Fraunces({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  variable: '--font-fraunces',
-});
-
-const spectral = Spectral({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  style: ['normal', 'italic'],
-  variable: '--font-spectral',
-});
 
 export const metadata: Metadata = {
   title: 'Whisker Wilds — a cat clan adventure',

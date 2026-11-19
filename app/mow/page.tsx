@@ -1,11 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Anton, Inter } from 'next/font/google';
+import { anton, inter } from '@/app/fonts';
 import dynamic from 'next/dynamic';
 
 const Mow = dynamic(() => import('./Mow'));
-
-const anton = Anton({ subsets: ['latin'], weight: '400', variable: '--font-anton' });
-const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: 'Clean Cut — a lawn care game',

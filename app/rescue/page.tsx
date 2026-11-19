@@ -1,18 +1,6 @@
 import type { Metadata } from 'next';
-import { Baloo_2, Nunito } from 'next/font/google';
+import { baloo, nunito } from '@/app/fonts';
 import Rescue from './Rescue';
-
-const baloo = Baloo_2({
-  subsets: ['latin'],
-  weight: ['600', '700', '800'],
-  variable: '--font-baloo',
-});
-
-const nunito = Nunito({
-  subsets: ['latin'],
-  weight: ['600', '700', '800', '900'],
-  variable: '--font-nunito',
-});
 
 export const metadata: Metadata = {
   title: 'Paws & Found — Animal Rescue Adventures',

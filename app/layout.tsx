@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { geistSans, geistMono } from "@/app/fonts";
 import "./globals.css";
 import { MiniNav } from "@/components/layout/MiniNav";
 import { ChannelsPanel } from "@/components/layout/ChannelsPanel";
@@ -18,16 +18,6 @@ import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
 import { ToastContainer, SignUpOverlay } from "@/components/ui";
 import { GlobalNewChannelOverlay } from "@/components/layout/GlobalNewChannelOverlay";
 import { CardSearch } from "@/components/board/CardSearch";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Kanthink",

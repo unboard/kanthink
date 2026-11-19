@@ -1,7 +1,5 @@
-import { Fredoka } from 'next/font/google'
+import { fredoka } from '@/app/fonts'
 import { EasyMaker } from '@/components/print/EasyMaker'
-
-const fredoka = Fredoka({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-easy' })
 
 export const metadata = { title: 'Easy maker · Print studio' }
 

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Bricolage_Grotesque } from 'next/font/google';
+import { bricolageStudio as bricolage } from '@/app/fonts';
 import { Studio } from './studio';
 
 /**
@@ -7,12 +7,6 @@ import { Studio } from './studio';
  * each morning. Built as a daily tool, not a pitch: one decision per screen,
  * large type, and nothing you have to read before you can act.
  */
-
-const bricolage = Bricolage_Grotesque({
-  subsets: ['latin'],
-  axes: ['opsz'],
-  variable: '--font-studio',
-});
 
 export const metadata: Metadata = {
   title: 'Studio',

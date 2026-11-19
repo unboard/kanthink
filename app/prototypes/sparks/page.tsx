@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Bricolage_Grotesque } from 'next/font/google';
+import { bricolageSparks as bricolage } from '@/app/fonts';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 /**
@@ -11,8 +11,6 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  * run". So this is the answer, grounded in what Kanthink already ships, with
  * one example of steering by conversation instead of a form.
  */
-
-const bricolage = Bricolage_Grotesque({ subsets: ['latin'], axes: ['opsz'], variable: '--font-sparks' });
 
 export const metadata: Metadata = {
   title: 'What the crew can do',
