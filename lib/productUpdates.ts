@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shares-get-answered',
+    date: '2026-11-19',
+    kind: 'capability',
+    title: 'Every share gets something back',
+    body: 'Share a tool or app and Kan makes you your own working version to play with; share an article and Kan tells you the one idea worth taking from it. No more plans to approve: Kan files things quietly.',
+  },
+  {
     id: 'studio-sparks-from-your-interests',
     date: '2026-10-23',
     kind: 'automation',

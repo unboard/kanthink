@@ -74,6 +74,8 @@ export async function buildBotPrompt(opts: {
     db.query.botRuns.findMany({ where: eq(botRuns.channelId, opts.channelId), orderBy: [desc(botRuns.startedAt)], limit: 4, columns: { startedAt: true, summary: true, status: true, trigger: true } }),
     approvalsContext(opts.channelId).catch(() => ''),
   ])
+  const tz = opts.timeZone || 'America/Chicago'
+  const when = (d: Date) => d.toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   const colName = new Map(cols.map((c) => [c.id, c.name]))
   const tools = apps.filter((a) => a.generationCount > 0)
   // What they shared and said lately, so a tool can be offered on it. Only worth reading when there's a tool to offer.
@@ -87,8 +89,6 @@ export async function buildBotPrompt(opts: {
   }
   const toolLines = tools.map((a) => `- [${a.id}] ${a.title}${a.summary ? ` — ${a.summary.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`)
   const appOf = new Map(apps.map((a) => [a.cardId, a]))
-  const tz = opts.timeZone || 'America/Chicago'
-  const when = (d: Date) => d.toLocaleString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
   const cardLines = cardRows.map((c) => {
     const app = appOf.get(c.id)

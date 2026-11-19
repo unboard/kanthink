@@ -1638,7 +1638,6 @@ export class CityEngine {
     if (note) { kicker = note.kicker; text = note.text; }
     else if (th.passRunning) { kicker = 'Kan is thinking'; text = 'Reading everything you gave me…'; }
     else if (data.kanThread?.unseen) { kicker = 'Kan found something'; text = data.kanThread.last ?? 'Tap me, I found something for you.'; }
-    else if (th.pass) text = 'I noticed a few things. Come see?';
     b.innerHTML = '';
     if (text) {
       const k = document.createElement('div');

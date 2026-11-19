@@ -181,6 +181,10 @@ export async function runAttentionPass(ownerId: string, opts: { mode: 'rehearsal
     // Fixed areas are load-bearing elsewhere; they never go quiet.
     const fixed = new Set(areas.filter((a) => a.fixed).map((a) => a.channelId))
     decided.areas = decided.areas.filter((a) => !(a.channelId && fixed.has(a.channelId) && a.change !== 'keep' && a.change !== 'wake'))
+    // New areas aren't proposed any more: new things grow as sprouts, and shares get
+    // answered when they arrive. A pass only keeps the board tidy.
+    decided.areas = decided.areas.filter((a) => a.change !== 'start')
+    decided.filings = decided.filings.filter((f) => areas.some((a) => a.channelId === f.area))
     const decisions = fitDecisions(decided, topics).decisions
 
     const counts: Record<string, number> = {}
@@ -188,10 +192,11 @@ export async function runAttentionPass(ownerId: string, opts: { mode: 'rehearsal
     await db.update(attentionPasses).set({
       status: 'done', decisions, inputs: { ...counts, areas: areas.length }, costMillicents: cost, model: model.id, endedAt: new Date(),
     }).where(eq(attentionPasses.id, pass.id))
-    // Anything to answer goes in Kan's thread too, where they'll see it.
-    if (decisions.filings.length || decisions.areas.some((a) => a.change !== 'keep')) {
-      const { announcePlan } = await import('@/lib/kan/thread/reach')
-      await announcePlan(ownerId, pass.id, decisions.note).catch(() => {})
+    // Housekeeping is Kan's job, not theirs: it's carried out quietly, never put to
+    // them as a plan to approve. What it did is on the pass's log.
+    if (opts.mode === 'live') {
+      const { applyAttentionPass } = await import('./apply')
+      await applyAttentionPass(pass.id, ownerId).catch((err) => console.error('[kan] apply pass', err))
     }
     return { id: pass.id, status: 'done' }
   } catch (err) {

@@ -224,9 +224,10 @@ export async function POST(req: NextRequest) {
         eventType: 'card_created_in',
         cardId,
       })
-      // The bot whose tool fits what you shared gets up now, not on tomorrow's round.
-      const { wakeForShare } = await import('@/lib/kan/bots/wake')
-      await wakeForShare(userId, [cardTitle, url, trimmedNote && `They said: ${trimmedNote}`].filter(Boolean).join('\n'))
+      // Every share gets something back: Kan makes their own version, has a bot make
+      // an episode, or says the one thing worth taking from it, in its thread.
+      const { actOnShare } = await import('@/lib/kan/shares')
+      await actOnShare(userId, cardId)
     })
 
     return NextResponse.json({

@@ -115,12 +115,18 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
   const providers = (['google', 'openai', 'anthropic'] as const).filter((p) => keys[p])
   const all = botTools({ isAdmin: admin, isStudio, canHandOff: access.readable.includes(WORK_CHANNEL_ID), providers })
   const tools = guardTools(all, ctx)
+  // A prompt that can't be built is a failed run, not one left "running" forever
+  // (which also never moves nextRunAt, so it would retry every hour).
   const system = await buildBotPrompt({
     channelId, ownerId: owner.id, ownerName: owner.name, tools: all, memory: bot.memory, everyHours: bot.everyHours ?? 24,
     budgetLeftCents: Math.floor(room.left / MILLICENTS_PER_CENT), isStudio, rehearsal, timeZone: owner.timezone, now,
     neighborhood: { name: hood.name, channelIds: reach },
     focus: opts.focus,
-  })
+  }).catch((err: unknown) => err instanceof Error ? err : new Error(String(err)))
+  if (system instanceof Error) {
+    console.error('[bot]', channel.name, 'prompt', system.message)
+    return finish('error', { error: `Couldn’t get ready: ${system.message}`.slice(0, 500) })
+  }
 
   // The trace, written through to the row so the log page can follow along.
   const steps: BotStepJson[] = []

@@ -400,7 +400,7 @@ export const cityTools: AgentTool[] = [
   },
   {
     name: 'sort_new_context',
-    description: 'Have Kan read everything that came in since it last looked (chats, notes, shares, browsing) and work out how the city should change: which channels to start, quiet or mute, and where things belong. It decides and changes nothing; the plan waits at Town Hall for them. Costs about 20 cents. Only when they ask Kan to sort, file or look things over.',
+    description: 'Have Kan read everything that came in since it last looked (chats, notes, shares, browsing) and tidy up: file what belongs in a channel, quiet or wake channels. It does it quietly; nothing waits for them. Costs about 20 cents. Only when they ask Kan to sort, file or tidy up.',
     input_schema: { type: 'object', properties: {} },
     kind: 'write',
     running: () => 'Reading what came in',
@@ -408,10 +408,10 @@ export const cityTools: AgentTool[] = [
       const running = await db.query.attentionPasses.findFirst({
         where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'running'), gt(attentionPasses.startedAt, new Date(Date.now() - 15 * 60_000))),
       })
-      if (running) return { content: 'Kan is already reading it over; the plan lands at Town Hall in a minute or two.', label: 'Already reading it over' }
+      if (running) return { content: 'Kan is already tidying up; it takes a minute or two.', label: 'Already reading it over' }
       const [{ afterResponse }, { runAttentionPass }] = await Promise.all([import('@/lib/afterResponse'), import('@/lib/kan/attention/run')])
-      afterResponse(() => runAttentionPass(ctx.userId, { mode: 'rehearsal' }).then(() => undefined))
-      return { content: 'Started. The plan lands at Town Hall in a minute or two, and nothing changes until they say so.', label: 'Reading over what came in' }
+      afterResponse(() => runAttentionPass(ctx.userId, { mode: 'live' }).then(() => undefined))
+      return { content: 'Started. It takes a minute or two and happens on its own; nothing waits for them.', label: 'Reading over what came in' }
     },
   },
   {

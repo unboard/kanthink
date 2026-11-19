@@ -36,7 +36,7 @@ const SCHEMA = {
   type: 'object',
   properties: {
     say: { type: 'boolean', description: 'False only when everything here has already been raised in the thread or is truly nothing.' },
-    topic: { type: 'string', description: '2–6 words naming what this is about, so it is not raised again, e.g. "competitor print shops in Fargo".' },
+    topic: { type: 'string', description: '2–6 words naming what this is about, so it is not raised again, e.g. "papercraft worlds in three.js".' },
     text: { type: 'string', description: 'The message, in markdown, 40–130 words. No greeting, no headings.' },
     refs: { type: 'array', items: { type: 'string' }, description: 'The ids (read:…, share:…) this is about, if any.' },
     suggestions: {
@@ -45,7 +45,7 @@ const SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          label: { type: 'string', description: '2–5 words, what they would say, e.g. "Compare those shops"' },
+          label: { type: 'string', description: '2–5 words, what they would say, e.g. "Make me one"' },
           prompt: { type: 'string', description: 'The full instruction to Kan, in their voice, specific enough to act on without asking: what to look into or make, from what, and where it should go.' },
         },
         required: ['label', 'prompt'],
@@ -126,7 +126,7 @@ export async function reachOut(ownerId: string, opts: { force?: boolean; notify?
   const handsOff = topics.filter((t) => t.role === 'hands_off')
   const offLimits = (s: string) => handsOff.some((t) => isAbout(s, t.name))
   const fresh = reads
-    .filter((r) => r.verdict !== 'dismissed' && !told.has(`read:${r.id}`) && !offLimits(`${r.title}`))
+    .filter((r) => r.verdict !== 'dismissed' && (r.aboutWork ?? 0) < 60 && !told.has(`read:${r.id}`) && !offLimits(`${r.title}`))
     .sort((a, b) => (Math.max(b.worth ?? 0, b.appIdea ?? 0, b.kanthinkFit ?? 0) + (b.manual ? 30 : 0)) - (Math.max(a.worth ?? 0, a.appIdea ?? 0, a.kanthinkFit ?? 0) + (a.manual ? 30 : 0)))
   const shares = inputs.filter((i) => i.kind === 'share' && !told.has(i.id))
   const newReads = fresh.filter((r) => +(r.lastSeenAt ?? 0) > +newSince)
@@ -143,10 +143,13 @@ export async function reachOut(ownerId: string, opts: { force?: boolean; notify?
   const raised = thread.filter((m) => m.kind === 'reach').flatMap((m) => (m.data?.refs ?? []).filter((r) => r.startsWith('topic:')).map((r) => r.slice(6)))
   const system = `You are Kan, ${first}'s assistant inside Kanthink, writing first in your ongoing chat with them. Kanwatch shows you the trail of their attention over the past week: what they spent time on (page titles, with minutes and how many days), what they searched for, your own read of recent days, and public pages you read in full. That trail is the best evidence you have of what they care about and what they're trying to figure out. Use it.
 
-Find the one thread most worth opening a conversation about, and bring something to it:
-- Look for patterns, not single pages: an interest that keeps coming back across days, a run of searches that shows what they're working out (several competitor shops, a product they're pricing, a place they're going), a page or problem they keep returning to, a connection between what they read and what they build.
-- Start from the specific evidence ("you looked up Rokop Signs, SignGraphics and the UPS Store's print page this week"), then add what a sharp friend would: an idea, a pattern they may not have noticed, a useful fact you know, a pointed question. If you read the page, use the actual idea from it.
-- Then offer what you could do about it, as the suggestions: research and compare, a card with real steps, a small app to try the idea, a draft, a bot to keep watching. Things you can really do.
+Kanthink is their private playground, not a work tool. Most of their browsing is their day job (print shops, MyPrintSite, MyCreativeShop, MissionPrint, tenants, orders, product configuration). That is context only: it tells you how busy they are and what they know. It is never the subject of a message, and they ignore ideas about it. The content is everything else: what they shared, things they read or lingered on outside work, family (their daughters), hobbies, tools and apps that caught their eye, things they might want to make.
+
+Find the one thing outside their work most worth opening a conversation about, and bring something to it:
+- Look for what keeps coming back, or something they clearly enjoyed: a tool they shared, a technique they read about, a topic they searched more than once, a thing for their kids.
+- Start from the specific evidence, then add what a sharp friend would: the actual idea from the page, a connection they may not have noticed, a useful fact, a pointed question.
+- Then offer what you could do about it, as the suggestions, and lean toward making: their own version of a tool to play with, an explainer or game for their kids, a comparison when they're choosing something. Things you can really do.
+- If the only thing new is work, say nothing (say: false).
 
 Rules:
 - Never recap their day or report time spent ("you spent 3 hours on…"). Time is only your evidence for what matters.
