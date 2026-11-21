@@ -14,10 +14,13 @@
  * lib/playground/models. Gemini 3.x is on promotional pricing until 2026-12-31 and
  * doubles on 2027-01-01; where that applies it is noted on the model.
  *
- * Verified against ai.google.dev/gemini-api/docs/models and
- * developers.openai.com/api/docs/models on 2026-09-11; Claude prices from
+ * OpenAI and Google lists refreshed 2026-11-21 (each id answered a live call); retired
+ * ids keep working through parseModelChoice, which maps them to their successor.
+ * Claude prices from
  * Anthropic's published rates on 2026-09-25.
  */
+
+import { LEGACY_MODEL_IDS } from '@/lib/playground/models';
 
 export type ModelProvider = 'openai' | 'google' | 'anthropic';
 
@@ -54,40 +57,32 @@ export const MODEL_CATALOG: ProviderGroup[] = [
     provider: 'openai',
     label: 'OpenAI',
     blurb: 'GPT models',
-    // Unchanged on purpose. A default is what runs when nobody chose, and moving it
-    // silently re-prices every board on the account.
-    defaultModel: 'gpt-5',
+    // gpt-5 shuts down 2026-12-11. Terra is its successor and costs less, so moving
+    // the default doesn't raise anyone's bill.
+    defaultModel: 'gpt-6.1-terra',
     keyUrl: 'https://platform.openai.com/api-keys',
     models: [
-      { model: 'gpt-6-astra', label: 'GPT-6 Astra', blurb: 'Frontier. The hardest end-to-end work.', pricing: { input: 10, output: 50 } },
-      { model: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', blurb: 'Flagship for complex professional work.', pricing: { input: 4, output: 20 } },
-      { model: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', blurb: 'Balances intelligence and cost.', pricing: { input: 2, output: 12 } },
-      { model: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', blurb: 'Cheap and quick. Good default for chat.', pricing: { input: 0.2, output: 1.2 } },
-      { model: 'gpt-5.2', label: 'GPT-5.2', pricing: { input: 1.75, output: 14 } },
-      { model: 'gpt-5.1', label: 'GPT-5.1', pricing: { input: 1.25, output: 10 } },
-      { model: 'gpt-5', label: 'GPT-5', pricing: { input: 1.25, output: 10 } },
-      { model: 'gpt-5-mini', label: 'GPT-5 Mini', pricing: { input: 0.25, output: 2 } },
-      { model: 'gpt-5-nano', label: 'GPT-5 Nano', pricing: { input: 0.05, output: 0.4 } },
+      { model: 'gpt-6.2-astra', label: 'GPT-6.2 Astra', blurb: 'Most capable. The hardest end-to-end work.', pricing: { input: 8, output: 40 } },
+      { model: 'gpt-6.2-sol', label: 'GPT-6.2 Sol', blurb: 'Everyday flagship for coding and agents.', pricing: { input: 2, output: 10 } },
+      { model: 'gpt-6.1-terra', label: 'GPT-6.1 Terra', blurb: 'Balances intelligence and cost.', pricing: { input: 1, output: 5 } },
+      { model: 'gpt-6-luna', label: 'GPT-6 Luna', blurb: 'Very cheap and quick. Good default for chat.', pricing: { input: 0.1, output: 0.5 } },
     ],
   },
   {
     provider: 'google',
     label: 'Google',
     blurb: 'Gemini models',
-    defaultModel: 'gemini-2.5-flash',
+    // 2.5 Flash reroutes 2026-12-01; 3.8 Flash is what Kan itself runs on.
+    defaultModel: 'gemini-3.8-flash',
     keyUrl: 'https://aistudio.google.com/apikey',
     models: [
+      { model: 'gemini-4-neon', label: 'Gemini 4 Neon', blurb: 'Strongest Gemini at code and agent work.', pricing: { input: 3, output: 15 } },
+      { model: 'gemini-4-carbon', label: 'Gemini 4 Carbon', blurb: 'The hardest, longest projects and deep research.', pricing: { input: 4, output: 20 } },
+      { model: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', blurb: 'The fast Gemini 4.', pricing: { input: 1.5, output: 7.5 } },
+      { model: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', blurb: 'Strong reasoning for the money.', pricing: { input: 2, output: 12 }, isPreview: true },
       { model: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', blurb: 'Newest flash. Built for long-horizon coding.', pricing: { input: 0.75, output: 3.75 }, priceNote: GEMINI_PROMO },
-      { model: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash', blurb: 'Previous flash. Strong on code.', pricing: { input: 0.75, output: 3.75 }, priceNote: GEMINI_PROMO },
-      { model: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', blurb: 'Speed and multimodal, balanced.', pricing: { input: 0.75, output: 3.75 }, priceNote: GEMINI_PROMO },
-      { model: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', blurb: 'High-throughput workloads.', pricing: { input: 1.5, output: 9 } },
       { model: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', blurb: 'Fast and cheap.', pricing: { input: 0.3, output: 2.5 } },
-      { model: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', blurb: 'Frontier-class for the price.', pricing: { input: 0.25, output: 1.5 } },
-      { model: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', blurb: 'Best reasoning available.', pricing: { input: 2, output: 12 }, isPreview: true },
-      { model: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', pricing: { input: 0.5, output: 3 }, isPreview: true },
-      { model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', blurb: 'Previous generation, reliable.', pricing: { input: 1.25, output: 10 } },
-      { model: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', blurb: 'Solid, cheap, well understood.', pricing: { input: 0.3, output: 2.5 } },
-      { model: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', blurb: 'Cheapest thing here.', pricing: { input: 0.1, output: 0.4 } },
+      { model: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite', blurb: 'Cheapest Gemini.', pricing: { input: 0.25, output: 1.5 } },
     ],
   },
   {
@@ -128,7 +123,8 @@ export function parseModelChoice(value: string | null | undefined): ModelChoice 
   const model = value.slice(separator + 1);
   if (!model) return null;
   if (provider !== 'openai' && provider !== 'google' && provider !== 'anthropic') return null;
-  return { provider, model };
+  // A retired model resolves to its successor, so a stored choice never calls a dead id.
+  return { provider, model: LEGACY_MODEL_IDS[model] ?? model };
 }
 
 /** Human-readable name for a stored choice, for showing what a shroom is set to. */

@@ -1,4 +1,4 @@
-import { PLAYGROUND_MODELS } from './models'
+import { PLAYGROUND_MODELS, currentModelId } from './models'
 
 /**
  * What a model costs, and refusing to guess when we do not know.
@@ -74,7 +74,7 @@ export const PRICED_MODELS: Record<string, ModelPrice> = { ...TEXT_PRICES, ...IM
 
 export function priceOf(modelId: string | null | undefined): ModelPrice | null {
   if (!modelId) return null
-  return PRICED_MODELS[modelId] ?? null
+  return PRICED_MODELS[modelId] ?? PRICED_MODELS[currentModelId(modelId)] ?? null
 }
 
 export function isPriced(modelId: string | null | undefined): boolean {

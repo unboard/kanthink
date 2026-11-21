@@ -70,11 +70,11 @@ describe('channel bots', () => {
   })
 
   it('prices cached input at a tenth, so a long run is not billed as if every round were new', () => {
-    // gpt-5.6-sol: $4 in, $20 out per million.
-    const fresh = thinkingCost('gpt-5.6-sol', { inputTokens: 100_000, outputTokens: 5_000 })
-    const cached = thinkingCost('gpt-5.6-sol', { inputTokens: 100_000, outputTokens: 5_000, cachedInputTokens: 80_000 })
-    expect(fresh).toBe(50_000) // $0.40 + $0.10
-    expect(cached).toBe(21_200) // 20k at $4 + 80k at $0.40 + $0.10
+    // gpt-6.2-sol: $2 in, $10 out per million.
+    const fresh = thinkingCost('gpt-6.2-sol', { inputTokens: 100_000, outputTokens: 5_000 })
+    const cached = thinkingCost('gpt-6.2-sol', { inputTokens: 100_000, outputTokens: 5_000, cachedInputTokens: 80_000 })
+    expect(fresh).toBe(25_000) // $0.20 + $0.05
+    expect(cached).toBe(10_600) // 20k at $2 + 80k at $0.20 + $0.05
   })
 
   it('takes the lowest ceiling and says which one it is', () => {
@@ -120,20 +120,20 @@ describe('channel bots', () => {
 
   it('estimates a build within reach of what real builds cost, and bounds the worst case', () => {
     // Real: an Astra first build cost $0.78; a Gemini 3.1 Pro first build about $0.06 of code plus thinking.
-    const astra = estimateBuildCost({ modelId: 'gpt-6-astra', briefChars: 2_000 })
+    const astra = estimateBuildCost({ modelId: 'gpt-6.2-astra', briefChars: 2_000 })
     expect(astra.likelyUsd).toBeGreaterThan(0.5)
     expect(astra.likelyUsd).toBeLessThan(1.1)
     const gemini = estimateBuildCost({ modelId: 'gemini-3.1-pro-preview', briefChars: 2_000 })
     expect(gemini.likelyUsd).toBeLessThan(0.2)
     // A rebuild can make three calls, so its ceiling is well above a first build's.
-    const rebuild = estimateBuildCost({ modelId: 'gpt-6-astra', briefChars: 2_000, existingCodeChars: 35_000 })
+    const rebuild = estimateBuildCost({ modelId: 'gpt-6.2-astra', briefChars: 2_000, existingCodeChars: 35_000 })
     expect(rebuild.maxUsd).toBeGreaterThan(astra.maxUsd * 2)
     for (const e of [astra, gemini, rebuild]) expect(e.maxUsd).toBeGreaterThanOrEqual(e.likelyUsd)
   })
 
   it('lists only models the account holds a key for', () => {
     expect(buildModelMenu(['google']).every((m) => m.id.startsWith('gemini'))).toBe(true)
-    expect(buildModelMenu(['google', 'openai']).map((m) => m.id)).toContain('gpt-6-astra')
+    expect(buildModelMenu(['google', 'openai']).map((m) => m.id)).toContain('gpt-6.2-astra')
     expect(buildModelMenu(['google', 'openai']).some((m) => m.id.startsWith('claude'))).toBe(false)
   })
 })

@@ -13,7 +13,7 @@ import { WEB_SEARCH_TOOL, type AgentTool, type ToolContext } from './tools'
  */
 
 export const AGENT_MODEL = 'claude-opus-5-5'
-export const OPENAI_AGENT_MODEL = 'gpt-5.6-sol'
+export const OPENAI_AGENT_MODEL = 'gpt-6.2-sol'
 const MAX_ROUNDS = 12
 
 export interface RunOptions {

@@ -188,7 +188,7 @@ async function validateKey(provider: ModelProvider, apiKey: string): Promise<str
       const client = new OpenAI({ apiKey })
       // The cheapest model on the account, so validating costs essentially nothing.
       await client.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: 'gpt-6-luna',
         max_completion_tokens: 8,
         messages: [{ role: 'user', content: 'Hi' }],
       })
@@ -203,7 +203,7 @@ async function validateKey(provider: ModelProvider, apiKey: string): Promise<str
     } else {
       const client = new GoogleGenAI({ apiKey })
       await client.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.1-flash-lite',
         contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
         config: { maxOutputTokens: 8 },
       })

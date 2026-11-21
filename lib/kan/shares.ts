@@ -49,9 +49,10 @@ export const EFFORTS = ['quick', 'solid', 'max'] as const
 
 /** Effort → the build models to try, first that the account can call wins. */
 const EFFORT_MODELS: Record<NonNullable<SharePrefs['effort']>, string[]> = {
-  quick: ['gemini-3.8-flash', 'gpt-5.6-terra', 'claude-sonnet-5'],
-  solid: ['gemini-3.1-pro-preview', 'gpt-5.6-sol', 'claude-sonnet-5'],
-  max: ['claude-opus-5-5', 'gpt-6-astra', 'gemini-3.1-pro-preview'],
+  quick: ['gemini-3.8-flash', 'gpt-6.1-terra', 'claude-sonnet-5'],
+  solid: ['gemini-3.1-pro-preview', 'gpt-6.2-sol', 'claude-sonnet-5'],
+  // "All out" is them asking for the expensive models, so it gets the best of each.
+  max: ['claude-opus-5-5', 'gemini-4-neon', 'gpt-6.2-astra'],
 }
 const EFFORT_LABEL = { quick: 'a quick build', solid: 'a solid build', max: 'an all-out build' }
 
@@ -86,7 +87,7 @@ const INTENT_LINE: Record<NonNullable<SharePrefs['intent']>, string> = {
   understand: 'They told you why: "I don\'t understand this and want to know more." Choose tell. Explain it properly, from the ground up, and fill in explainer.',
 }
 
-export function buildSharePrompt(opts: { first: string; share: string; note?: string; sources?: ShareSource[]; tools: string[]; handsOff: string[]; told?: string[]; intent?: SharePrefs['intent'] }) {
+export function buildSharePrompt(opts: { first: string; share: string; note?: string; sources?: ShareSource[]; tools: string[]; handsOff: string[]; told?: string[]; intent?: SharePrefs['intent']; claude?: string }) {
   const system = `You are Kan, ${opts.first}'s assistant in Kanthink, their private playground. They just shared something with you. A share means "this caught my eye". Your job is to give something back for it, right now.
 
 Think from first principles about what it actually is and why someone like them would share it, then pick one move:
@@ -94,7 +95,7 @@ Think from first principles about what it actually is and why someone like them 
 - episode: one of the bots' tools listed below plainly fits it (an explainer tool and a topic to explain, for example). Only when the fit is obvious.
 - tell: an idea, article, post or thread. Give them the one idea worth taking from it, in your own words, and connect it to something in their life outside work when there's a real connection.
 - keep: a plain bookmark with nothing to add.
-- handoff: they want it adopted into Kanthink itself: a skill the app builder should use (like the canvas skill: every canvas app is built on a maintained kit piece), a library to add to the kit, a change to how Kanthink works, or a build too big for one page (multi-screen, real 3D world, multiplayer, server). Claude Code does these.
+- handoff (check Claude Code's status below first): they want it adopted into Kanthink itself: a skill the app builder should use (like the canvas skill: every canvas app is built on a maintained kit piece), a library to add to the kit, a change to how Kanthink works, or a build too big for one page (multi-screen, real 3D world, multiplayer, server). Claude Code does these. It runs on their computer, not here: if it's offline the brief waits until they open a session, so only hand off what truly needs it, and say plainly that it's waiting.
 ${opts.intent ? `\n${INTENT_LINE[opts.intent]}\n` : ''}
 Rules:
 - What they wrote about it is the instruction. Do exactly what it asks, in the shape it asks for. If their note says "make this a skill" or "use this for X", that is the job, not a starting point for something else.
@@ -104,10 +105,11 @@ Rules:
 - Their day job (print shops, MyPrintSite, MyCreativeShop, MissionPrint and the like) is off limits as a subject unless they plainly asked about it here: never build for it uninvited.
 - Never talk about filing, organizing, sorting, channels or plans.
 - Plain words, no hype, no "Great find!". American spelling.${opts.handsOff.length ? `\n- Leave alone entirely: ${opts.handsOff.join(', ')}.` : ''}`
+  const claude = opts.claude ? `\nClaude Code right now: ${opts.claude}\n` : ''
   const told = opts.told?.length ? `\nWhat they've told you about things in their life (use what's about this share):\n${opts.told.join('\n')}\n` : ''
   const note = opts.note?.trim() ? `What they wrote about it (this is the instruction):\n${opts.note.trim()}\n\n` : 'They wrote nothing about it.\n\n'
   const src = opts.sources?.length ? `\nWhat the links contain (you opened them):\n${opts.sources.map((s) => `--- ${s.url}\n${s.text}`).join('\n\n')}\n` : '\n(No readable links.)\n'
-  const user = `${note}What they shared:\n${opts.share.slice(0, 4000)}\n${src}${told}\nBots' tools that could make an episode:\n${opts.tools.join('\n') || '(none)'}`
+  const user = `${note}What they shared:\n${opts.share.slice(0, 4000)}\n${src}${told}${claude}\nBots' tools that could make an episode:\n${opts.tools.join('\n') || '(none)'}`
   return { system, user }
 }
 
@@ -172,7 +174,7 @@ type Keys = Awaited<ReturnType<typeof import('@/lib/ai/keys').resolveProviderKey
 async function modelFor(effort: NonNullable<SharePrefs['effort']>, keys: Keys) {
   const { PLAYGROUND_MODELS } = await import('@/lib/playground/models')
   for (const id of EFFORT_MODELS[effort]) {
-    const m = PLAYGROUND_MODELS.find((x) => x.id === id)
+    const m = PLAYGROUND_MODELS.find((x) => x.id === id) // ids here are current ones
     if (m && keys[m.provider as keyof Keys]) return m.id
   }
   return null
@@ -231,7 +233,12 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
     const told = topics.filter((t) => t.role !== 'hands_off' && t.note).map((t) => `- ${t.name}: ${t.note}`)
 
     const first = owner?.name?.split(/\s+/)[0] ?? 'them'
-    const { system, user } = buildSharePrompt({ first, share, note, sources, tools, handsOff, told, intent: prefs.intent })
+    const { claudePresence } = await import('@/lib/kan/city/claude')
+    const presence = await claudePresence(ownerId).catch(() => null)
+    const claude = !presence ? 'unknown.'
+      : presence.state !== 'offline' ? `a session is open (${presence.state}); it sees a new card on its next turn.`
+      : `offline${presence.lastSeenAt ? `, last seen ${Math.round((Date.now() - presence.lastSeenAt) / 86400_000)} days ago` : ''}. A handed-off card waits in Work → Do these until they open Claude Code and ask it to look (${presence.waiting} card${presence.waiting === 1 ? '' : 's'} already waiting).`
+    const { system, user } = buildSharePrompt({ first, share, note, sources, tools, handsOff, told, intent: prefs.intent, claude })
     const r = await runStructured({
       model: getPlaygroundModel(choice.id), apiKey: choice.key.apiKey, systemInstruction: system, userText: user, images: [],
       schema: SCHEMA, schemaName: 'share_move', maxOutputTokens: 4000, signal: AbortSignal.timeout(120_000),
@@ -250,8 +257,15 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
     if (out.move === 'handoff') {
       const where = await handToClaudeCode(ownerId, out.title || card.title, `${out.brief}\n\n**Their words:** ${note || '(none)'}\n\n**Shared card:** ${card.title} (cardId: ${card.id})${sources.length ? `\n\n**Sources:** ${sources.map((x) => x.url).join(' · ')}` : ''}`)
       await addNote(card.id, `**Handed to Claude Code: ${out.title}**\n\n${out.brief}`)
-      await kanSays(ownerId, 'reach', where ? out.say : `${out.say}\n\n(I couldn't reach Claude Code's Work channel, so the brief is on the card.)`, { refs })
-      return { move: 'handoff' }
+      // Say where it really stands: an offline Claude Code means it waits for them.
+      const status = !where ? `I couldn't reach Claude Code's Work channel, so the brief is on the card.`
+        : presence && presence.state !== 'offline' ? `Claude Code has a session open and will see it on its next turn.`
+        : `Claude Code isn't running right now, so it's waiting in Work → Do these. Open Claude Code and run /kan to start it.`
+      await kanSays(ownerId, 'reach', `${out.say}\n\n_${status}_`, {
+        refs,
+        suggestions: presence?.state === 'offline' ? [{ label: 'Build a version here meanwhile', prompt: `While the Claude Code card waits, build a one-page version of "${out.title}" here from the shared card (cardId:${card.id}).` }] : [],
+      })
+      return { move: 'handoff', why: status }
     }
 
     if (out.move === 'episode') {

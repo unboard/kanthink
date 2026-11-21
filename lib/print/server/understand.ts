@@ -12,7 +12,7 @@ import type { PageCopy, PreflightElement } from '../types'
  * Without a Google key they fall back to whatever model the account uses.
  */
 
-const GEMINI_TEXT_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash']
+const GEMINI_TEXT_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
 
 export async function geminiJson<T>(
   apiKey: string,

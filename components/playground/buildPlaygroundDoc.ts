@@ -636,14 +636,14 @@ ${styleHead.css}
   }
 
   window.kanthinkAI = {
-    // Frontier 3.x first (recommended). 2.5 family kept as stable fallbacks.
-    models: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    // Current Gemini models, default first. Older ids an app may still pass are mapped to their successors on the server.
+    models: ['gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen', 'gemini-4-neon'],
     /**
      * Generate text from Gemini using the playground owner's AI account.
      * @param {Object} opts
      * @param {string} opts.prompt - the user-facing prompt
      * @param {string} [opts.system] - optional system instruction
-     * @param {string} [opts.model] - one of kanthinkAI.models (default: gemini-2.5-pro)
+     * @param {string} [opts.model] - one of kanthinkAI.models (default: gemini-3.1-pro-preview)
      * @param {string} [opts.imageUrl] - public image URL to send as vision input
      * @param {string} [opts.imageData] - data:image/...;base64,... vision input
      * @param {Object} [opts.jsonSchema] - Gemini responseSchema for structured output

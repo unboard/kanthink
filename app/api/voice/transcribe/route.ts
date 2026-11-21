@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       const mimeType = audioFile.type || 'audio/webm';
 
       const response = await googleResult.client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: [{
           role: 'user',
           parts: [

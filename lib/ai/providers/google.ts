@@ -1,3 +1,4 @@
+import { currentModelId } from '@/lib/playground/models';
 import { GoogleGenAI } from '@google/genai';
 import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
@@ -12,7 +13,7 @@ const DEFAULT_MODEL = providerGroup('google').defaultModel;
  * escalation has to terminate or a retry loop has no floor. Model ids here were
  * confirmed callable against ListModels; do not add one from memory.
  */
-const ESCALATION_TARGET = 'gemini-3.7-flash';
+const ESCALATION_TARGET = 'gemini-3.8-flash';
 const ESCALATION_TOP = 'gemini-3.1-pro-preview';
 
 function roomierModel(modelId: string): string | null {
@@ -61,7 +62,8 @@ async function toGoogleContent(content: string | LLMContentPart[]): Promise<stri
 
 export function createGoogleProvider(apiKey: string, model?: string): LLMProvider {
   const client = new GoogleGenAI({ apiKey });
-  const modelId = model || DEFAULT_MODEL;
+  // A retired id (a stored choice, an old app) calls its successor instead of a dead model.
+  const modelId = currentModelId(model) || DEFAULT_MODEL;
 
   return {
     name: 'google',

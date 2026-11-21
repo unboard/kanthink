@@ -44,9 +44,9 @@ describe('units', () => {
   })
 
   it('prices a million output tokens at the published rate', () => {
-    // gemini-2.5-pro is $10 per million output tokens.
-    const cost = actualCostMillicents('gemini-2.5-pro', 'text', { inputTokens: 0, outputTokens: 1_000_000 })
-    expect(formatMillicents(cost)).toBe('$10.00')
+    // gemini-4-hydrogen is $7.50 per million output tokens.
+    const cost = actualCostMillicents('gemini-4-hydrogen', 'text', { inputTokens: 0, outputTokens: 1_000_000 })
+    expect(formatMillicents(cost)).toBe('$7.50')
   })
 })
 
@@ -74,7 +74,7 @@ describe('the reservation follows the model', () => {
   })!
 
   it('reserves more for a dearer model', () => {
-    const cheap = call('gemini-2.5-flash-lite')
+    const cheap = call('gemini-3.1-flash-lite')
     const dear = call('gemini-3.1-pro-preview')
     expect(dear).toBeGreaterThan(cheap)
   })
@@ -119,7 +119,7 @@ describe('the largest request the route accepts fits its reservation', () => {
 
 describe('settlement corrects the reservation downward', () => {
   it('a typical call settles well under what it reserved', () => {
-    const modelId = 'gemini-2.5-flash'
+    const modelId = 'gemini-3.8-flash'
     const reserved = maximumCostMillicents({
       modelId, kind: 'text', promptChars: 2_000, maxOutputTokens: MAX_OUTPUT_TOKENS,
     })!

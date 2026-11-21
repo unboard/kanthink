@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       const client = new OpenAI({ apiKey });
       // Make a minimal request to test the key
       await client.chat.completions.create({
-        model: model || 'gpt-4.1',
+        model: model || 'gpt-6-luna',
         max_completion_tokens: 10,
         messages: [{ role: 'user', content: 'Hi' }],
       });
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       const client = new GoogleGenAI({ apiKey });
       // Make a minimal request to test the key
       await client.models.generateContent({
-        model: model || 'gemini-2.5-flash',
+        model: model || 'gemini-3.8-flash',
         contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
         config: { maxOutputTokens: 10 },
       });

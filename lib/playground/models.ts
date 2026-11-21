@@ -2,8 +2,9 @@
  * Model options exposed in the Playground UI, across both providers.
  *
  * Pricing is USD per 1M tokens (input/output) at the standard ≤200K-context tier.
- * Sources: ai.google.dev/gemini-api/docs/models · developers.openai.com/api/docs/models
- * Verified 2026-09-11.
+ * Sources: the providers' model lists (each id below answered a live call on 2026-11-21)
+ * and published per-token rates as of 2026-11-21. Retired ids live on in
+ * LEGACY_MODEL_IDS so stored choices and older apps keep working.
  *
  * Curated for code generation. Excludes image-gen (Nano Banana / Imagen), TTS,
  * embedding, computer-use, robotics and deep-research models.
@@ -45,29 +46,49 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     isDefault: true,
   },
 
-  // === Google: current GA flash — frontier-class without preview risk ===
+  // === Google: Gemini 4 (Nov 2026) ===================================
+  {
+    id: 'gemini-4-neon',
+    provider: 'google',
+    label: 'Gemini 4 Neon',
+    blurb: 'Google’s strongest at code and agent work. Costs more than 3.1 Pro.',
+    pricing: { input: 3, output: 15 },
+    thinkingBudget: 8000,
+  },
+  {
+    id: 'gemini-4-carbon',
+    provider: 'google',
+    label: 'Gemini 4 Carbon',
+    blurb: 'For the hardest, longest builds. The priciest Google option.',
+    // List price; it ran at 2 / 10 as a launch promo through 2026-11-30.
+    pricing: { input: 4, output: 20 },
+    thinkingBudget: 10000,
+  },
+  {
+    id: 'gemini-4-hydrogen',
+    provider: 'google',
+    label: 'Gemini 4 Hydrogen',
+    blurb: 'The fast Gemini 4. Good everyday builds.',
+    pricing: { input: 1.5, output: 7.5 },
+    thinkingBudget: 6000,
+  },
+
+  // === Google: 3.x ===================================================
+  {
+    id: 'gemini-3.1-pro-preview',
+    provider: 'google',
+    label: 'Gemini 3.1 Pro',
+    blurb: 'Strong reasoning for the money. The default for structural work.',
+    pricing: { input: 2.0, output: 12.0 },
+    thinkingBudget: 8000,
+    isPreview: true,
+  },
   {
     id: 'gemini-3.8-flash',
     provider: 'google',
     label: 'Gemini 3.8 Flash',
-    blurb: 'Newest flash, built for long-horizon software work. Half price until 2027.',
+    blurb: 'Newest flash, built for software work. Half price until 2027.',
     // Promotional pricing through 2026-12-31; rises to 1.5 / 7.5 on 2027-01-01.
-    pricing: { input: 0.75, output: 3.75 },
-    thinkingBudget: 6000,
-  },
-  {
-    id: 'gemini-3.7-flash',
-    provider: 'google',
-    label: 'Gemini 3.7 Flash',
-    blurb: 'Previous GA flash. Strong on code, same price as 3.8.',
-    pricing: { input: 0.75, output: 3.75 },
-    thinkingBudget: 6000,
-  },
-  {
-    id: 'gemini-3.6-flash',
-    provider: 'google',
-    label: 'Gemini 3.6 Flash',
-    blurb: 'Older GA flash. Speed and multimodal, balanced.',
     pricing: { input: 0.75, output: 3.75 },
     thinkingBudget: 6000,
   },
@@ -75,7 +96,7 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     id: 'gemini-3.5-flash-lite',
     provider: 'google',
     label: 'Gemini 3.5 Flash-Lite',
-    blurb: 'Cheap GA. Good for small, well-scoped edits.',
+    blurb: 'Cheap. Good for small, well-scoped edits.',
     pricing: { input: 0.3, output: 2.5 },
     thinkingBudget: 2000,
   },
@@ -83,65 +104,45 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     id: 'gemini-3.1-flash-lite',
     provider: 'google',
     label: 'Gemini 3.1 Flash-Lite',
-    blurb: 'Cheapest 3.x. Frontier-class for the money.',
+    blurb: 'Cheapest Gemini. Tiny tweaks and high-volume calls.',
     pricing: { input: 0.25, output: 1.5 },
     thinkingBudget: 2000,
   },
 
-  // === Google: frontier ================================================
-  {
-    id: 'gemini-3.1-pro-preview',
-    provider: 'google',
-    label: 'Gemini 3.1 Pro',
-    blurb: 'Best reasoning Google has. The default for structural work.',
-    pricing: { input: 2.0, output: 12.0 },
-    thinkingBudget: 8000,
-    isPreview: true,
-  },
-  {
-    id: 'gemini-3-flash-preview',
-    provider: 'google',
-    label: 'Gemini 3 Flash',
-    blurb: 'Fast frontier-class. Great for iteration.',
-    pricing: { input: 0.5, output: 3.0 },
-    thinkingBudget: 4000,
-    isPreview: true,
-  },
-
   // === OpenAI ==========================================================
   {
-    id: 'gpt-6-astra',
+    id: 'gpt-6.2-astra',
     provider: 'openai',
-    label: 'GPT-6 Astra',
-    blurb: 'Frontier. The most capable thing here, and priced like it.',
-    pricing: { input: 10, output: 50 },
+    label: 'GPT-6.2 Astra',
+    blurb: 'OpenAI’s most capable, and priced like it.',
+    pricing: { input: 8, output: 40 },
     thinkingBudget: 0,
     reasoningEffort: 'high',
   },
   {
-    id: 'gpt-5.6-sol',
+    id: 'gpt-6.2-sol',
     provider: 'openai',
-    label: 'GPT-5.6 Sol',
-    blurb: 'Flagship. Strong on complex, multi-part builds.',
-    pricing: { input: 4, output: 20 },
+    label: 'GPT-6.2 Sol',
+    blurb: 'Everyday coding flagship, close to Astra for a fifth of the price.',
+    pricing: { input: 2, output: 10 },
     thinkingBudget: 0,
     reasoningEffort: 'high',
   },
   {
-    id: 'gpt-5.6-terra',
+    id: 'gpt-6.1-terra',
     provider: 'openai',
-    label: 'GPT-5.6 Terra',
-    blurb: 'Balances intelligence and cost. The sensible OpenAI pick.',
-    pricing: { input: 2, output: 12 },
+    label: 'GPT-6.1 Terra',
+    blurb: 'Balances intelligence and cost.',
+    pricing: { input: 1, output: 5 },
     thinkingBudget: 0,
     reasoningEffort: 'medium',
   },
   {
-    id: 'gpt-5.6-luna',
+    id: 'gpt-6-luna',
     provider: 'openai',
-    label: 'GPT-5.6 Luna',
-    blurb: 'Cheap and quick. Small edits only.',
-    pricing: { input: 0.2, output: 1.2 },
+    label: 'GPT-6 Luna',
+    blurb: 'Very cheap and quick. Small edits only.',
+    pricing: { input: 0.1, output: 0.5 },
     thinkingBudget: 0,
     reasoningEffort: 'low',
   },
@@ -185,32 +186,43 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     thinkingBudget: 0,
   },
 
-  // === Google: stable 2.5 family — fallback / known quantity ===========
-  {
-    id: 'gemini-2.5-pro',
-    provider: 'google',
-    label: 'Gemini 2.5 Pro',
-    blurb: 'Stable previous-gen. Reliable but not frontier.',
-    pricing: { input: 1.25, output: 10.0 },
-    thinkingBudget: 8000,
-  },
-  {
-    id: 'gemini-2.5-flash',
-    provider: 'google',
-    label: 'Gemini 2.5 Flash',
-    blurb: 'Stable fast/cheap. Solid for routine edits.',
-    pricing: { input: 0.3, output: 2.5 },
-    thinkingBudget: 4000,
-  },
-  {
-    id: 'gemini-2.5-flash-lite',
-    provider: 'google',
-    label: 'Gemini 2.5 Flash-Lite',
-    blurb: 'Cheapest stable. Tiny tweaks only.',
-    pricing: { input: 0.1, output: 0.4 },
-    thinkingBudget: 0,
-  },
 ];
+
+/**
+ * Ids we used to offer, and what now answers for them. Providers retire models
+ * (2.5 Flash/Pro reroute 2026-12-01, the gpt-5 family shuts down 2026-12-11), but
+ * apps call kanthinkAI with the id they were built with and choices are stored, so an
+ * old id must keep resolving to its nearest current model.
+ */
+export const LEGACY_MODEL_IDS: Record<string, string> = {
+  'gemini-3.7-flash': 'gemini-3.8-flash',
+  'gemini-3.6-flash': 'gemini-3.8-flash',
+  'gemini-3.5-flash': 'gemini-3.8-flash',
+  'gemini-3-flash-preview': 'gemini-3.8-flash',
+  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+  'gemini-2.5-flash': 'gemini-3.8-flash',
+  'gemini-2.5-flash-lite': 'gemini-3.1-flash-lite',
+  'gemini-2.0-flash': 'gemini-3.8-flash',
+  'gpt-6-astra': 'gpt-6.2-astra',
+  'gpt-6-sol': 'gpt-6.2-sol',
+  'gpt-6.1-sol': 'gpt-6.2-sol',
+  'gpt-5.6-sol': 'gpt-6.2-sol',
+  'gpt-5.6-terra': 'gpt-6.1-terra',
+  'gpt-5.6-luna': 'gpt-6-luna',
+  'gpt-5.2': 'gpt-6.1-terra',
+  'gpt-5.1': 'gpt-6.1-terra',
+  'gpt-5': 'gpt-6.1-terra',
+  'gpt-5-mini': 'gpt-6-luna',
+  'gpt-5-nano': 'gpt-6-luna',
+  'gpt-4.1': 'gpt-6.1-terra',
+  'gpt-4o-mini': 'gpt-6-luna',
+  'gpt-4o': 'gpt-6.1-terra',
+};
+
+/** The current id for a model id, following a retirement if there was one. */
+export function currentModelId<T extends string | null | undefined>(id: T): T {
+  return (id && LEGACY_MODEL_IDS[id] ? LEGACY_MODEL_IDS[id] : id) as T;
+}
 
 export const DEFAULT_PLAYGROUND_MODEL_ID = AUTO_MODEL_ID;
 
@@ -220,13 +232,14 @@ export const DEFAULT_PLAYGROUND_MODEL_ID = AUTO_MODEL_ID;
 export const FALLBACK_GENERATION_MODEL_ID = 'gemini-3.1-pro-preview';
 
 /** The same, for an account that only holds an OpenAI key. */
-export const OPENAI_FALLBACK_GENERATION_MODEL_ID = 'gpt-5.6-sol';
+export const OPENAI_FALLBACK_GENERATION_MODEL_ID = 'gpt-6.2-sol';
 
 /** The same, for an account that only holds an Anthropic key. */
 export const ANTHROPIC_FALLBACK_GENERATION_MODEL_ID = 'claude-opus-5-5';
 
 export function getPlaygroundModel(id: string | undefined | null): PlaygroundModel {
-  return PLAYGROUND_MODELS.find((m) => m.id === id) || PLAYGROUND_MODELS.find((m) => m.id === FALLBACK_GENERATION_MODEL_ID)!;
+  const current = currentModelId(id);
+  return PLAYGROUND_MODELS.find((m) => m.id === current) || PLAYGROUND_MODELS.find((m) => m.id === FALLBACK_GENERATION_MODEL_ID)!;
 }
 
 /**
@@ -248,13 +261,13 @@ export function resolveActiveModelId(
   editType?: EditType,
   providers?: PlaygroundProvider[]
 ): string {
-  if (selectedId && selectedId !== AUTO_MODEL_ID) return selectedId;
+  if (selectedId && selectedId !== AUTO_MODEL_ID) return currentModelId(selectedId);
 
   const canGoogle = !providers || providers.includes('google');
   if (!canGoogle && providers?.includes('openai')) {
     // Terra is the balanced one; Sol for anything that has to reason about the
-    // whole file. Astra exists, but at $10/$50 it is not an automatic choice.
-    return editType === 'cosmetic' ? 'gpt-5.6-terra' : OPENAI_FALLBACK_GENERATION_MODEL_ID;
+    // whole file. Astra exists, but at $8/$40 it is never an automatic choice.
+    return editType === 'cosmetic' ? 'gpt-6.1-terra' : OPENAI_FALLBACK_GENERATION_MODEL_ID;
   }
   if (!canGoogle && providers?.includes('anthropic')) {
     return editType === 'cosmetic' ? 'claude-sonnet-5' : ANTHROPIC_FALLBACK_GENERATION_MODEL_ID;

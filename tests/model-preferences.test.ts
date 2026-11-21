@@ -37,34 +37,34 @@ describe('resolveSurfaceModel', () => {
 
   it('lets an area override the default', () => {
     const resolved = resolveSurfaceModel(
-      prefs({ default: 'google:gemini-2.5-flash', overrides: { automations: 'openai:gpt-6-astra' } }),
+      prefs({ default: 'google:gemini-3.8-flash', overrides: { automations: 'openai:gpt-6.2-astra' } }),
       'automations',
       bothKeys,
     )
-    expect(resolved).toMatchObject({ provider: 'openai', model: 'gpt-6-astra' })
+    expect(resolved).toMatchObject({ provider: 'openai', model: 'gpt-6.2-astra' })
   })
 
   it('leaves other areas on the default when one is overridden', () => {
     const preferences = prefs({
-      default: 'google:gemini-2.5-flash',
-      overrides: { automations: 'openai:gpt-6-astra' },
+      default: 'google:gemini-3.8-flash',
+      overrides: { automations: 'openai:gpt-6.2-astra' },
     })
     expect(resolveSurfaceModel(preferences, 'chat', bothKeys)).toMatchObject({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
     })
   })
 
   it('crosses providers freely once both keys are held', () => {
     // The whole point of two keys: the choice decides the provider, not the key.
-    const resolved = resolveSurfaceModel(prefs({ default: 'openai:gpt-5.6-terra' }), 'chat', bothKeys)
+    const resolved = resolveSurfaceModel(prefs({ default: 'openai:gpt-6.1-terra' }), 'chat', bothKeys)
     expect(resolved).toMatchObject({ provider: 'openai', fellBack: false })
   })
 
   it('says so when the chosen provider has no key, instead of quietly substituting', () => {
-    const resolved = resolveSurfaceModel(prefs({ default: 'openai:gpt-6-astra' }), 'chat', googleOnly)
+    const resolved = resolveSurfaceModel(prefs({ default: 'openai:gpt-6.2-astra' }), 'chat', googleOnly)
     expect(resolved?.provider).toBe('google')
     expect(resolved?.fellBack).toBe(true)
-    expect(resolved?.requested).toEqual({ provider: 'openai', model: 'gpt-6-astra' })
+    expect(resolved?.requested).toEqual({ provider: 'openai', model: 'gpt-6.2-astra' })
   })
 
   it('does not claim a fallback when there was no preference to fall back from', () => {
@@ -73,11 +73,11 @@ describe('resolveSurfaceModel', () => {
   })
 
   it('returns nothing at all when there is no key anywhere', () => {
-    expect(resolveSurfaceModel(prefs({ default: 'google:gemini-2.5-flash' }), 'chat', {})).toBeNull()
+    expect(resolveSurfaceModel(prefs({ default: 'google:gemini-3.8-flash' }), 'chat', {})).toBeNull()
   })
 
   it('falls back to a model of a provider we actually hold', () => {
-    const resolved = resolveSurfaceModel(prefs({ default: 'google:gemini-2.5-flash' }), 'chat', openaiOnly)
+    const resolved = resolveSurfaceModel(prefs({ default: 'google:gemini-3.8-flash' }), 'chat', openaiOnly)
     expect(resolved?.provider).toBe('openai')
     // And to a real model id, not the name of one from the wrong provider.
     const group = MODEL_CATALOG.find((g) => g.provider === 'openai')!
@@ -115,7 +115,9 @@ describe('isAiSurface', () => {
 
 describe('the app builder routing to a provider it holds a key for', () => {
   it('keeps a pinned model when it is pinned', () => {
-    expect(resolveActiveModelId('gemini-2.5-pro', 'cosmetic', ['google'])).toBe('gemini-2.5-pro')
+    expect(resolveActiveModelId('gemini-4-neon', 'cosmetic', ['google'])).toBe('gemini-4-neon')
+    // A pinned model that has since been retired builds on its successor.
+    expect(resolveActiveModelId('gemini-2.5-pro', 'cosmetic', ['google'])).toBe('gemini-3.1-pro-preview')
   })
 
   it('routes auto to Gemini when Google is available', () => {
@@ -209,11 +211,11 @@ describe('an account with its own key and no stated preference', () => {
   it('still honors an explicit choice of the shared provider', () => {
     // Preferring their own key is a fallback rule, not an override of what they asked for.
     const resolved = resolveSurfaceModel(
-      prefs({ default: 'openai:gpt-5.6-terra' }),
+      prefs({ default: 'openai:gpt-6.1-terra' }),
       'chat',
       ownGoogleSharedOpenAI,
     )
-    expect(resolved).toMatchObject({ provider: 'openai', model: 'gpt-5.6-terra', fellBack: false })
+    expect(resolved).toMatchObject({ provider: 'openai', model: 'gpt-6.1-terra', fellBack: false })
   })
 
   it('picks either one when both keys are the user’s own', () => {

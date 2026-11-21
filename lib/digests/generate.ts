@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { channelActivityLog, channelDigestSubscriptions, digestSendLog, channels, users, notificationPreferences } from '@/lib/db/schema'
 import { eq, and, gt, lte } from 'drizzle-orm'
+import { currentModelId } from '@/lib/playground/models'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { sendChannelDigestEmail } from '@/lib/emails/send'
 
@@ -143,15 +144,15 @@ async function generateAISummary(
           'Authorization': `Bearer ${owner.byokApiKey}`,
         },
         body: JSON.stringify({
-          model: owner.byokModel || 'gpt-4o-mini',
+          model: currentModelId(owner.byokModel) || 'gpt-6-luna',
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 200,
+          max_completion_tokens: 200,
         }),
       })
       const data = await response.json()
       return data.choices?.[0]?.message?.content || null
     } else if (owner.byokProvider === 'google') {
-      const model = owner.byokModel || 'gemini-2.0-flash'
+      const model = currentModelId(owner.byokModel) || 'gemini-3.8-flash'
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${owner.byokApiKey}`,
         {

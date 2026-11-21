@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'gemini-4-gpt-6-2-models',
+    date: '2026-11-21',
+    kind: 'capability',
+    title: 'Gemini 4 and GPT-6.2 models',
+    body: 'Gemini 4 Neon, Carbon and Hydrogen and GPT-6.2 Astra and Sol are in every model picker; retiring models switch to their successors on their own. The pricier ones are only used when you ask for them.',
+  },
+  {
+    id: 'shares-read-the-source',
+    date: '2026-11-21',
+    kind: 'fix',
+    title: 'Kan reads what you share before acting on it',
+    body: 'Kan now follows the links, reads the page and reads GitHub repos before deciding, and what you write about a share is what it does. Asks to make something part of Kanthink go to Claude Code, and Kan tells you if that has to wait.',
+  },
+  {
     id: 'share-says-why',
     date: '2026-11-19',
     kind: 'workflow',

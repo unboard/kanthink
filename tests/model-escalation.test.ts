@@ -12,17 +12,19 @@ describe('model escalation ladder', () => {
     createGoogleProvider('test-key', model).escalate?.()?.model ?? null;
 
   it('exposes the model it will actually call', () => {
-    expect(createGoogleProvider('test-key', 'gemini-3.6-flash').model).toBe('gemini-3.6-flash');
+    expect(createGoogleProvider('test-key', 'gemini-3.8-flash').model).toBe('gemini-3.8-flash');
+    // A retired id calls its successor.
+    expect(createGoogleProvider('test-key', 'gemini-3.6-flash').model).toBe('gemini-3.8-flash');
   });
 
   it('steps a lite model up to flash', () => {
-    expect(escalateFrom('gemini-3.5-flash-lite')).toBe('gemini-3.7-flash');
-    expect(escalateFrom('gemini-2.5-flash-lite')).toBe('gemini-3.7-flash');
+    expect(escalateFrom('gemini-3.5-flash-lite')).toBe('gemini-3.8-flash');
+    expect(escalateFrom('gemini-3.1-flash-lite')).toBe('gemini-3.8-flash');
   });
 
   it('steps a flash model up to pro', () => {
+    expect(escalateFrom('gemini-3.8-flash')).toBe('gemini-3.1-pro-preview');
     expect(escalateFrom('gemini-2.5-flash')).toBe('gemini-3.1-pro-preview');
-    expect(escalateFrom('gemini-3.7-flash')).toBe('gemini-3.1-pro-preview');
   });
 
   it('stops at the top instead of escalating forever', () => {

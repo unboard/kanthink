@@ -15,7 +15,7 @@ import {
 } from '@/lib/playground/aiBudget';
 import { identifyVisitor } from '@/lib/playground/visitor';
 import { appAllowsPaidCapability } from '@/lib/playground/payToken';
-import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
+import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel, currentModelId } from '@/lib/playground/models';
 import {
   DEFAULT_IMAGE_MODEL_ID,
   GOOGLE_IMAGE_FALLBACK_ID,
@@ -224,8 +224,8 @@ export async function POST(request: Request) {
   // Image mode is handled in its own branch below and uses dedicated image-gen models.
   const resolvedModelId = isImageMode
     ? imageResolution!.model.model
-    : (body.model && PLAYGROUND_MODELS.some(m => m.id === body.model && !m.isAuto)
-        ? body.model
+    : (body.model && PLAYGROUND_MODELS.some(m => m.id === currentModelId(body.model) && !m.isAuto)
+        ? currentModelId(body.model)
         : FALLBACK_GENERATION_MODEL_ID);
   const model = isImageMode ? null : getPlaygroundModel(resolvedModelId);
 

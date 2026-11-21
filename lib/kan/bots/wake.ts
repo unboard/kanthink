@@ -55,7 +55,7 @@ export async function pickBot(ownerId: string, share: string, bots: { id: string
   const { getPlaygroundModel } = await import('@/lib/playground/models')
   const { keys } = await resolveProviderKeys(ownerId)
   // Quick and cheap: this only has to say which bot, if any.
-  const choice = keys.google ? { id: 'gemini-3.8-flash', key: keys.google } : keys.anthropic ? { id: 'claude-haiku-4-5', key: keys.anthropic } : keys.openai ? { id: 'gpt-5.6-luna', key: keys.openai } : null
+  const choice = keys.google ? { id: 'gemini-3.8-flash', key: keys.google } : keys.anthropic ? { id: 'claude-haiku-4-5', key: keys.anthropic } : keys.openai ? { id: 'gpt-6-luna', key: keys.openai } : null
   if (!choice) return null
   const r = await runStructured({
     model: getPlaygroundModel(choice.id),

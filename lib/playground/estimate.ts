@@ -18,7 +18,7 @@ import { getPlaygroundModel, PLAYGROUND_MODELS, type PlaygroundModel, type Playg
 const BASE_INPUT_TOKENS = 9_000
 const CHARS_PER_TOKEN = 3.5
 /** A first build's code, in tokens, when there's nothing to measure yet. Models differ a lot. */
-const FIRST_BUILD_CODE_TOKENS: Record<string, number> = { 'gpt-6-astra': 10_000, 'gpt-5.6-sol': 6_000 }
+const FIRST_BUILD_CODE_TOKENS: Record<string, number> = { 'gpt-6.2-astra': 10_000, 'gpt-6.2-sol': 6_000, 'gemini-4-neon': 6_000, 'gemini-4-carbon': 7_000 }
 const firstBuildCode = (m: PlaygroundModel) => FIRST_BUILD_CODE_TOKENS[m.id] ?? (m.provider === 'google' ? 3_500 : 6_000)
 /** The builder's output ceilings (generateApp.ts): a patch attempt, and a whole-file rewrite. */
 const PATCH_CEILING = 8_000
@@ -74,11 +74,13 @@ const round = (usd: number) => Math.ceil(usd * 100) / 100
 const MENU: { id: string; when: string }[] = [
   { id: 'gemini-3.1-pro-preview', when: 'the default for a new app or a real change; cheap and strong' },
   { id: 'gemini-3.8-flash', when: 'small visual tweaks and quick prototypes; fastest and cheapest' },
-  { id: 'gpt-5.6-terra', when: 'balanced OpenAI choice' },
-  { id: 'gpt-5.6-sol', when: 'complex multi-part apps that need careful reasoning' },
-  { id: 'gpt-6-astra', when: 'only when the app is hard and quality matters more than cost' },
-  { id: 'claude-opus-5-5', when: 'complex apps, strong design sense' },
+  { id: 'gpt-6.2-sol', when: 'complex multi-part apps that need careful reasoning; good value' },
+  { id: 'gpt-6.1-terra', when: 'balanced OpenAI choice' },
   { id: 'claude-sonnet-5', when: 'balanced Claude choice' },
+  // Pricier: only when the person asks for a better or more expensive model, or for "all out".
+  { id: 'gemini-4-neon', when: 'ONLY when they ask for a better/stronger model: Google’s best at code' },
+  { id: 'claude-opus-5-5', when: 'ONLY when they ask for a better/stronger model: complex apps, strong design sense' },
+  { id: 'gpt-6.2-astra', when: 'ONLY when they ask for the best/most expensive model and quality matters more than cost' },
 ]
 
 /** The menu, limited to providers the account can actually call. */

@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const googleResult = await getGoogleClientForVoice(userId);
     if (googleResult.client) {
       const response = await googleResult.client.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash-tts',
         contents: [{
           role: 'user',
           parts: [{ text: `Read this text aloud naturally: "${text}"` }],

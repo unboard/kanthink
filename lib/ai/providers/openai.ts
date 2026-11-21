@@ -1,3 +1,4 @@
+import { currentModelId } from '@/lib/playground/models';
 import OpenAI from 'openai';
 import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
@@ -22,7 +23,8 @@ function toOpenAIContent(content: string | LLMContentPart[]): string | OpenAI.Ch
 
 export function createOpenAIProvider(apiKey: string, model?: string): LLMProvider {
   const client = new OpenAI({ apiKey });
-  const modelId = model || DEFAULT_MODEL;
+  // A retired id (a stored choice, an old app) calls its successor instead of a dead model.
+  const modelId = currentModelId(model) || DEFAULT_MODEL;
 
   return {
     name: 'openai',

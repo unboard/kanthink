@@ -13,6 +13,7 @@ import { pinDeps } from './pinDeps';
 import { nanoid } from 'nanoid';
 import {
   PLAYGROUND_MODELS,
+  currentModelId,
   DEFAULT_PLAYGROUND_MODEL_ID,
   AUTO_MODEL_ID,
   FALLBACK_GENERATION_MODEL_ID,
@@ -151,22 +152,21 @@ the part that works end to end and say what you left out.
 AI / LLM CALLS INSIDE THE APP (Gemini, owner's BYOK):
 The host runtime exposes \`window.kanthinkAI.generate(opts)\` for any AI feature in your app — vision (analyze a photo), text generation, classification, structured output, etc. NEVER hardcode a model name like "gemini-1.5-vision", "gemini-pro", or any stale model — those are deprecated. NEVER call the Gemini API directly from the app. Always use this helper, which routes through the playground owner's connected Gemini account and gives them access to current models.
 
-Available models — Gemini 3.x is the frontier and what you should default to:
-- 'gemini-3.1-pro-preview'  ★ DEFAULT — frontier reasoning + best vision. Use for image analysis, complex reasoning, multi-step tasks.
-- 'gemini-3-flash-preview'  — fast frontier-class. Use for routine text, simple vision, classifications.
-- 'gemini-3.1-flash-lite'   — cheapest 3.x. Use for high-volume calls or trivial tasks.
-- 'gemini-2.5-pro'          — stable previous-gen fallback if 3.x is unavailable.
-- 'gemini-2.5-flash'        — stable fallback for fast tasks.
-- 'gemini-2.5-flash-lite'   — stable cheapest fallback.
+Available models (use exactly these ids):
+- 'gemini-3.1-pro-preview'  ★ DEFAULT — strong reasoning + vision for the money. Image analysis, complex reasoning, multi-step tasks.
+- 'gemini-3.8-flash'        — fast and cheap. Routine text, simple vision, classifications, chatty features.
+- 'gemini-3.1-flash-lite'   — cheapest. High-volume calls or trivial tasks.
+- 'gemini-4-hydrogen'       — fast Gemini 4, a step up from flash when quality matters.
+- 'gemini-4-neon'           — the strongest, and costs more per call. Only when the brief asks for the best quality.
 
-Always prefer 3.x. Only fall back to 2.5 if you have a specific reason.
+Never use any other model id (no 2.x, no 'gemini-pro', no 1.5).
 
 Usage:
 \`\`\`jsx
 // Plain text generation
 const { text } = await window.kanthinkAI.generate({
   prompt: 'Suggest 5 names for a coffee shop in Brooklyn.',
-  model: 'gemini-3-flash-preview',
+  model: 'gemini-3.8-flash',
 });
 
 // Vision — pass a Cloudinary image URL (from kanthinkUpload) or a data URL
@@ -1129,8 +1129,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // Resolve which Gemini model to call. Validate against the allow-list so a bad
   // client param can't make us hit an unsupported endpoint. 'auto' is virtual —
   // resolveActiveModelId routes to Pro/Flash based on the preflight edit type.
-  const requestedModelId = body.modelId && PLAYGROUND_MODELS.some(m => m.id === body.modelId)
-    ? body.modelId
+  const requestedModelId = body.modelId && PLAYGROUND_MODELS.some(m => m.id === currentModelId(body.modelId))
+    ? currentModelId(body.modelId)
     : DEFAULT_PLAYGROUND_MODEL_ID;
   const activeModelId = requestedModelId === AUTO_MODEL_ID
     ? resolveActiveModelId(AUTO_MODEL_ID, preflight.editType, providers)
