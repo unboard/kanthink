@@ -124,7 +124,7 @@ export async function getOrCreateQuickSaveChannel(userId: string) {
       messages: [{
         id: nanoid(),
         type: 'note' as const,
-        content: `**Browser bookmarklet:** Create a bookmark in your bookmarks bar, edit it, and replace the URL with this code:\n\n\`javascript:void(window.open('https://kanthink.com/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))\`\n\nName it "Save to Kanthink" — click it on any page to save the link here with AI commentary.\n\nYou can also find this code in the channel settings (gear icon).`,
+        content: `**Browser bookmarklet:** Create a bookmark in your bookmarks bar, edit it, and replace the URL with this code:\n\n\`javascript:void(window.open('https://kanthink.com/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+'&text='+encodeURIComponent(String(getSelection()).slice(0,2000)),'kanthink-save','width=820,height=820'))\`\n\nName it "Save to Kanthink" — click it on any page to save the link here with AI commentary.\n\nYou can also find this code in the channel settings (gear icon).`,
         createdAt: now.toISOString(),
       }],
       source: 'manual' as const,

@@ -10,6 +10,9 @@ export interface UrlMetadata {
  * Gracefully returns partial/empty results on any failure.
  */
 export async function fetchUrlMetadata(url: string): Promise<UrlMetadata> {
+  // X serves a login wall to plain fetches, so read posts through X's own oEmbed.
+  const post = await fetchXPost(url)
+  if (post) return post
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
@@ -93,4 +96,30 @@ function decodeEntities(text: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/g, "'")
     .replace(/&#x2F;/g, '/')
+    .replace(/&mdash;/g, '—')
+    .replace(/&nbsp;/g, ' ')
+}
+
+/** A post on X/Twitter, via X's public oEmbed (the post's text and author; no images). */
+async function fetchXPost(url: string): Promise<UrlMetadata | null> {
+  let u: URL
+  try { u = new URL(url) } catch { return null }
+  if (!/^(www\.|mobile\.)?(x|twitter)\.com$/.test(u.hostname) || !/\/status\/\d+/.test(u.pathname)) return null
+  try {
+    const res = await fetch(`https://publish.twitter.com/oembed?omit_script=true&dnt=true&url=${encodeURIComponent(url)}`, {
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { author_name?: string; html?: string }
+    const para = data.html?.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? ''
+    const text = decodeEntities(para.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')).trim()
+    if (!text && !data.author_name) return null
+    return {
+      title: data.author_name ? `${data.author_name} on X` : undefined,
+      description: text || undefined,
+      siteName: 'X',
+    }
+  } catch {
+    return null
+  }
 }

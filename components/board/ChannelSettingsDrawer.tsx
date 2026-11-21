@@ -781,14 +781,14 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
               </p>
               <div className="relative">
                 <code className="block p-2.5 pr-16 bg-neutral-800 rounded-lg text-[10px] text-neutral-300 font-mono break-all leading-relaxed select-all">
-                  {`javascript:void(window.open('${typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`}
+                  {`javascript:void(window.open('${typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+'&text='+encodeURIComponent(String(getSelection()).slice(0,2000)),'kanthink-save','width=820,height=820'))`}
                 </code>
                 <button
                   type="button"
                   onClick={() => {
                     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'
                     navigator.clipboard.writeText(
-                      `javascript:void(window.open('${origin}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`
+                      `javascript:void(window.open('${origin}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+'&text='+encodeURIComponent(String(getSelection()).slice(0,2000)),'kanthink-save','width=820,height=820'))`
                     )
                     setCopied(true)
                     setTimeout(() => setCopied(false), 2000)
