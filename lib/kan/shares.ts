@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { cards, channels, columns, playgroundApps, users } from '@/lib/db/schema'
 import { and, asc, desc, eq, like } from 'drizzle-orm'
+import type { ShareSource } from './shareSource'
 
 /**
  * You shared something: Kan does something with it, and tells you in its thread.
@@ -15,12 +16,19 @@ import { and, asc, desc, eq, like } from 'drizzle-orm'
  *              (to remember), or a real explanation (to understand), optionally
  *              emailed, optionally with an explainer app to learn it with.
  *   - keep     a plain bookmark → nothing to say; it stays where it is.
+ *   - handoff  they want it to become part of Kanthink itself (a builder skill, a kit
+ *              piece, a feature) or it's bigger than one page → a brief for Claude Code
+ *              in Work → Do these, and Kan says so.
+ *
+ * Before deciding, Kan opens what was shared (shareSource.ts): links followed, pages
+ * read, GitHub repos read down to their README and skill files. What they wrote about
+ * it is the instruction; the share sheet's button is a hint.
  *
  * Day-job material is context, never content: Kan doesn't build or comment on it.
  * Never throws.
  */
 
-const MOVES = ['make', 'episode', 'tell', 'keep'] as const
+const MOVES = ['make', 'episode', 'tell', 'keep', 'handoff'] as const
 type Move = (typeof MOVES)[number]
 
 /** Why they shared it, from the share sheet. Every part is optional. */
@@ -52,9 +60,9 @@ const SCHEMA = {
   properties: {
     what: { type: 'string', description: 'What this actually is, in one plain sentence, as if explaining it to them.' },
     move: { type: 'string', enum: [...MOVES] },
-    title: { type: 'string', description: 'For make: the name of their version, 1–4 words.' },
-    brief: { type: 'string', description: 'For make: the build brief. What their own version does, the core interaction that made the original interesting, and what to leave out. Concrete, 4–10 sentences. It must run in one browser page with no accounts; where the original uses AI, the app uses window.kanthinkAI (text, vision, image generation).' },
-    say: { type: 'string', description: 'What Kan says in its thread, markdown, first person, no greeting. For make: 30–90 words on what you are making and why it is the interesting part. For tell: the idea worth taking from it (to remember: 40–110 words), or a clear explanation (to understand: 120–260 words, building from what they likely know, with one concrete example). For episode: one line.' },
+    title: { type: 'string', description: 'For make: the name of their version, 1–4 words. For handoff: the task, as a short card title.' },
+    brief: { type: 'string', description: 'For handoff: a brief Claude Code can start from without asking: what they asked for in their words, what the source is and what in it matters (with its links), what done looks like, and how it fits what Kanthink already has. For make: the build brief. What their own version does, the core interaction that made the original interesting, and what to leave out. Concrete, 4–10 sentences. It must run in one browser page with no accounts; where the original uses AI, the app uses window.kanthinkAI (text, vision, image generation).' },
+    say: { type: 'string', description: 'What Kan says in its thread, markdown, first person, no greeting. For make: 30–90 words on what you are making and why it is the interesting part. For tell: the idea worth taking from it (to remember: 40–110 words), or a clear explanation (to understand: 120–260 words, building from what they likely know, with one concrete example). For episode: one line. For handoff: 30–80 words saying what you understood they want and that you have handed it to Claude Code.' },
     explainer: { type: 'string', description: 'A build brief for an interactive single-screen explainer that teaches this topic: what it shows step by step, what the person can poke at, and one check-yourself question. Empty unless the topic is something to learn.' },
     suggestions: {
       type: 'array',
@@ -73,12 +81,12 @@ const SCHEMA = {
 
 const INTENT_LINE: Record<NonNullable<SharePrefs['intent']>, string> = {
   brain: 'They told you why: "I want this in my brain." Choose tell. Say the idea worth remembering, in a form that sticks, and how it connects to what they care about.',
-  make: 'They told you why: "I want to make something like this." Choose make. Their own take on the idea, not a copy: keep what makes it work and shape it for them.',
-  recreate: 'They told you why: "I want to recreate this." Choose make. A faithful working remake of the original\'s core experience and interaction, as close as one page can get.',
+  make: 'They pressed "I want to make something like this." Choose make (their own take on the idea, not a copy: keep what makes it work and shape it for them), unless their note asks for it to become part of Kanthink itself or for something bigger than one page; then choose handoff.',
+  recreate: 'They pressed "I want to recreate this." Choose make, unless their note asks for it to become part of Kanthink itself; then handoff. A faithful working remake of the original\'s core experience and interaction, as close as one page can get.',
   understand: 'They told you why: "I don\'t understand this and want to know more." Choose tell. Explain it properly, from the ground up, and fill in explainer.',
 }
 
-export function buildSharePrompt(opts: { first: string; share: string; tools: string[]; handsOff: string[]; told?: string[]; intent?: SharePrefs['intent'] }) {
+export function buildSharePrompt(opts: { first: string; share: string; note?: string; sources?: ShareSource[]; tools: string[]; handsOff: string[]; told?: string[]; intent?: SharePrefs['intent'] }) {
   const system = `You are Kan, ${opts.first}'s assistant in Kanthink, their private playground. They just shared something with you. A share means "this caught my eye". Your job is to give something back for it, right now.
 
 Think from first principles about what it actually is and why someone like them would share it, then pick one move:
@@ -86,15 +94,20 @@ Think from first principles about what it actually is and why someone like them 
 - episode: one of the bots' tools listed below plainly fits it (an explainer tool and a topic to explain, for example). Only when the fit is obvious.
 - tell: an idea, article, post or thread. Give them the one idea worth taking from it, in your own words, and connect it to something in their life outside work when there's a real connection.
 - keep: a plain bookmark with nothing to add.
+- handoff: they want it adopted into Kanthink itself: a skill the app builder should use (like the canvas skill: every canvas app is built on a maintained kit piece), a library to add to the kit, a change to how Kanthink works, or a build too big for one page (multi-screen, real 3D world, multiplayer, server). Claude Code does these.
 ${opts.intent ? `\n${INTENT_LINE[opts.intent]}\n` : ''}
 Rules:
+- What they wrote about it is the instruction. Do exactly what it asks, in the shape it asks for. If their note says "make this a skill" or "use this for X", that is the job, not a starting point for something else.
+- Read the source material below before deciding. Build from what it actually is and does (its real technique, its real files), never from the title. If it's a repo or a skill, say what's in it.
 - Take it at face value. Don't force it into a theme, a project or a channel they already have.
 - What they said about it, on the card or to you before, outranks the page's own tagline. If they described what caught their eye, that is the thing to make.
 - Their day job (print shops, MyPrintSite, MyCreativeShop, MissionPrint and the like) is off limits as a subject unless they plainly asked about it here: never build for it uninvited.
 - Never talk about filing, organizing, sorting, channels or plans.
 - Plain words, no hype, no "Great find!". American spelling.${opts.handsOff.length ? `\n- Leave alone entirely: ${opts.handsOff.join(', ')}.` : ''}`
   const told = opts.told?.length ? `\nWhat they've told you about things in their life (use what's about this share):\n${opts.told.join('\n')}\n` : ''
-  const user = `They shared:\n${opts.share.slice(0, 4000)}\n${told}\nBots' tools that could make an episode:\n${opts.tools.join('\n') || '(none)'}`
+  const note = opts.note?.trim() ? `What they wrote about it (this is the instruction):\n${opts.note.trim()}\n\n` : 'They wrote nothing about it.\n\n'
+  const src = opts.sources?.length ? `\nWhat the links contain (you opened them):\n${opts.sources.map((s) => `--- ${s.url}\n${s.text}`).join('\n\n')}\n` : '\n(No readable links.)\n'
+  const user = `${note}What they shared:\n${opts.share.slice(0, 4000)}\n${src}${told}\nBots' tools that could make an episode:\n${opts.tools.join('\n') || '(none)'}`
   return { system, user }
 }
 
@@ -119,6 +132,24 @@ async function addNote(cardId: string, content: string) {
     messages: [...(fresh?.messages ?? []), { id: nanoid(), type: 'note', content, authorName: 'Kan', createdAt: new Date().toISOString() }] as typeof cards.$inferInsert.messages,
     updatedAt: new Date(),
   }).where(eq(cards.id, cardId))
+}
+
+/** A card for Claude Code in Work → Do these, written by Kan (and shown as Kan's). */
+async function handToClaudeCode(ownerId: string, title: string, brief: string): Promise<boolean> {
+  const { WORK_CHANNEL_ID } = await import('@/lib/kan/agent/tools')
+  const work = await db.query.channels.findFirst({ where: eq(channels.id, WORK_CHANNEL_ID), columns: { ownerId: true } })
+  if (!work || work.ownerId !== ownerId) return false
+  const col = await db.query.columns.findFirst({ where: and(eq(columns.channelId, WORK_CHANNEL_ID), eq(columns.name, 'Do these')), columns: { id: true } })
+  if (!col) return false
+  const top = await db.query.cards.findFirst({ where: and(eq(cards.columnId, col.id), eq(cards.isArchived, false)), orderBy: [cards.position], columns: { position: true } })
+  const { nanoid } = await import('nanoid')
+  const now = new Date()
+  await db.insert(cards).values({
+    id: nanoid(), channelId: WORK_CHANNEL_ID, columnId: col.id, title: title.slice(0, 80), position: (top?.position ?? 0) - 1, source: 'manual',
+    messages: [{ id: nanoid(), type: 'note', content: `${brief}\n\n_Kan wrote this from something you shared._`, authorName: 'Kan', createdAt: now.toISOString() }] as never,
+    createdAt: now, updatedAt: now,
+  })
+  return true
 }
 
 /** Email the owner something Kan has to say about a share. */
@@ -170,12 +201,17 @@ async function buildOnCard(ownerId: string, cardId: string, title: string, promp
   return built
 }
 
-export async function actOnShare(ownerId: string, cardId: string, prefs: SharePrefs = {}): Promise<{ move: Move | null; why?: string }> {
+export async function actOnShare(ownerId: string, cardId: string, prefs: SharePrefs = {}, opts: { dry?: boolean } = {}): Promise<{ move: Move | null; why?: string }> {
   try {
     const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId), columns: { id: true, title: true, messages: true, channelId: true } })
     if (!card) return { move: null, why: 'card gone' }
     const owner = await db.query.users.findFirst({ where: eq(users.id, ownerId), columns: { name: true } })
-    const share = [card.title, ...(card.messages ?? []).map((m) => `${m.authorId === ownerId ? 'They said: ' : ''}${m.content}`)].join('\n\n')
+    const msgs = card.messages ?? []
+    const note = msgs.filter((m) => m.authorId === ownerId).map((m) => m.content).join('\n\n')
+    // Earlier AI takes on the card are guesses from the title; leave them out so they don't anchor this one.
+    const share = [card.title, ...msgs.filter((m) => m.authorId !== ownerId && m.type === 'note' && !/^\*\*(Making|Recreating|Handed|What the source)/.test(m.content)).map((m) => m.content)].join('\n\n')
+    const { readShareSources } = await import('./shareSource')
+    const sources = await readShareSources(`${share}\n${note}`)
 
     const [{ resolveProviderKeys }, { runStructured }, { getPlaygroundModel }, { listTopics }] = await Promise.all([
       import('@/lib/ai/keys'), import('@/lib/playground/generateClient'), import('@/lib/playground/models'), import('@/lib/kan/attention/topics'),
@@ -195,7 +231,7 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
     const told = topics.filter((t) => t.role !== 'hands_off' && t.note).map((t) => `- ${t.name}: ${t.note}`)
 
     const first = owner?.name?.split(/\s+/)[0] ?? 'them'
-    const { system, user } = buildSharePrompt({ first, share, tools, handsOff, told, intent: prefs.intent })
+    const { system, user } = buildSharePrompt({ first, share, note, sources, tools, handsOff, told, intent: prefs.intent })
     const r = await runStructured({
       model: getPlaygroundModel(choice.id), apiKey: choice.key.apiKey, systemInstruction: system, userText: user, images: [],
       schema: SCHEMA, schemaName: 'share_move', maxOutputTokens: 4000, signal: AbortSignal.timeout(120_000),
@@ -203,12 +239,20 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
     if (!r.text) return { move: null, why: 'no answer' }
     const out = JSON.parse(r.text) as { what: string; move: Move; title: string; brief: string; say: string; explainer: string; suggestions: { label: string; prompt: string }[] }
     // What they said wins over what Kan would have picked.
-    if (prefs.intent === 'make' || prefs.intent === 'recreate') out.move = 'make'
+    if (prefs.intent === 'make' || prefs.intent === 'recreate') { if (out.move !== 'handoff') out.move = 'make' }
     else if (prefs.intent === 'brain' || prefs.intent === 'understand') out.move = 'tell'
     const { kanSays } = await import('@/lib/kan/thread/store')
+    if (opts.dry) return { move: out.move, why: JSON.stringify({ ...out, sources: sources.map((x) => [x.url, x.text.length]) }, null, 2) }
     const refs = [`share:${card.id}`]
 
     if (out.move === 'keep') return { move: 'keep', why: out.what }
+
+    if (out.move === 'handoff') {
+      const where = await handToClaudeCode(ownerId, out.title || card.title, `${out.brief}\n\n**Their words:** ${note || '(none)'}\n\n**Shared card:** ${card.title} (cardId: ${card.id})${sources.length ? `\n\n**Sources:** ${sources.map((x) => x.url).join(' · ')}` : ''}`)
+      await addNote(card.id, `**Handed to Claude Code: ${out.title}**\n\n${out.brief}`)
+      await kanSays(ownerId, 'reach', where ? out.say : `${out.say}\n\n(I couldn't reach Claude Code's Work channel, so the brief is on the card.)`, { refs })
+      return { move: 'handoff' }
+    }
 
     if (out.move === 'episode') {
       const { wakeForShare } = await import('@/lib/kan/bots/wake')
@@ -243,13 +287,14 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
       const col = await firstColumn(target)
       if (col) await db.update(cards).set({ channelId: target, columnId: col, position: 0, updatedAt: new Date() }).where(eq(cards.id, card.id))
     }
-    const effort = prefs.effort ?? 'quick'
+    const effort = prefs.effort ?? 'solid'
     const modelId = await modelFor(effort, keys)
     if (!modelId) {
       await kanSays(ownerId, 'reach', `${out.say}\n\n(I couldn't build it: none of your keys can run ${EFFORT_LABEL[effort]}.)`, { refs })
       return { move: 'make', why: 'no model' }
     }
     const verb = prefs.intent === 'recreate' ? 'Recreating' : 'Making your own version'
+    if (sources.length) await addNote(card.id, `**What the source actually is** (read for the build)\n\n${sources.map((x) => `${x.url}\n\n${x.text.slice(0, 5000)}`).join('\n\n---\n\n')}`)
     await addNote(card.id, `**${verb}: ${out.title}**\n\n${out.brief}`)
     const buildPrompt = `${prefs.intent === 'recreate' ? 'Recreate what they shared as faithfully as one page allows.' : 'Build their own working version of what they shared.'}\n\n${out.brief}`
 

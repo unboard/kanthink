@@ -76,7 +76,7 @@ function SaveContent() {
   // so reading localStorage in the initializers is safe.)
   const [last] = useState(readLast)
   const [intent, setIntent] = useState<Intent | null>(() => (INTENTS.some((i) => i.id === last.intent) ? last.intent! : null))
-  const [effort, setEffort] = useState<Effort>(() => (EFFORT.some((e) => e.id === last.effort) ? last.effort! : 'quick'))
+  const [effort, setEffort] = useState<Effort>(() => (EFFORT.some((e) => e.id === last.effort) ? last.effort! : 'solid'))
   const [briefFirst, setBriefFirst] = useState(() => last.briefFirst === true)
   const [emailThoughts, setEmailThoughts] = useState(() => last.emailThoughts === true)
   const [explainer, setExplainer] = useState(() => last.intent === 'understand')
