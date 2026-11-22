@@ -514,9 +514,9 @@ export const CityChat = forwardRef<CityChatHandle, {
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? 'Fold the thread away' : 'Show the thread'}
-            className="relative mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500/15 hover:bg-violet-500/25"
+            className="relative mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full hover:bg-white/10"
           >
-            <KanthinkIcon size={18} className="text-violet-300" />
+            <KanthinkIcon size={18} className="text-white" />
             {unseen > 0 && !showThread && <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-neutral-950" />}
           </button>
           <div className="min-w-0 flex-1">
@@ -558,7 +558,7 @@ export const CityChat = forwardRef<CityChatHandle, {
               className={`block max-h-[200px] w-full resize-none bg-transparent px-1.5 py-2 text-[15px] text-neutral-100 placeholder:text-neutral-500 focus:outline-none ${composing ? 'min-h-[72px]' : 'min-h-[24px]'}`}
             />
           </div>
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => fileRef.current?.click()} aria-label="Attach an image" title="Attach an image (or paste or drop one)" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-violet-300 hover:bg-white/5">
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => fileRef.current?.click()} aria-label="Attach an image" title="Attach an image (or paste or drop one)" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white hover:bg-white/10">
             <ImagePlus className="h-[18px] w-[18px]" />
           </button>
           <VoiceMicButton
@@ -568,10 +568,10 @@ export const CityChat = forwardRef<CityChatHandle, {
               if (!draft.trim()) void send(t);
               else setDraft((d) => `${d} ${t}`);
             }}
-            className="mb-0.5 !h-9 !w-9 !rounded-full text-violet-300 hover:bg-white/5"
+            className="mb-0.5 !h-9 !w-9 !rounded-full !text-white hover:!text-white hover:bg-white/10"
           />
           {!draft.trim() && !busy && (
-            <button type="button" onClick={() => { setOpen(false); void voice.start(); }} aria-label="Talk with Kan" title="Voice mode: talk with Kan while you watch the city" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-violet-300 hover:bg-white/5">
+            <button type="button" onClick={() => { setOpen(false); void voice.start(); }} aria-label="Talk with Kan" title="Voice mode: talk with Kan while you watch the city" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white hover:bg-white/10">
               <AudioLines className="h-[18px] w-[18px]" />
             </button>
           )}
@@ -580,7 +580,7 @@ export const CityChat = forwardRef<CityChatHandle, {
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
-            <button type="submit" disabled={(!draft.trim() && !attached.some((a) => a.url)) || attached.some((a) => !a.url && !a.error)} aria-label="Send" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-violet-500 text-white hover:bg-violet-400 disabled:opacity-30">
+            <button type="submit" disabled={(!draft.trim() && !attached.some((a) => a.url)) || attached.some((a) => !a.url && !a.error)} aria-label="Send" className="mb-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-30">
               <ArrowUp className="h-4 w-4" />
             </button>
           )}
