@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/kanwatch-days",
       "schedule": "15 * * * *"
+    },
+    {
+      "path": "/api/cron/made",
+      "schedule": "50 * * * *"
     }
   ]
 }

@@ -1,6 +1,6 @@
 import type { AppStyle } from '../playground/style/tokens'
 import type { PaymentReview, PaymentSetup } from '../playground/payments/types'
-import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, customType } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, customType, real } from 'drizzle-orm/sqlite-core'
 
 /**
  * Like text({ mode: 'json' }) but catches JSON.parse errors instead of crashing.
@@ -2331,3 +2331,43 @@ export const sprouts = sqliteTable('sprouts', {
 }, (table) => [
   index('sprouts_owner_idx').on(table.ownerId, table.status),
 ])
+
+/**
+ * Made for you: things Kan builds on its own from what it sees (Kanwatch, shares,
+ * chats) to help the owner learn, earn or have fun, under a weekly budget
+ * (lib/kan/madeForYou.ts). Each row is one idea Kan picked and what became of it.
+ */
+export const madeForYou = sqliteTable('made_for_you', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  kind: text('kind').$type<'learn' | 'money' | 'fun'>().notNull().default('fun'),
+  /** Who it's for: "you", "the kids", "the family". */
+  forWhom: text('for_whom').notNull().default('you'),
+  /** Why Kan thought of it: the evidence, in a line or two. */
+  why: text('why').notNull().default(''),
+  brief: text('brief').notNull().default(''),
+  /** Gemini Decision's 0–4 "glad to find this" score. */
+  score: real('score').notNull().default(0),
+  /** Who builds it: Kan as an app now, or Claude Code (too big for one page). */
+  route: text('route').$type<'app' | 'claude'>().notNull().default('app'),
+  cardId: text('card_id'),
+  appId: text('app_id'),
+  costCents: integer('cost_cents').notNull().default(0),
+  status: text('status').$type<'building' | 'ready' | 'failed' | 'kept' | 'tossed' | 'handed'>().notNull().default('building'),
+  tossedWhy: text('tossed_why'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('made_for_you_owner_idx').on(table.ownerId, table.createdAt),
+])
+
+/** The owner's say over Made for you: how much a week, and how often Kan looks. */
+export const madeSettings = sqliteTable('made_settings', {
+  ownerId: text('owner_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  /** 0 turns it off. */
+  weeklyCents: integer('weekly_cents').notNull().default(300),
+  lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})

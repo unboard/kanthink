@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Pencil, Plane, Play, Plus, Scooter,
-  RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut, Droplets, Sprout as SproutIcon, Shovel, Building2,
+  RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut, Droplets, Sprout as SproutIcon, Shovel, Building2, Gift,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { Stick } from '@/components/kan/city/Stick';
@@ -20,6 +20,7 @@ import { PlayerSheet, Portrait, usePlayers } from '@/components/kan/city/PlayerS
 import { onPlayers, playing as whoIsPlaying } from '@/lib/kan/players';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
 import { BotChat, type BotWork, type OpenApp } from '@/components/kan/city/BotChat';
+import { MadePanel, useMade } from '@/components/kan/city/MadePanel';
 import { Redecorate } from '@/components/kan/city/Redecorate';
 import type { InsideNear, InsidePet, InsidePick } from '@/components/kan/city/inside';
 import { PET_CSS, PetSheet } from '@/components/kan/city/PetSheet';
@@ -159,6 +160,7 @@ export default function CityPage() {
   const [data, setData] = useState<CityData | null>(null);
   const [state, setState] = useState<'loading' | 'signedOut' | 'empty' | 'ready' | 'error'>('loading');
   const [pick, setPick] = useState<Pick | null>(null);
+  const made = useMade();
   /** On the Kanwatch Freeway: its own scene, while the city waits. */
   const [freeway, setFreeway] = useState(false);
   /** At the zoo: its own scene too. */
@@ -766,6 +768,7 @@ export default function CityPage() {
               <MenuItem href={preview ? '/prototypes/kan/city' : '/prototypes/kan/city?preview'}><Play className="h-4 w-4" /> {preview ? 'Show the real city' : 'Preview with pretend bots'}</MenuItem>
               <div className="my-1 border-t border-white/5" />
               <MenuItem href="/?home"><LayoutGrid className="h-4 w-4" /> The board</MenuItem>
+              <MenuItem onClick={() => { void made.reload(); onPickRef.current({ kind: 'made' }); }}><Gift className="h-4 w-4" /> Made for you</MenuItem>
               <MenuItem href="/prototypes/kan/bots"><Users className="h-4 w-4" /> Bot logs and spend</MenuItem>
             </div>
           )}
@@ -773,6 +776,7 @@ export default function CityPage() {
         <div className="no-scrollbar pointer-events-auto flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
           {/* Up here only what wants you; the rest of the day folds into one pill. */}
           {counts.needs > 0 && <Chip tone="amber" n={counts.needs} label="need you" onClick={() => onPickRef.current({ kind: 'townhall' })} />}
+          {made.fresh > 0 && <Chip tone="gold" n={made.fresh} label="made for you" onClick={() => onPickRef.current({ kind: 'made' })} />}
           {data && data.arrivals.count > 0 && <Chip tone="orange" n={data.arrivals.count} label="new for Kan" onClick={() => onPickRef.current({ kind: 'arrivals' })} />}
           {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
           {data && data.field.some((f) => f.ready) && <Chip tone="gold" n={data.field.filter((f) => f.ready).length} label="ready to move to town" onClick={() => { onPickRef.current({ kind: 'field' }); engine.current?.focusField(); }} />}
@@ -1119,6 +1123,8 @@ export default function CityPage() {
               onAsk={ask}
               onField={() => onPickRef.current({ kind: 'field' })}
             />
+          ) : pick.kind === 'made' ? (
+            <MadePanel data={made.data} onChanged={() => void made.reload()} onOpen={(a) => openApp({ ...a, full: true })} />
           ) : pick.kind === 'field' ? (
             <FieldPanel field={data.field} walking={busy === 'walk'} onPick={(id) => onPickRef.current({ kind: 'sprout', id })} onWalk={() => void walkField()} />
           ) : pick.kind === 'proposal' ? (
