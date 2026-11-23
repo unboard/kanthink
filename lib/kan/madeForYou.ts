@@ -199,7 +199,7 @@ Suggest 4–8 different things, each grounded in something specific below. Mix t
   if (r.truncated || !r.text) return { why: 'no ideas came back' }
   const ideas = ((JSON.parse(r.text) as { ideas: Idea[] }).ideas ?? []).filter((i) => i.title.trim() && !offLimits(i.title)).slice(0, 8)
   if (!ideas.length) return { why: 'no ideas' }
-  const ideaCents = Math.ceil(((r.usage?.inputTokens ?? 0) * ideaModel.pricing.input + (r.usage?.outputTokens ?? 0) * ideaModel.pricing.output) / 1e4)
+  const ideaCents = Math.ceil(((r.inputTokens ?? 0) * ideaModel.pricing.input + (r.outputTokens ?? 0) * ideaModel.pricing.output) / 1e4)
 
   // ── Rank and route ──
   const input = `Who this is for: ${first}. Kanthink is their private playground; their day job (print shops, MyPrintSite, MyCreativeShop) is never the subject.\n\nWhat Kan has seen lately:\n${clip(sparks, 9000)}\n\nAlready made: ${made.join(', ') || 'nothing yet'}\nTossed: ${tossed.join('; ') || 'nothing'}\n\nIdeas:\n${ideas.map((i, n) => `[${n}] ${i.title} (${i.kind}, for ${i.forWhom}). Why: ${i.why}\n${i.brief}`).join('\n\n')}`

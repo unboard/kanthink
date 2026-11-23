@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BALL_R, IDLE, KITCHEN, SERVE_READY, SWING_SWEET, awardRally, createGame, isGameOver,
-  serveCourtSign, serveFromRight, setupServe, step, type GameState, type PlayerInput, type Side,
+  serveCourtSign, serveFromRight, setupServe, step, type GameState, type PlayerInput, type Team,
 } from '@/app/pickleball/sim';
 import { botInput } from '@/app/pickleball/bot';
 import { isRoomCode, makeRoomCode, normalizeRoomCode, channelForRoom, ROOM_ALPHABET } from '@/app/pickleball/room';
@@ -57,7 +57,7 @@ describe('pickleball determinism', () => {
       n++;
     }
     expect(s.phase).toBe('over');
-    const w = s.winner as Side;
+    const w = s.winner as Team;
     expect(s.scores[w]).toBeGreaterThanOrEqual(11);
     expect(s.scores[w] - s.scores[w === 0 ? 1 : 0]).toBeGreaterThanOrEqual(2);
   });
@@ -130,11 +130,11 @@ function volleySetup(opts: { hits: number; playerZ: number }): GameState {
   s.players[1].x = 0;
   s.players[1].z = opts.playerZ;
   // ball arriving at the player's position in the air, waist high
-  s.ball = { x: 0.5, y: 3, z: opts.playerZ + 2.5, vx: 0, vy: 0, vz: -20 };
+  s.ball = { x: 0.5, y: 3, z: opts.playerZ + 2.5, vx: 0, vy: 0, vz: -20, hot: false };
   return s;
 }
 
-function swingAt(state: GameState, side: Side): GameState {
+function swingAt(state: GameState, side: Team): GameState {
   const inputs: [PlayerInput, PlayerInput] = [IDLE, IDLE];
   inputs[side] = { mx: 0, mz: 0, swing: true };
   let s = step(state, inputs);
@@ -168,7 +168,7 @@ describe('pickleball faults', () => {
     s.phase = 'rally';
     s.hits = 1;
     s.lastHitter = 0;
-    s.ball = { x: -4, y: BALL_R + 0.01, z: -4, vx: 0, vy: -5, vz: -1 };
+    s.ball = { x: -4, y: BALL_R + 0.01, z: -4, vx: 0, vy: -5, vz: -1, hot: false };
     const n = step(s, [IDLE, IDLE]);
     expect(n.lastPoint?.reason).toBe('serve-kitchen');
     expect(n.server).toBe(1);
@@ -180,9 +180,9 @@ describe('pickleball faults', () => {
     base.phase = 'rally';
     base.hits = 1;
     base.lastHitter = 0;
-    const wrong = { ...base, ball: { x: 4, y: BALL_R + 0.01, z: -15, vx: 0, vy: -5, vz: -1 } };
+    const wrong = { ...base, ball: { x: 4, y: BALL_R + 0.01, z: -15, vx: 0, vy: -5, vz: -1, hot: false } };
     expect(step(wrong, [IDLE, IDLE]).lastPoint?.reason).toBe('serve-wrong-court');
-    const right = { ...base, ball: { x: -4, y: BALL_R + 0.01, z: -15, vx: 0, vy: -5, vz: -1 } };
+    const right = { ...base, ball: { x: -4, y: BALL_R + 0.01, z: -15, vx: 0, vy: -5, vz: -1, hot: false } };
     const r = step(right, [IDLE, IDLE]);
     expect(r.lastPoint).toBeNull();
     expect(r.bounces).toBe(1);
@@ -193,19 +193,19 @@ describe('pickleball faults', () => {
     base.phase = 'rally';
     base.hits = 4;
     base.lastHitter = 1; // receiver hit it
-    const out = { ...base, ball: { x: 12, y: BALL_R + 0.01, z: 10, vx: 0, vy: -5, vz: 1 } };
+    const out = { ...base, ball: { x: 12, y: BALL_R + 0.01, z: 10, vx: 0, vy: -5, vz: 1, hot: false } };
     const o = step(out, [IDLE, IDLE]);
     expect(o.lastPoint?.reason).toBe('out');
     expect(o.scores).toEqual([1, 0]);
 
-    const dbl = { ...base, bounces: 1, ball: { x: 2, y: BALL_R + 0.01, z: 10, vx: 0, vy: -5, vz: 1 } };
+    const dbl = { ...base, bounces: 1, ball: { x: 2, y: BALL_R + 0.01, z: 10, vx: 0, vy: -5, vz: 1, hot: false } };
     const d = step(dbl, [IDLE, IDLE]);
     expect(d.lastPoint?.reason).toBe('double-bounce');
     expect(d.lastPoint?.faultTeam).toBe(0);
     expect(d.lastPoint?.faultBy).toBe(-1); // a missed ball is the team's
     expect(d.server).toBe(1); // server failed to return → side out
 
-    const net = { ...base, ball: { x: 0, y: 1, z: -0.05, vx: 0, vy: 0, vz: 20 } };
+    const net = { ...base, ball: { x: 0, y: 1, z: -0.05, vx: 0, vy: 0, vz: 20, hot: false } };
     const nn = step(net, [IDLE, IDLE]);
     expect(nn.lastPoint?.reason).toBe('net');
     expect(nn.lastPoint?.faultBy).toBe(1);
