@@ -35,6 +35,9 @@ export function roomFromChannel(channel: string): string | null {
 
 export type Role = 'host' | 'guest';
 
+/** a doubles court: the host plus up to three guests (each browser may bring two players) */
+export const MAX_GUESTS = 3;
+
 /** presence member ids carry the role so the server can check seats without a database */
 export function memberId(role: Role, clientId: string): string {
   return `${role === 'host' ? 'h' : 'g'}_${clientId}`;

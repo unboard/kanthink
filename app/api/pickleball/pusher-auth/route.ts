@@ -2,14 +2,14 @@
  * Pusher auth for pickleball rooms (presence-pickleball-XXXX).
  *
  * Anonymous, like /api/catlife/pusher-auth: no Kanthink account needed, the room code is
- * the secret. Each room has two seats. The member id encodes the seat (h_… / g_…), and
- * a seat is only granted when it is free, or when the same client is reconnecting to it,
- * so a third browser is turned away here even if it skips the lobby check.
+ * the secret. A room holds one host and up to three guests. The member id encodes the
+ * role (h_… / g_…), and a place is only granted when one is free, or when the same client
+ * is reconnecting to it, so a fifth browser is turned away here even if it skips the lobby.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticatePresence, isPusherConfigured, getUserColor } from '@/lib/sync/pusherServer'
-import { CLIENT_ID_RE, memberId, roomFromChannel, type Role } from '@/app/pickleball/room'
+import { CLIENT_ID_RE, MAX_GUESTS, memberId, roomFromChannel, type Role } from '@/app/pickleball/room'
 import { roomOccupancy } from '../occupancy'
 
 export async function POST(request: NextRequest) {
@@ -41,9 +41,13 @@ export async function POST(request: NextRequest) {
   const id = memberId(role, clientId)
   try {
     const occ = await roomOccupancy(code)
-    const seat = occ ? (role === 'host' ? occ.host : occ.guest) : null
-    if (seat && seat !== id) {
-      return NextResponse.json({ error: 'That seat is taken; the room is full.' }, { status: 403 })
+    const taken = occ
+      ? role === 'host'
+        ? Boolean(occ.host && occ.host !== id)
+        : !occ.guests.includes(id) && occ.guests.length >= MAX_GUESTS
+      : false
+    if (taken) {
+      return NextResponse.json({ error: 'The room is full.' }, { status: 403 })
     }
     if (role === 'guest' && occ && !occ.host) {
       return NextResponse.json({ error: 'No one is hosting that room.' }, { status: 404 })

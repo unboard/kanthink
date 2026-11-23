@@ -1,44 +1,63 @@
 'use client';
 
-// Pickleball — React shell: menu, lobby, HUD and overlays over the Three.js court.
-// The game itself lives in controller.ts; this file only shows what it reports.
+// Pickleball: the React shell. Who's playing, the creator, setting up seats, the online
+// lobby, and the in-game HUD, over the Three.js court. The game itself lives in
+// controller.ts; this file only shows what it reports and sends it what people choose.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Controller, type Hud } from './controller';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Controller, DEVICE_LABEL, type Device, type Hud, type LocalPlayer, type SeatPlan } from './controller';
+import { GameHud } from './Hud';
+import { Creator } from './Creator';
+import { TEAM_COLORS } from './render';
 import { normalizeRoomCode } from './room';
-import { SIDE_COLORS } from './render';
-import { FAULT_TEXT, type Side } from './sim';
+import {
+  STYLE_LABEL, botCharacter, loadLastPicked, loadRoster, makeCharacter, saveLastPicked, saveRoster, type Character,
+} from './characters';
+import type { BotTier } from './bot';
+import type { Format, Team } from './sim';
+import { Center, Portrait, Spinner, btnGhost, btnPrimary, chip, panel } from './ui';
 
 type Screen =
   | { kind: 'loading' }
-  | { kind: 'menu' }
+  | { kind: 'home' }
+  | { kind: 'creator'; c: Character; isNew: boolean; then: 'home' | 'setup' }
+  | { kind: 'setup' }
+  | { kind: 'online'; role: 'host' | 'guest' }
   | { kind: 'connecting'; label: string }
+  | { kind: 'room' }
   | { kind: 'game' }
   | { kind: 'error'; message: string };
 
-const panel = 'rounded-2xl border border-white/10 bg-[#0d1626]/80 text-[#f3efe4] shadow-2xl backdrop-blur-md';
-const btnPrimary =
-  'rounded-xl bg-[#dcff3d] px-5 py-3 text-[15px] font-semibold text-[#14200a] transition hover:bg-[#e8ff7a] active:scale-[0.98] disabled:opacity-50';
-const btnGhost =
-  'rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-[15px] font-medium text-[#f3efe4] transition hover:bg-white/10 active:scale-[0.98] disabled:opacity-50';
+const TIERS: Record<BotTier, string> = { chill: 'Chill', club: 'Club', champ: 'Champ' };
+
+function defaultDevices(n: number): Device[] {
+  if (n <= 1) return ['keys'];
+  return (['keysL', 'keysR', 'pad0', 'pad1'] as Device[]).slice(0, n);
+}
+
+function seatTeams(format: Format): Team[] {
+  return format === 'doubles' ? [0, 0, 1, 1] : [0, 1];
+}
 
 export default function Pickleball() {
   const hostRef = useRef<HTMLDivElement>(null);
   const ctrl = useRef<Controller | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' });
   const [hud, setHud] = useState<Hud | null>(null);
+  const [roster, setRoster] = useState<Character[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [format, setFormat] = useState<Format>('doubles');
+  const [plan, setPlan] = useState<SeatPlan[]>([]);
+  const [here, setHere] = useState<string[]>([]); // online: who is on this computer
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [devices, setDevices] = useState<string[]>([]);
 
   useEffect(() => {
     if (!hostRef.current) return;
     let c: Controller;
     try {
-      c = new Controller(
-        hostRef.current,
-        (h) => setHud(h),
-        (message) => setScreen({ kind: 'error', message }),
-      );
+      c = new Controller(hostRef.current, (h) => setHud(h), (message) => setScreen({ kind: 'error', message }));
     } catch (e) {
       console.error('[Pickleball] could not start 3D', e);
       setScreen({ kind: 'error', message: 'This browser could not start 3D graphics (WebGL).' });
@@ -46,38 +65,102 @@ export default function Pickleball() {
     }
     ctrl.current = c;
     const room = new URLSearchParams(window.location.search).get('room');
+    const r = loadRoster();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading saved players once the court exists
+    setRoster(r);
+    setPicked(loadLastPicked().filter((id) => r.some((x) => x.id === id)).slice(0, 4));
     if (room) setJoinCode(room.toUpperCase().slice(0, 4));
-    setScreen({ kind: 'menu' });
+    setScreen(room ? { kind: 'online', role: 'guest' } : { kind: 'home' });
     return () => {
       c.dispose();
       ctrl.current = null;
     };
   }, []);
 
+  const byId = useCallback((id: string) => roster.find((c) => c.id === id) ?? null, [roster]);
+  const pickedChars = useMemo(() => picked.map(byId).filter((c): c is Character => c !== null), [picked, byId]);
+
+  const togglePick = (id: string) => {
+    setPicked((p) => {
+      const next = p.includes(id) ? p.filter((x) => x !== id) : [...p, id].slice(-4);
+      saveLastPicked(next);
+      return next;
+    });
+  };
+
+  const saveChar = (c: Character, then: 'home' | 'setup') => {
+    setRoster((r) => {
+      const next = r.some((x) => x.id === c.id) ? r.map((x) => (x.id === c.id ? c : x)) : [...r, c];
+      saveRoster(next);
+      return next;
+    });
+    setPicked((p) => {
+      const next = p.includes(c.id) ? p : [...p, c.id].slice(-4);
+      saveLastPicked(next);
+      return next;
+    });
+    setScreen({ kind: then === 'setup' ? 'setup' : 'home' });
+  };
+
+  const deleteChar = (id: string) => {
+    setRoster((r) => { const next = r.filter((x) => x.id !== id); saveRoster(next); return next; });
+    setPicked((p) => { const next = p.filter((x) => x !== id); saveLastPicked(next); return next; });
+    setScreen({ kind: 'home' });
+  };
+
   const toMenu = useCallback(() => {
     ctrl.current?.startAttract();
-    setScreen({ kind: 'menu' });
+    setScreen({ kind: 'home' });
   }, []);
 
-  const practice = useCallback(() => {
-    ctrl.current?.startPractice();
+  // ——— play here ———
+  const openSetup = (fmt: Format = format) => {
+    const teams = seatTeams(fmt);
+    const people = pickedChars.slice(0, teams.length);
+    const devs = defaultDevices(people.length);
+    // the first person on each team, then partners: two people play against each other
+    const order = fmt === 'doubles' ? [0, 2, 1, 3] : [0, 1];
+    const next: SeatPlan[] = teams.map((_, i) => ({ kind: 'bot', char: null, tier: 'club' }));
+    people.forEach((c, k) => { next[order[k]] = { kind: 'human', char: c, device: devs[k] }; });
+    setFormat(fmt);
+    setPlan(next);
+    setScreen({ kind: 'setup' });
+  };
+
+  const startLocal = () => {
+    ctrl.current?.startLocal(format, plan);
+    setDevices(plan.filter((p) => p.kind === 'human').map((p) => DEVICE_LABEL[p.device ?? 'keys']));
     setScreen({ kind: 'game' });
-  }, []);
+  };
 
-  const createRoom = useCallback(async () => {
+  // ——— online ———
+  const goOnline = (role: 'host' | 'guest') => {
+    setHere(pickedChars.slice(0, 1).map((c) => c.id));
+    setScreen({ kind: 'online', role });
+  };
+
+  const locals = (): LocalPlayer[] => {
+    const chars = here.map(byId).filter((c): c is Character => c !== null);
+    const devs = defaultDevices(chars.length);
+    return chars.map((char, k) => ({ char, device: devs[k] }));
+  };
+
+  const hostRoom = async () => {
     setScreen({ kind: 'connecting', label: 'Opening a room…' });
     try {
       const res = await fetch('/api/pickleball/room', { method: 'POST' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.code) throw new Error(body.error || 'Could not open a room.');
-      ctrl.current?.startOnline('host', body.code);
-      setScreen({ kind: 'game' });
+      const lp = locals();
+      ctrl.current?.hostRoom(body.code, format, lp);
+      setDevices(lp.map((p) => DEVICE_LABEL[p.device]));
+      setScreen({ kind: 'room' });
     } catch (e) {
       setScreen({ kind: 'error', message: (e as Error).message });
     }
-  }, []);
+  };
 
-  const joinRoom = useCallback(async () => {
+  const joinRoom = async () => {
     const code = normalizeRoomCode(joinCode);
     if (!code) {
       setScreen({ kind: 'error', message: 'Room codes are four letters, like HKTP.' });
@@ -88,14 +171,16 @@ export default function Pickleball() {
       const res = await fetch(`/api/pickleball/room?code=${code}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Could not reach that room.');
-      if (body.status === 'missing') throw new Error(`No one is hosting ${code} right now. Check the code with your opponent.`);
-      if (body.status === 'full') throw new Error(`${code} already has two players. Only two fit on a singles court.`);
-      ctrl.current?.startOnline('guest', code);
-      setScreen({ kind: 'game' });
+      if (body.status === 'missing') throw new Error(`No one is hosting ${code} right now. Check the code with whoever made the room.`);
+      if (body.status === 'full') throw new Error(`${code} is full: four players is a whole court.`);
+      const lp = locals();
+      ctrl.current?.joinRoom(code, lp);
+      setDevices(lp.map((p) => DEVICE_LABEL[p.device]));
+      setScreen({ kind: 'room' });
     } catch (e) {
       setScreen({ kind: 'error', message: (e as Error).message });
     }
-  }, [joinCode]);
+  };
 
   const copyLink = useCallback(async (code: string) => {
     try {
@@ -107,82 +192,199 @@ export default function Pickleball() {
     }
   }, []);
 
-  const inGame = screen.kind === 'game' && hud && hud.mode !== 'attract';
+  const inRoom = screen.kind === 'room' && hud && (hud.mode === 'host' || hud.mode === 'guest');
+  const started = !!hud?.lobby?.started;
+  const inGame = (screen.kind === 'game' && hud && hud.mode === 'local') || (inRoom && started);
 
   return (
-    <div
-      className="fixed inset-0 z-[100] overflow-hidden bg-[#0d1a2e] text-[#f3efe4] select-none"
-      style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif' }}
-    >
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-[#0d1a2e] text-[#f3efe4] select-none" style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif' }}>
+      <style>{`
+        @keyframes pbIn { 0% { opacity: 0; transform: translateY(-14px) scale(0.92) skewX(-6deg); } 60% { opacity: 1; transform: translateY(2px) scale(1.03) skewX(-6deg); } 100% { transform: translateY(0) scale(1) skewX(-6deg); } }
+        .pb-callout { animation: pbIn 320ms cubic-bezier(.2,.9,.3,1.3) both; }
+      `}</style>
       <div ref={hostRef} className="absolute inset-0" />
+      {!inGame && <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0d1a2e]/70 via-transparent to-[#0d1a2e]/80" />}
 
       {screen.kind === 'loading' && (
+        <Center><div className={`${panel} px-8 py-6 text-[15px] text-white/80`}>Setting up the court…</div></Center>
+      )}
+
+      {screen.kind === 'home' && (
         <Center>
-          <div className={`${panel} px-8 py-6 text-[15px] text-white/80`}>Setting up the court…</div>
+          <div className="w-[min(760px,calc(100vw-32px))]">
+            <div className="mb-5 text-center">
+              <div className="text-[13px] font-bold uppercase tracking-[0.3em] text-[#dcff3d]">Doubles · Singles · Hot streaks</div>
+              <h1 className="mt-1 text-[clamp(44px,9vw,84px)] font-black italic leading-[0.9] tracking-tight drop-shadow-[0_6px_0_rgba(0,0,0,0.35)]">PICKLEBALL</h1>
+            </div>
+            <div className={`${panel} p-5 sm:p-6`}>
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="text-[18px] font-black">Who’s playing?</div>
+                <div className="text-[12.5px] text-white/50">{picked.length ? `${picked.length} picked` : 'Tap the people who are here'}</div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {roster.map((c) => {
+                  const on = picked.includes(c.id);
+                  return (
+                    <div key={c.id} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => togglePick(c.id)}
+                        className={`flex w-full flex-col items-center rounded-2xl border-2 p-3 transition ${on ? 'border-[#dcff3d] bg-[#dcff3d]/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.07]'}`}
+                      >
+                        <Portrait c={c} size={64} ring={on ? '#dcff3d' : undefined} />
+                        <div className="mt-2 w-full truncate text-center text-[14px] font-bold">{c.name}</div>
+                        <div className="text-[11px] text-white/45">{STYLE_LABEL[c.style].name}</div>
+                      </button>
+                      <button type="button" onClick={() => setScreen({ kind: 'creator', c, isNew: false, then: 'home' })} className="absolute right-1.5 top-1.5 rounded-full bg-black/50 px-2 py-0.5 text-[11px] font-semibold text-white/80 opacity-0 transition group-hover:opacity-100">Edit</button>
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setScreen({ kind: 'creator', c: makeCharacter('', roster.length), isNew: true, then: 'home' })}
+                  className="flex min-h-[132px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/20 p-3 text-white/60 hover:border-[#dcff3d]/60 hover:text-white"
+                >
+                  <span className="text-[30px] leading-none">+</span>
+                  <span className="mt-2 text-[13px] font-bold">New player</span>
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-2.5 sm:grid-cols-3">
+                <button className={btnPrimary} disabled={!pickedChars.length} onClick={() => openSetup()}>Play here</button>
+                <button className={btnGhost} disabled={!pickedChars.length} onClick={() => goOnline('host')}>Host online</button>
+                <button className={btnGhost} disabled={!pickedChars.length} onClick={() => goOnline('guest')}>Join a room</button>
+              </div>
+              <p className="mt-4 text-[12.5px] leading-relaxed text-white/45">
+                Play here: everyone on this computer, sharing the keyboard (WASD and arrows) or with gamepads, with bots in any empty spots.
+                Online: each person on their own computer, with a room code.
+              </p>
+            </div>
+          </div>
         </Center>
       )}
 
-      {screen.kind === 'menu' && (
+      {screen.kind === 'creator' && (
         <Center>
-          <div className={`${panel} w-[min(420px,calc(100vw-32px))] p-7`}>
-            <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#dcff3d]">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#dcff3d]" /> Singles
-            </div>
-            <h1 className="mt-2 text-[40px] font-bold leading-none tracking-tight">Pickleball</h1>
-            <p className="mt-2 text-[14px] text-white/60">First to 11, win by 2. Only the server scores.</p>
+          <Creator
+            initial={screen.c}
+            isNew={screen.isNew}
+            onSave={(c) => saveChar(c, screen.then)}
+            onCancel={() => setScreen({ kind: screen.then === 'setup' ? 'setup' : 'home' })}
+            onDelete={screen.isNew ? undefined : () => deleteChar(screen.c.id)}
+          />
+        </Center>
+      )}
 
-            <div className="mt-6 flex flex-col gap-2.5">
-              <button className={btnPrimary} onClick={practice}>Practice vs. bot</button>
-              <button className={btnGhost} onClick={createRoom}>Create a room</button>
+      {screen.kind === 'setup' && (
+        <Center>
+          <div className={`${panel} w-[min(820px,calc(100vw-32px))] p-5 sm:p-7`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-[22px] font-black">Set the court</div>
+              <div className="flex gap-1.5">
+                {(['doubles', 'singles'] as Format[]).map((f) => (
+                  <button key={f} type="button" className={chip(format === f)} onClick={() => openSetup(f)}>{f === 'doubles' ? 'Doubles' : 'Singles'}</button>
+                ))}
+              </div>
             </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {([0, 1] as Team[]).map((t) => (
+                <div key={t} className="rounded-3xl p-3" style={{ background: `${TEAM_COLORS[t]}1f`, boxShadow: `inset 0 0 0 2px ${TEAM_COLORS[t]}55` }}>
+                  <div className="mb-2 px-1 text-[12px] font-black uppercase tracking-[0.18em]" style={{ color: TEAM_COLORS[t] }}>{t === 0 ? 'Coral team' : 'Teal team'}</div>
+                  <div className="flex flex-col gap-2">
+                    {plan.map((s, i) => (seatTeams(format)[i] !== t ? null : (
+                      <SeatEditor key={i} seat={s} i={i} people={pickedChars} roster={roster} onChange={(next) => setPlan((p) => p.map((x, k) => (k === i ? next : x)))} />
+                    )))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-[12.5px] leading-relaxed text-white/50">
+              Two people on one keyboard: one uses WASD and Space, the other the arrows and Enter. Plug in gamepads for more. People on opposite teams get a side view, and the keys follow the screen.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              <button className={btnPrimary} disabled={!plan.some((p) => p.kind === 'human')} onClick={startLocal}>Start the game</button>
+              <button className={btnGhost} onClick={() => setScreen({ kind: 'home' })}>Back</button>
+            </div>
+          </div>
+        </Center>
+      )}
 
-            <form
-              className="mt-5 border-t border-white/10 pt-5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void joinRoom();
-              }}
-            >
-              <label className="text-[12px] font-medium uppercase tracking-[0.14em] text-white/50" htmlFor="pb-code">
-                Join a friend
-              </label>
-              <div className="mt-2 flex gap-2">
+      {screen.kind === 'online' && (
+        <Center>
+          <div className={`${panel} w-[min(520px,calc(100vw-32px))] p-6 sm:p-7`}>
+            <div className="text-[22px] font-black">{screen.role === 'host' ? 'Host a room' : 'Join a room'}</div>
+            <div className="mt-4 text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">Playing on this computer (one or two)</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(pickedChars.length ? pickedChars : roster).map((c) => {
+                const on = here.includes(c.id);
+                return (
+                  <button key={c.id} type="button" onClick={() => setHere((h) => (on ? h.filter((x) => x !== c.id) : [...h, c.id].slice(-2)))} className={`flex items-center gap-2 rounded-2xl border-2 py-1.5 pl-1.5 pr-3 ${on ? 'border-[#dcff3d] bg-[#dcff3d]/10' : 'border-white/10 bg-white/[0.03]'}`}>
+                    <Portrait c={c} size={34} />
+                    <span className="text-[14px] font-bold">{c.name}</span>
+                  </button>
+                );
+              })}
+              {!roster.length && <span className="text-[13px] text-white/50">Make a player first.</span>}
+            </div>
+            {here.length === 2 && <p className="mt-2 text-[12.5px] text-white/50">Two here: WASD + Space and arrows + Enter.</p>}
+            {screen.role === 'host' ? (
+              <>
+                <div className="mt-5 text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">Game</div>
+                <div className="mt-2 flex gap-1.5">
+                  {(['doubles', 'singles'] as Format[]).map((f) => (
+                    <button key={f} type="button" className={chip(format === f)} onClick={() => { setFormat(f); if (f === 'singles') setHere((h) => h.slice(0, 1)); }}>{f === 'doubles' ? 'Doubles (up to 4)' : 'Singles'}</button>
+                  ))}
+                </div>
+                <div className="mt-6 flex gap-2.5">
+                  <button className={btnPrimary} disabled={!here.length} onClick={() => void hostRoom()}>Open the room</button>
+                  <button className={btnGhost} onClick={() => setScreen({ kind: 'home' })}>Back</button>
+                </div>
+              </>
+            ) : (
+              <form className="mt-5" onSubmit={(e) => { e.preventDefault(); void joinRoom(); }}>
+                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">Room code</div>
                 <input
-                  id="pb-code"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4))}
                   placeholder="CODE"
                   autoComplete="off"
                   spellCheck={false}
-                  className="w-full min-w-0 rounded-xl border border-white/15 bg-black/30 px-4 py-3 font-mono text-[18px] tracking-[0.4em] text-white outline-none placeholder:text-white/25 focus:border-[#dcff3d]/70"
+                  className="mt-2 w-full rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-center font-mono text-[28px] tracking-[0.5em] text-white outline-none placeholder:text-white/20 focus:border-[#dcff3d]/70"
                 />
-                <button type="submit" className={btnGhost} disabled={joinCode.length !== 4}>Join</button>
-              </div>
-            </form>
-            <p className="mt-5 text-[12.5px] leading-relaxed text-white/45">
-              Online play is two people on two computers. You both use the same keys, and each of you sees the
-              court from behind your own baseline.
-            </p>
+                <div className="mt-5 flex gap-2.5">
+                  <button type="submit" className={btnPrimary} disabled={joinCode.length !== 4 || !here.length}>Join</button>
+                  <button type="button" className={btnGhost} onClick={() => setScreen({ kind: 'home' })}>Back</button>
+                </div>
+                {!here.length && roster.length > 0 && <p className="mt-3 text-[12.5px] text-[#ffd166]">Pick who’s playing on this computer.</p>}
+                {!roster.length && (
+                  <button type="button" className={`${btnGhost} mt-3`} onClick={() => setScreen({ kind: 'creator', c: makeCharacter('', 0), isNew: true, then: 'home' })}>Make your player</button>
+                )}
+              </form>
+            )}
           </div>
         </Center>
       )}
 
       {screen.kind === 'connecting' && (
+        <Center><div className={`${panel} px-8 py-6 text-[15px]`}><Spinner />{screen.label}</div></Center>
+      )}
+
+      {inRoom && !started && hud?.lobby && (
         <Center>
-          <div className={`${panel} px-8 py-6 text-[15px]`}>
-            <Spinner /> {screen.label}
-          </div>
+          <RoomLobby hud={hud} copied={copied} onCopy={copyLink} ctrl={ctrl.current} onLeave={toMenu} />
         </Center>
+      )}
+      {inRoom && !hud?.lobby && (
+        <Center><div className={`${panel} px-8 py-6 text-[15px]`}><Spinner />Finding your seat…</div></Center>
       )}
 
       {screen.kind === 'error' && (
         <Center>
           <div className={`${panel} w-[min(420px,calc(100vw-32px))] p-7`}>
-            <div className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#ff8a7a]">Couldn’t start</div>
+            <div className="text-[13px] font-bold uppercase tracking-[0.14em] text-[#ff8a7a]">Couldn’t start</div>
             <p className="mt-2 text-[16px] leading-snug">{screen.message}</p>
             <div className="mt-5 flex gap-2.5">
               <button className={btnPrimary} onClick={toMenu}>Back to menu</button>
-              <button className={btnGhost} onClick={practice}>Practice instead</button>
             </div>
           </div>
         </Center>
@@ -191,208 +393,128 @@ export default function Pickleball() {
       {inGame && hud && (
         <GameHud
           hud={hud}
+          devices={devices}
           onLeave={toMenu}
           onRematch={() => ctrl.current?.requestRematch()}
-          onCopy={copyLink}
-          copied={copied}
+          onLobby={() => ctrl.current?.backToLobby()}
         />
       )}
     </div>
   );
 }
 
-function Center({ children }: { children: React.ReactNode }) {
-  return <div className="absolute inset-0 flex items-center justify-center p-4">{children}</div>;
-}
-
-function Spinner() {
-  return (
-    <span className="mr-2 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/25 border-t-[#dcff3d] align-[-2px]" />
-  );
-}
-
-function Key({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-white/20 bg-white/10 px-1.5 font-mono text-[11px] text-white/90">
-      {children}
-    </kbd>
-  );
-}
-
-function GameHud({
-  hud, onLeave, onRematch, onCopy, copied,
-}: {
-  hud: Hud;
-  onLeave: () => void;
-  onRematch: () => void;
-  onCopy: (code: string) => void;
-  copied: boolean;
+function SeatEditor({ seat, i, people, roster, onChange }: {
+  seat: SeatPlan;
+  i: number;
+  people: Character[];
+  roster: Character[];
+  onChange: (s: SeatPlan) => void;
 }) {
-  const me = hud.localSide;
-  const them: Side = me === 0 ? 1 : 0;
-  const theirName = hud.mode === 'practice' ? 'Bot' : 'Opponent';
-  const name = (s: Side) => (s === me ? 'You' : theirName);
-  const server = hud.server;
-  const receiver: Side = server === 0 ? 1 : 0;
-  const online = hud.mode === 'host' || hud.mode === 'guest';
-
-  const waitingFirst = hud.mode === 'host' && !hud.everJoined;
-  const opponentGone = online && !waitingFirst && !hud.opponentPresent;
-  const reconnecting = online && (hud.status === 'reconnecting' || hud.status === 'connecting') && !waitingFirst;
-
-  const point = hud.phase === 'point' && hud.lastPoint ? hud.lastPoint : null;
-
+  const choices = people.length ? people : roster;
+  const value = seat.kind === 'bot' ? 'bot' : seat.char?.id ?? 'bot';
   return (
-    <>
-      {/* top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
-        <div className={`${panel} pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5`}>
-          <span className="rounded-md bg-[#dcff3d] px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#14200a]">
-            Singles
-          </span>
-          <span className="text-[13px] text-white/70">
-            {hud.mode === 'practice' ? 'Practice vs. bot' : `Room ${hud.roomCode ?? ''}`}
-          </span>
-        </div>
-
-        <div className={`${panel} px-5 py-2.5 text-center`}>
-          <div className="flex items-baseline justify-center gap-2 font-mono text-[34px] font-bold leading-none tabular-nums">
-            <span style={{ color: SIDE_COLORS[server] }}>{hud.scores[server]}</span>
-            <span className="text-white/35">–</span>
-            <span style={{ color: SIDE_COLORS[receiver] }}>{hud.scores[receiver]}</span>
-          </div>
-          <div className="mt-1 text-[10.5px] uppercase tracking-[0.16em] text-white/40">server – receiver</div>
-          <div className="mt-1.5 text-[13px] text-white/85">
-            <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: SIDE_COLORS[server] }} />
-            {server === me ? 'You serve' : `${theirName} serves`} from the {hud.serveRight ? 'right' : 'left'}
-          </div>
-        </div>
-
-        <div className="pointer-events-auto flex items-center gap-2">
-          {online && <StatusPill hud={hud} />}
-          <button className={`${panel} px-3.5 py-2.5 text-[13px] hover:bg-white/10`} onClick={onLeave}>Leave</button>
+    <div className="flex items-center gap-3 rounded-2xl bg-black/25 p-2.5">
+      <Portrait c={seat.kind === 'bot' ? botCharacter(i) : seat.char} size={46} />
+      <div className="min-w-0 flex-1">
+        <select
+          value={value}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'bot') onChange({ kind: 'bot', char: null, tier: seat.tier ?? 'club' });
+            else onChange({ kind: 'human', char: choices.find((c) => c.id === v) ?? null, device: seat.device ?? 'keys' });
+          }}
+          className="w-full rounded-xl border border-white/10 bg-[#0b1424] px-2.5 py-1.5 text-[14px] font-bold text-white outline-none"
+        >
+          {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <option value="bot">Bot ({botCharacter(i).name})</option>
+        </select>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {seat.kind === 'bot'
+            ? (Object.keys(TIERS) as BotTier[]).map((t) => (
+              <button key={t} type="button" className={`${chip((seat.tier ?? 'club') === t)} !px-2.5 !py-1 !text-[11.5px]`} onClick={() => onChange({ ...seat, tier: t })}>{TIERS[t]}</button>
+            ))
+            : (
+              <select
+                value={seat.device ?? 'keys'}
+                onChange={(e) => onChange({ ...seat, device: e.target.value as Device })}
+                className="rounded-lg border border-white/10 bg-[#0b1424] px-2 py-1 text-[12px] text-white/80 outline-none"
+              >
+                {(Object.keys(DEVICE_LABEL) as Device[]).map((d) => <option key={d} value={d}>{DEVICE_LABEL[d]}</option>)}
+              </select>
+            )}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* players legend */}
-      <div className="pointer-events-none absolute left-4 top-[84px] hidden flex-col gap-1 text-[12.5px] text-white/75 sm:flex">
-        {([me, them] as Side[]).map((s) => (
-          <div key={s} className="flex items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: SIDE_COLORS[s] }} />
-            {name(s)} <span className="font-mono tabular-nums text-white/50">{hud.scores[s]}</span>
-            {s === server && <span className="text-[10.5px] uppercase tracking-[0.14em] text-[#dcff3d]">serving</span>}
+function RoomLobby({ hud, copied, onCopy, ctrl, onLeave }: {
+  hud: Hud;
+  copied: boolean;
+  onCopy: (code: string) => void;
+  ctrl: Controller | null;
+  onLeave: () => void;
+}) {
+  const lobby = hud.lobby!;
+  const host = hud.mode === 'host';
+  const teams = seatTeams(lobby.format);
+  const humans = lobby.seats.filter((s) => s.kind === 'human').length;
+  return (
+    <div className={`${panel} w-[min(820px,calc(100vw-32px))] p-5 sm:p-7`}>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/45">Room code</div>
+          <div className="font-mono text-[52px] font-black leading-none tracking-[0.22em] text-[#dcff3d]">{hud.roomCode}</div>
+        </div>
+        <div className="flex gap-2">
+          <button className={btnGhost} onClick={() => hud.roomCode && onCopy(hud.roomCode)}>{copied ? 'Link copied' : 'Copy invite link'}</button>
+          <button className={btnGhost} onClick={onLeave}>Leave</button>
+        </div>
+      </div>
+      <p className="mt-2 text-[13px] text-white/55">
+        {host ? 'Everyone opens Pickleball, picks their player, chooses Join a room and types this code. Empty spots get bots.' : 'You’re in. The host sets the teams and starts the game.'}
+      </p>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        {([0, 1] as Team[]).map((t) => (
+          <div key={t} className="rounded-3xl p-3" style={{ background: `${TEAM_COLORS[t]}1f`, boxShadow: `inset 0 0 0 2px ${TEAM_COLORS[t]}55` }}>
+            <div className="mb-2 px-1 text-[12px] font-black uppercase tracking-[0.18em]" style={{ color: TEAM_COLORS[t] }}>{t === 0 ? 'Coral team' : 'Teal team'}</div>
+            <div className="flex flex-col gap-2">
+              {lobby.seats.map((s, i) => (teams[i] !== t ? null : (
+                <div key={i} className="flex items-center gap-3 rounded-2xl bg-black/25 p-2.5">
+                  <Portrait c={s.kind === 'open' ? null : s.char} size={46} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15px] font-bold">
+                      {s.kind === 'open' ? 'Open spot' : s.char?.name}
+                      {s.owner && s.owner === hud.myId && <span className="ml-1.5 text-[11px] font-semibold text-[#dcff3d]">you</span>}
+                    </div>
+                    <div className="text-[12px] text-white/50">
+                      {s.kind === 'human' ? (s.char ? STYLE_LABEL[s.char.style].name : '') : s.kind === 'bot' ? `Bot · ${TIERS[s.tier]}` : 'A bot plays here if no one joins'}
+                    </div>
+                    {host && s.kind !== 'human' && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {(Object.keys(TIERS) as BotTier[]).map((tier) => (
+                          <button key={tier} type="button" className={`${chip(s.tier === tier)} !px-2.5 !py-1 !text-[11.5px]`} onClick={() => ctrl?.setSeat(i, { kind: 'bot', tier })}>{TIERS[tier]}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {host && (
+                    <button type="button" title="Switch teams" onClick={() => ctrl?.swapSeats(i, lobby.format === 'doubles' ? (i + 2) % 4 : 1 - i)} className="rounded-xl bg-white/[0.06] px-2.5 py-2 text-[13px] font-bold hover:bg-white/15">⇄</button>
+                  )}
+                </div>
+              )))}
+            </div>
           </div>
         ))}
       </div>
-
-      {/* point result */}
-      {point && (
-        <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center px-4">
-          <div className={`${panel} px-6 py-4 text-center`}>
-            <div className="text-[22px] font-bold">
-              {point.sideOut ? 'Side out' : point.scorer === me ? 'Point — you' : `Point — ${theirName.toLowerCase()}`}
-            </div>
-            <div className="mt-1 text-[14px] text-white/70">
-              {name(point.faultBy)}: {FAULT_TEXT[point.reason]}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* serve prompt */}
-      {hud.phase === 'serve' && server === me && !waitingFirst && !opponentGone && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[86px] flex justify-center">
-          <div className={`${panel} px-4 py-2 text-[14px]`}>
-            Your serve — press <Key>Space</Key>. Aim for the lit court, past the kitchen line.
-          </div>
-        </div>
-      )}
-
-      {/* controls */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
-        <div className={`${panel} flex flex-wrap items-center justify-center gap-x-5 gap-y-2 px-4 py-2.5 text-[12.5px] text-white/75`}>
-          <span className="flex items-center gap-1">
-            <Key>W</Key><Key>A</Key><Key>S</Key><Key>D</Key> or <Key>←</Key><Key>↑</Key><Key>↓</Key><Key>→</Key> move
-          </span>
-          <span className="flex items-center gap-1"><Key>Space</Key> swing / serve</span>
-          <span>Hold left/right to aim, up for a dink, down for a lob</span>
-          <span className="text-white/45">Let the serve and return bounce. No volleys from the kitchen.</span>
-        </div>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        {host ? (
+          <button className={btnPrimary} onClick={() => ctrl?.startOnlineGame()}>Start the game</button>
+        ) : (
+          <div className="text-[14px] text-white/70"><Spinner />Waiting for the host to start</div>
+        )}
+        <span className="text-[12.5px] text-white/45">{humans} {humans === 1 ? 'person' : 'people'} · {host ? `${hud.guests} other computer${hud.guests === 1 ? '' : 's'}` : hud.hostHere ? 'host is here' : 'host is away'}</span>
       </div>
-
-      {/* lobby: host waiting for the first opponent */}
-      {waitingFirst && hud.roomCode && (
-        <Center>
-          <div className={`${panel} w-[min(420px,calc(100vw-32px))] p-7 text-center`}>
-            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/50">Your room</div>
-            <div className="mt-2 font-mono text-[56px] font-bold tracking-[0.25em] text-[#dcff3d]">{hud.roomCode}</div>
-            <p className="mt-1 text-[14px] text-white/70"><Spinner />Waiting for your opponent to join…</p>
-            <p className="mt-3 text-[13px] text-white/50">
-              They open Pickleball, choose Join a friend, and type this code.
-            </p>
-            <div className="mt-5 flex justify-center gap-2.5">
-              <button className={btnGhost} onClick={() => onCopy(hud.roomCode!)}>{copied ? 'Link copied' : 'Copy invite link'}</button>
-              <button className={btnGhost} onClick={onLeave}>Cancel</button>
-            </div>
-          </div>
-        </Center>
-      )}
-
-      {/* opponent dropped, or our own connection is recovering */}
-      {!waitingFirst && hud.phase !== 'over' && (opponentGone || reconnecting) && (
-        <Center>
-          <div className={`${panel} w-[min(400px,calc(100vw-32px))] p-6 text-center`}>
-            <div className="text-[18px] font-semibold"><Spinner />{reconnecting ? 'Reconnecting…' : `${hud.mode === 'guest' ? 'Host' : 'Opponent'} disconnected`}</div>
-            <p className="mt-2 text-[14px] text-white/65">
-              {reconnecting
-                ? 'Your connection dropped. The game is paused and picks up where it left off.'
-                : 'The game is paused. If they come back to this room, play picks up where it left off.'}
-            </p>
-            <button className={`${btnGhost} mt-4`} onClick={onLeave}>Leave room</button>
-          </div>
-        </Center>
-      )}
-
-      {/* game over */}
-      {hud.phase === 'over' && hud.winner !== -1 && (
-        <Center>
-          <div className={`${panel} w-[min(400px,calc(100vw-32px))] p-7 text-center`}>
-            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/50">Game</div>
-            <div className="mt-1 text-[34px] font-bold" style={{ color: SIDE_COLORS[hud.winner] }}>
-              {hud.winner === me ? 'You win' : `${theirName} wins`}
-            </div>
-            <div className="mt-1 font-mono text-[22px] tabular-nums text-white/80">
-              {Math.max(...hud.scores)} – {Math.min(...hud.scores)}
-            </div>
-            {online && hud.rematch.them && !hud.rematch.me && (
-              <p className="mt-3 text-[14px] text-[#dcff3d]">Your opponent wants a rematch.</p>
-            )}
-            <div className="mt-5 flex justify-center gap-2.5">
-              <button className={btnPrimary} onClick={onRematch} disabled={online && (hud.rematch.me || !hud.opponentPresent)}>
-                {online && hud.rematch.me ? 'Waiting for opponent…' : 'Rematch'}
-              </button>
-              <button className={btnGhost} onClick={onLeave}>Menu</button>
-            </div>
-          </div>
-        </Center>
-      )}
-    </>
-  );
-}
-
-function StatusPill({ hud }: { hud: Hud }) {
-  const waiting = hud.mode === 'host' && !hud.everJoined;
-  let label = 'Connected';
-  let color = '#7ee08a';
-  if (hud.status === 'connecting') { label = 'Connecting…'; color = '#f5c26b'; }
-  else if (hud.status === 'reconnecting') { label = 'Reconnecting…'; color = '#f5c26b'; }
-  else if (hud.status === 'error') { label = 'Offline'; color = '#ff7a6b'; }
-  else if (waiting) { label = 'Waiting for opponent'; color = '#f5c26b'; }
-  else if (!hud.opponentPresent) { label = 'Opponent away'; color = '#f5c26b'; }
-  return (
-    <div className={`${panel} flex items-center gap-2 px-3.5 py-2.5 text-[13px]`}>
-      <span className="inline-block h-2 w-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-      {label}
     </div>
   );
 }

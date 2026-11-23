@@ -4,8 +4,8 @@ import dynamic from 'next/dynamic';
 const Pickleball = dynamic(() => import('./Pickleball'));
 
 export const metadata: Metadata = {
-  title: 'Pickleball — singles',
-  description: 'Two-player singles pickleball in the browser. Practice against a bot or play a friend with a room code.',
+  title: 'Pickleball',
+  description: 'Arcade doubles pickleball for the family: play as yourself, catch fire, and play on one computer or online with a room code.',
 };
 
 export default function PickleballPage() {

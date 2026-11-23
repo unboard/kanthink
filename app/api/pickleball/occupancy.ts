@@ -1,7 +1,7 @@
 /**
  * Who is sitting in a pickleball room right now, read from Pusher's presence API.
  * Rooms have no database rows: the presence channel IS the room, and member ids carry
- * the seat (h_… host, g_… guest). Same env vars as lib/sync/pusherServer.ts.
+ * the seat (h_… host, g_… guests). Same env vars as lib/sync/pusherServer.ts.
  */
 
 import Pusher from 'pusher'
@@ -22,7 +22,7 @@ function getClient(): Pusher | null {
 
 export interface Occupancy {
   host: string | null
-  guest: string | null
+  guests: string[]
   count: number
 }
 
@@ -34,11 +34,11 @@ export async function roomOccupancy(code: string): Promise<Occupancy | null> {
   const body = (await res.json()) as { users?: { id: string }[] }
   const users = body.users ?? []
   let host: string | null = null
-  let guest: string | null = null
+  const guests: string[] = []
   for (const u of users) {
     const role = roleOfMember(u.id)
     if (role === 'host' && !host) host = u.id
-    if (role === 'guest' && !guest) guest = u.id
+    if (role === 'guest') guests.push(u.id)
   }
-  return { host, guest, count: users.length }
+  return { host, guests, count: users.length }
 }

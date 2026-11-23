@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'pickleball-family-doubles',
+    date: '2026-11-23',
+    kind: 'capability',
+    title: 'Pickleball: doubles, your own players, and catching fire',
+    body: 'Pickleball at /pickleball is now an arcade doubles game: everyone makes a character of themselves, picks a play style, and builds heat until they catch fire. Play on one computer with a shared keyboard or gamepads, or online with a room code; bots fill empty spots.',
+  },
+  {
+    id: 'made-for-you',
+    date: '2026-11-23',
+    kind: 'automation',
+    title: 'Kan makes things for you on its own',
+    body: 'Once a day, within a weekly budget you set ($3 to start), Kan picks something from what you share, say and read that would help you learn, earn or have fun, builds it with Gemini 4 Neon, and leaves it in Made for you in Kan City. Keep it or toss it and Kan learns.',
+  },
+  {
     id: 'small-game-skill',
     date: '2026-11-23',
     kind: 'capability',

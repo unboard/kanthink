@@ -10,11 +10,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { isPusherConfigured } from '@/lib/sync/pusherServer'
-import { makeRoomCode, normalizeRoomCode } from '@/app/pickleball/room'
+import { MAX_GUESTS, makeRoomCode, normalizeRoomCode } from '@/app/pickleball/room'
 import { roomOccupancy } from '../occupancy'
 
 const NOT_CONFIGURED = {
-  error: 'Online play needs the realtime service, and it is not set up here. Practice mode still works.',
+  error: 'Online play needs the realtime service, and it is not set up here. Playing on one computer still works.',
 }
 
 export async function POST() {
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   try {
     const occ = await roomOccupancy(code)
     if (!occ || !occ.host) return NextResponse.json({ code, status: 'missing' })
-    if (occ.guest) return NextResponse.json({ code, status: 'full' })
+    if (occ.guests.length >= MAX_GUESTS) return NextResponse.json({ code, status: 'full' })
     return NextResponse.json({ code, status: 'open' })
   } catch (error) {
     console.error('[Pickleball] room lookup failed:', error)

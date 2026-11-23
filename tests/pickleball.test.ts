@@ -89,6 +89,7 @@ describe('pickleball scoring and serving', () => {
     expect(s.players[1].x).toBeGreaterThan(0);
     // side 1 serving on even: its right is -x
     s.server = 1;
+    s.servingTeam = 1;
     s.scores = [3, 4];
     setupServe(s);
     expect(s.players[1].x).toBeLessThan(0);
@@ -200,7 +201,8 @@ describe('pickleball faults', () => {
     const dbl = { ...base, bounces: 1, ball: { x: 2, y: BALL_R + 0.01, z: 10, vx: 0, vy: -5, vz: 1 } };
     const d = step(dbl, [IDLE, IDLE]);
     expect(d.lastPoint?.reason).toBe('double-bounce');
-    expect(d.lastPoint?.faultBy).toBe(0);
+    expect(d.lastPoint?.faultTeam).toBe(0);
+    expect(d.lastPoint?.faultBy).toBe(-1); // a missed ball is the team's
     expect(d.server).toBe(1); // server failed to return → side out
 
     const net = { ...base, ball: { x: 0, y: 1, z: -0.05, vx: 0, vy: 0, vz: 20 } };
@@ -238,5 +240,149 @@ describe('pickleball room codes', () => {
     expect(normalizeRoomCode('HOLA')).toBeNull(); // O and L are ambiguous
     expect(normalizeRoomCode('AB')).toBeNull();
     expect(channelForRoom('HKTP')).toBe('presence-pickleball-HKTP');
+  });
+});
+
+// ————— doubles, hot streaks, play styles (the family edition) —————
+import {
+  FIRE_PER_RALLY, HEAT_MAX, HEAT_WINNER, STYLE_TRAITS, awardRally as award, receiverOf, scoreCall, teamPlayers,
+} from '@/app/pickleball/sim';
+import { awardsFor, type HudPlayer } from '@/app/pickleball/controller';
+import { PRESETS, botCharacter, sanitize, traitsOf } from '@/app/pickleball/characters';
+import { sanitizeLobby } from '@/app/pickleball/net';
+
+describe('doubles serving', () => {
+  it('starts 0–0–2: the first serving team gets one server, from the right', () => {
+    const s = createGame(1, { format: 'doubles' });
+    expect(s.players.map((p) => p.team)).toEqual([0, 0, 1, 1]);
+    expect(s.serverNum).toBe(2);
+    expect(scoreCall(s)).toBe('0–0–2');
+    expect(s.server).toBe(s.right[0]);
+    // the receiver is diagonal: the receiving team's right-court player
+    expect(receiverOf(s)).toBe(s.right[1]);
+    // a fault by that one server is a side out
+    award(s, 0, 'net', s.server);
+    expect(s.servingTeam).toBe(1);
+    expect(s.serverNum).toBe(1);
+    expect(s.server).toBe(s.right[1]);
+  });
+
+  it('a point swaps the server’s court; a first-server fault passes to the partner', () => {
+    const s = createGame(2, { format: 'doubles', firstTeam: 1 });
+    s.serverNum = 1;
+    const first = s.server;
+    award(s, 0, 'out', 0);
+    expect(s.scores).toEqual([0, 1]);
+    expect(s.server).toBe(first); // keeps serving…
+    expect(s.right[1]).not.toBe(first); // …from the other court now
+    award(s, 1, 'net', first);
+    expect(s.servingTeam).toBe(1);
+    expect(s.serverNum).toBe(2);
+    expect(s.server).not.toBe(first);
+    expect(teamPlayers(s, 1)).toContain(s.server);
+  });
+
+  it('only the diagonal receiver may return the serve', () => {
+    const s = createGame(4, { format: 'doubles' });
+    const rcv = receiverOf(s);
+    const other = teamPlayers(s, 1).find((i) => i !== rcv)!;
+    s.phase = 'rally';
+    s.hits = 1;
+    s.bounces = 1;
+    s.lastHitter = s.server;
+    s.ball = { x: s.players[other].x + 0.5, y: 1.5, z: s.players[other].z, vx: 0, vy: 0, vz: 0, hot: false };
+    s.players[other].swingT = SWING_SWEET;
+    const n = step(s, s.players.map(() => IDLE));
+    expect(n.hits).toBe(1); // the partner's swing passes through
+  });
+
+  it('bots play a whole doubles game, at every tier', () => {
+    let s = createGame(77, { format: 'doubles' });
+    let n = 0;
+    const tiers = ['chill', 'club', 'champ', 'club'] as const;
+    while (s.phase !== 'over' && n < 600_000) {
+      s = step(s, s.players.map((_, i) => botInput(s, i, { tier: tiers[i] })));
+      n++;
+    }
+    expect(s.phase).toBe('over');
+    expect(s.players.reduce((a, p) => a + p.stats.hits, 0)).toBeGreaterThan(40);
+  });
+});
+
+describe('hot streaks', () => {
+  it('a winner earns heat, and 100 catches fire', () => {
+    const s = createGame(5, { format: 'doubles' });
+    s.phase = 'rally';
+    s.lastHitter = 0;
+    award(s, 1, 'double-bounce');
+    expect(s.players[0].heat).toBeGreaterThanOrEqual(HEAT_WINNER);
+    s.players[0].heat = HEAT_MAX - 1;
+    s.lastHitter = 0;
+    award(s, 1, 'double-bounce');
+    expect(s.players[0].fire).toBeGreaterThan(0);
+    expect(s.calls.some((c) => c.kind === 'fire' && c.player === 0)).toBe(true);
+  });
+
+  it('losing a rally while on fire douses it; winning one burns fuel', () => {
+    const s = createGame(6, { format: 'doubles' });
+    s.players[0].fire = 100;
+    s.lastHitter = 1;
+    award(s, 1, 'out', 2);
+    expect(s.players[0].fire).toBe(100 - FIRE_PER_RALLY);
+    award(s, 0, 'net', 1);
+    expect(s.players[0].fire).toBe(0);
+    expect(s.calls.some((c) => c.kind === 'doused')).toBe(true);
+  });
+
+  it('teams that are behind heat up faster', () => {
+    const a = createGame(8, { format: 'doubles' });
+    const b = createGame(8, { format: 'doubles' });
+    b.scores = [2, 8];
+    for (const s of [a, b]) { s.lastHitter = 0; award(s, 1, 'double-bounce'); }
+    expect(b.players[0].heat).toBeGreaterThan(a.players[0].heat);
+  });
+});
+
+describe('play styles', () => {
+  it('Turbo Fun waits for the bounce instead of faulting the two-bounce rule', () => {
+    const turbo = createGame(9, { traits: [STYLE_TRAITS.pro, STYLE_TRAITS.turbo] });
+    turbo.phase = 'rally';
+    turbo.hits = 1;
+    turbo.bounces = 0;
+    turbo.lastHitter = 0;
+    turbo.ball = { x: turbo.players[1].x, y: 2, z: turbo.players[1].z + 1, vx: 0, vy: 0, vz: 0, hot: false };
+    turbo.players[1].swingT = SWING_SWEET;
+    const n = step(turbo, [IDLE, IDLE]);
+    expect(n.phase).toBe('rally');
+    expect(n.players[1].swingHit).toBe(false);
+
+    const pro = createGame(9);
+    Object.assign(pro, { phase: 'rally', hits: 1, bounces: 0, lastHitter: 0 });
+    pro.ball = { x: pro.players[1].x, y: 2, z: pro.players[1].z + 1, vx: 0, vy: 0, vz: 0, hot: false };
+    pro.players[1].swingT = SWING_SWEET;
+    expect(step(pro, [IDLE, IDLE]).lastPoint?.reason).toBe('two-bounce');
+  });
+
+  it('presets map to their play styles, and anything off the wire is cleaned', () => {
+    expect(traitsOf({ style: 'turbo' }).reach).toBeGreaterThan(traitsOf({ style: 'pro' }).reach);
+    expect(PRESETS.map((p) => p.c.style)).toContain('turbo');
+    const c = sanitize({ name: '<b>Gracie</b>!!', skin: 'red', style: 'cheat', number: 500 })!;
+    expect(c.name).toBe('bGracieb');
+    expect(c.skin).toMatch(/^#/);
+    expect(c.style).toBe('pro');
+    expect(c.number).toBe(99);
+    expect(sanitizeLobby({ seats: [{ kind: 'human', char: { name: 'A' } }] })).toBeNull();
+    expect(sanitizeLobby({ format: 'doubles', seats: [{}, {}, {}, {}] })?.seats.every((s) => s.kind === 'open')).toBe(true);
+  });
+
+  it('everyone gets a different award', () => {
+    const stats = (o: Partial<HudPlayer['stats']>) => ({ hits: 10, dinks: 0, lobs: 0, winners: 0, run: 500, fires: 0, bestStreak: 0, kitchen: 0, ...o });
+    const players: HudPlayer[] = [
+      { stats: stats({ fires: 2 }) }, { stats: stats({ dinks: 9 }) }, { stats: stats({ lobs: 5 }) }, { stats: stats({ kitchen: 2 }) },
+    ].map((p, i) => ({ name: `P${i}`, team: (i < 2 ? 0 : 1) as 0 | 1, heat: 0, fire: false, local: false, bot: false, away: false, char: botCharacter(i), ...p }));
+    const a = awardsFor(players);
+    expect(new Set(a.map((x) => x.title)).size).toBe(4);
+    expect(a[0].title).toBe('Fire Starter');
+    expect(a[1].title).toBe('Dink Chef');
   });
 });

@@ -1,31 +1,57 @@
-// Pickleball — room networking over a Pusher presence channel.
+// Pickleball: room networking over a Pusher presence channel.
 //
-// Host-authoritative: the room creator runs the sim and sends snapshots; the guest sends
-// only its inputs. Messages are Pusher client events (browser to browser, like the
-// Whisker Wilds playdates), which Pusher caps at 10 per second per connection, so every
-// send goes through a small token bucket. Between snapshots the guest extrapolates the
-// ball with the same physics the sim uses, so ~9 snapshots a second still looks smooth;
-// a hit, bounce or point jumps the queue so the guest sees it right away.
+// Host-authoritative: the room's creator runs the lobby and the sim and sends both to
+// everyone; guests send their characters once (hello) and then only their inputs.
+// Messages are Pusher client events (browser to browser, like the Whisker Wilds
+// playdates), which Pusher caps at 10 per second per connection, so every send goes
+// through a small token bucket. Between snapshots guests extrapolate the ball with the
+// same physics the sim uses, so ~9 snapshots a second still looks smooth; a hit, bounce
+// or point jumps the queue so everyone sees it right away.
 
 import Pusher, { type PresenceChannel } from 'pusher-js';
 import type { GameState } from './sim';
+import type { Character } from './characters';
+import { sanitize } from './characters';
+import type { BotTier } from './bot';
 import { channelForRoom, memberId, roleOfMember, type Role } from './room';
 
 export type NetStatus = 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export interface WireInput {
+  seat: number;
   mx: number;
   mz: number;
   /** count of swing presses so far; a press is any increase */
   sw: number;
 }
 
+export interface Seat {
+  kind: 'human' | 'bot' | 'open';
+  /** presence member id of the browser playing it; the host's own id for the host */
+  owner: string | null;
+  char: Character | null;
+  tier: BotTier;
+  /** its person dropped; a bot keeps it warm until they're back */
+  away: boolean;
+}
+
+export interface Lobby {
+  format: 'singles' | 'doubles';
+  seats: Seat[];
+  started: boolean;
+  /** bumps for every new game, so guests reset */
+  game: number;
+}
+
 export interface NetEvents {
   onStatus: (status: NetStatus) => void;
-  onOpponent: (present: boolean) => void;
-  onSnapshot: (state: GameState) => void;
-  onInput: (input: WireInput) => void;
-  onRematch: () => void;
+  /** guests currently in the room (host side), or whether the host is here (guest side) */
+  onMembers: (guests: string[], hostHere: boolean) => void;
+  onHello?: (from: string, chars: Character[]) => void;
+  onLobby?: (lobby: Lobby) => void;
+  onSnapshot?: (state: GameState) => void;
+  onInput?: (from: string, inputs: WireInput[]) => void;
+  onRematch?: (from: string) => void;
   /** fatal for this room: full, missing, not configured */
   onFatal: (message: string) => void;
 }
@@ -38,20 +64,37 @@ function round(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
-/** numbers rounded to 3 places; everything else as is. Keeps snapshots ~600 bytes. */
+/** numbers rounded to 3 places; everything else as is. Keeps snapshots small. */
 export function packState(s: GameState): GameState {
   return JSON.parse(JSON.stringify(s, (_k, v) => (typeof v === 'number' && !Number.isInteger(v) ? round(v) : v)));
 }
 
 function looksLikeState(v: unknown): v is GameState {
   const s = v as GameState;
-  return !!s && typeof s === 'object' && Array.isArray(s.players) && s.players.length === 2 &&
-    typeof s.ball === 'object' && Array.isArray(s.scores) && typeof s.phase === 'string';
+  return !!s && typeof s === 'object' && Array.isArray(s.players) && (s.players.length === 2 || s.players.length === 4) &&
+    typeof s.ball === 'object' && Array.isArray(s.scores) && typeof s.phase === 'string' && Array.isArray(s.traits);
 }
 
 function clampInt(v: unknown, lo: number, hi: number): number {
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
+}
+
+export function sanitizeLobby(v: unknown): Lobby | null {
+  const o = v as Lobby;
+  if (!o || typeof o !== 'object' || !Array.isArray(o.seats) || (o.seats.length !== 2 && o.seats.length !== 4)) return null;
+  return {
+    format: o.format === 'doubles' ? 'doubles' : 'singles',
+    started: Boolean(o.started),
+    game: clampInt(o.game, 0, 1e9),
+    seats: o.seats.map((s) => ({
+      kind: s?.kind === 'human' || s?.kind === 'bot' ? s.kind : 'open',
+      owner: typeof s?.owner === 'string' ? s.owner.slice(0, 40) : null,
+      char: s?.char ? sanitize(s.char) : null,
+      tier: s?.tier === 'chill' || s?.tier === 'champ' ? s.tier : 'club',
+      away: Boolean(s?.away),
+    })),
+  };
 }
 
 export function stableClientId(): string {
@@ -66,7 +109,7 @@ export function stableClientId(): string {
   try {
     sessionStorage.setItem(key, id);
   } catch {
-    // fine: reconnecting just takes a fresh seat
+    // fine: reconnecting just takes a fresh place
   }
   return id;
 }
@@ -78,7 +121,8 @@ export class RoomNet {
   private pusher: Pusher | null = null;
   private channel: PresenceChannel | null = null;
   private events: NetEvents;
-  private opponentId: string | null = null;
+  private guests = new Set<string>();
+  private hostId: string | null = null;
   private tokens = BURST;
   private lastRefill = 0;
   private lastSnapshotAt = -1;
@@ -88,8 +132,9 @@ export class RoomNet {
   private lastInputAt = 0;
   private wasConnected = false;
   private disposed = false;
+  private pendingLobby: Lobby | null = null;
 
-  constructor(code: string, role: Role, clientId: string, events: NetEvents) {
+  constructor(code: string, role: Role, clientId: string, name: string, events: NetEvents) {
     this.code = code;
     this.role = role;
     this.events = events;
@@ -98,7 +143,7 @@ export class RoomNet {
     const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
     const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
     if (!key || !cluster) {
-      setTimeout(() => events.onFatal('Online play needs the realtime service, and it is not set up here. Practice mode still works.'), 0);
+      setTimeout(() => events.onFatal('Online play needs the realtime service, and it is not set up here. Playing here on one computer still works.'), 0);
       return;
     }
 
@@ -107,7 +152,7 @@ export class RoomNet {
       cluster,
       forceTLS: true,
       authEndpoint: '/api/pickleball/pusher-auth',
-      auth: { params: { role, client_id: clientId, name: role === 'host' ? 'Host' : 'Guest' } },
+      auth: { params: { role, client_id: clientId, name: name.slice(0, 16) || (role === 'host' ? 'Host' : 'Guest') } },
     });
 
     this.pusher.connection.bind('state_change', (st: { current: string }) => {
@@ -126,75 +171,87 @@ export class RoomNet {
 
     ch.bind('pusher:subscription_succeeded', (members: { each: (cb: (m: { id: string }) => void) => void }) => {
       this.wasConnected = true;
-      const others: string[] = [];
       members.each((m) => {
-        if (m.id !== this.myId) others.push(m.id);
+        if (m.id === this.myId) return;
+        const r = roleOfMember(m.id);
+        if (r === 'host') this.hostId = m.id;
+        if (r === 'guest') this.guests.add(m.id);
       });
-      const wanted: Role = role === 'host' ? 'guest' : 'host';
-      const sameSeat = others.find((id) => roleOfMember(id) === role);
-      if (sameSeat) {
-        this.events.onFatal('That room is already full.');
+      if (role === 'host' && this.hostId) {
+        this.events.onFatal('Someone else is already hosting that room.');
         this.dispose();
         return;
       }
-      this.opponentId = others.find((id) => roleOfMember(id) === wanted) ?? null;
-      if (role === 'guest' && !this.opponentId) {
+      if (role === 'guest' && !this.hostId) {
         this.events.onFatal('No one is hosting that room. Check the code and try again.');
         this.dispose();
         return;
       }
       this.events.onStatus('connected');
-      this.events.onOpponent(!!this.opponentId);
+      this.emitMembers();
+      if (this.pendingLobby) this.sendLobby(this.pendingLobby);
     });
 
-    ch.bind('pusher:subscription_error', (err: { status?: number; error?: string }) => {
+    ch.bind('pusher:subscription_error', (err: { status?: number }) => {
       const status = err?.status;
       const msg = status === 403
-        ? 'That room is full. Only two players fit on a singles court.'
+        ? 'That room is full: four players is a whole court.'
         : status === 404
           ? 'No one is hosting that room. Check the code and try again.'
           : status === 503
-            ? 'Online play needs the realtime service, and it is not set up here. Practice mode still works.'
+            ? 'Online play needs the realtime service, and it is not set up here. Playing here on one computer still works.'
             : 'Could not join the room. Check the code and try again.';
       this.events.onFatal(msg);
       this.dispose();
     });
 
     ch.bind('pusher:member_added', (m: { id: string }) => {
-      const wanted: Role = role === 'host' ? 'guest' : 'host';
-      if (roleOfMember(m.id) !== wanted) return;
-      if (this.opponentId && this.opponentId !== m.id) return; // a seat stealer; ignore
-      this.opponentId = m.id;
-      this.events.onOpponent(true);
+      const r = roleOfMember(m.id);
+      if (r === 'guest') this.guests.add(m.id);
+      if (r === 'host') this.hostId = m.id;
+      this.emitMembers();
     });
-
     ch.bind('pusher:member_removed', (m: { id: string }) => {
-      if (m.id !== this.opponentId) return;
-      this.events.onOpponent(false);
-      // keep opponentId: the same client reconnecting gets its seat back
+      this.guests.delete(m.id);
+      if (m.id === this.hostId) this.hostId = null;
+      this.emitMembers();
     });
 
     // presence client events carry the sender's authenticated user id in metadata
+    const from = (meta?: { user_id?: string }) => meta?.user_id ?? '';
+    // only the host sends snapshots and lobbies, so a guest can accept them without metadata
+    const fromHost = (meta?: { user_id?: string }) => !meta?.user_id || roleOfMember(meta.user_id) === 'host';
     ch.bind('client-snap', (data: unknown, meta?: { user_id?: string }) => {
-      if (role !== 'guest' || !this.fromOpponent(meta)) return;
-      if (looksLikeState(data)) this.events.onSnapshot(data);
+      if (role !== 'guest' || !fromHost(meta)) return;
+      if (looksLikeState(data)) this.events.onSnapshot?.(data);
     });
-    ch.bind('client-input', (data: Partial<WireInput>, meta?: { user_id?: string }) => {
-      if (role !== 'host' || !this.fromOpponent(meta)) return;
-      this.events.onInput({
-        mx: clampInt(data?.mx, -1, 1),
-        mz: clampInt(data?.mz, -1, 1),
-        sw: clampInt(data?.sw, 0, 1e9),
-      });
+    ch.bind('client-lobby', (data: unknown, meta?: { user_id?: string }) => {
+      if (role !== 'guest' || !fromHost(meta)) return;
+      const lobby = sanitizeLobby(data);
+      if (lobby) this.events.onLobby?.(lobby);
+    });
+    ch.bind('client-hello', (data: { chars?: unknown[] }, meta?: { user_id?: string }) => {
+      if (role !== 'host' || roleOfMember(from(meta)) !== 'guest') return;
+      const chars = (Array.isArray(data?.chars) ? data.chars : []).slice(0, 2).map(sanitize).filter((c): c is Character => c !== null);
+      if (chars.length) this.events.onHello?.(from(meta), chars);
+    });
+    ch.bind('client-input', (data: { i?: Partial<WireInput>[] }, meta?: { user_id?: string }) => {
+      if (role !== 'host' || roleOfMember(from(meta)) !== 'guest') return;
+      const list = (Array.isArray(data?.i) ? data.i : []).slice(0, 2).map((x) => ({
+        seat: clampInt(x?.seat, 0, 3),
+        mx: clampInt(x?.mx, -1, 1),
+        mz: clampInt(x?.mz, -1, 1),
+        sw: clampInt(x?.sw, 0, 1e9),
+      }));
+      this.events.onInput?.(from(meta), list);
     });
     ch.bind('client-rematch', (_d: unknown, meta?: { user_id?: string }) => {
-      if (this.fromOpponent(meta)) this.events.onRematch();
+      if (role === 'host' && roleOfMember(from(meta)) === 'guest') this.events.onRematch?.(from(meta));
     });
   }
 
-  private fromOpponent(meta?: { user_id?: string }): boolean {
-    if (!meta?.user_id) return true; // older servers omit metadata; seat checks still apply
-    return meta.user_id === this.opponentId;
+  private emitMembers() {
+    this.events.onMembers([...this.guests], this.role === 'host' || !!this.hostId);
   }
 
   private take(now: number): boolean {
@@ -206,13 +263,33 @@ export class RoomNet {
     return true;
   }
 
-  private canSend(): boolean {
-    return !!this.channel && this.wasConnected && !!this.opponentId && !this.disposed;
+  private ready(): boolean {
+    return !!this.channel && this.wasConnected && !this.disposed;
+  }
+
+  private hasAudience(): boolean {
+    return this.role === 'host' ? this.guests.size > 0 : !!this.hostId;
+  }
+
+  /** guest: who I am and who I'm bringing */
+  sendHello(chars: Character[]) {
+    if (!this.ready()) return;
+    this.take(performance.now());
+    this.channel!.trigger('client-hello', { chars: chars.slice(0, 2) });
+  }
+
+  /** host: the lobby, whenever it changes (rare; never dropped) */
+  sendLobby(lobby: Lobby) {
+    if (!this.ready()) { this.pendingLobby = lobby; return; }
+    this.pendingLobby = null;
+    if (!this.hasAudience()) return;
+    this.take(performance.now());
+    this.channel!.trigger('client-lobby', lobby);
   }
 
   /** host: call every frame; sends when due, or right away after a hit/bounce/point */
   maybeSendSnapshot(state: GameState, now: number) {
-    if (!this.canSend()) return;
+    if (!this.ready() || !this.hasAudience()) return;
     const key = `${state.hitSeq}|${state.bounceSeq}|${state.pointSeq}|${state.phase}`;
     if (key !== this.lastSentKey) this.pendingUrgent = true;
     const due = this.lastSnapshotAt < 0 || (now - this.lastSnapshotAt) / 1000 >= SNAPSHOT_EVERY;
@@ -225,19 +302,18 @@ export class RoomNet {
   }
 
   /** guest: call every frame; sends on change, with a slow heartbeat */
-  maybeSendInput(input: WireInput, now: number) {
-    if (!this.canSend()) return;
-    const key = `${input.mx}|${input.mz}|${input.sw}`;
+  maybeSendInput(inputs: WireInput[], now: number) {
+    if (!this.ready() || !this.hasAudience() || !inputs.length) return;
+    const key = inputs.map((i) => `${i.seat}:${i.mx}|${i.mz}|${i.sw}`).join(',');
     if (key === this.lastInputKey && now - this.lastInputAt < 500) return;
     if (!this.take(now)) return;
     this.lastInputKey = key;
     this.lastInputAt = now;
-    this.channel!.trigger('client-input', input);
+    this.channel!.trigger('client-input', { i: inputs });
   }
 
   sendRematch() {
-    if (!this.canSend()) return;
-    // rare and must not be dropped: spend a token if there is one, send regardless
+    if (!this.ready()) return;
     this.take(performance.now());
     this.channel!.trigger('client-rematch', {});
   }
