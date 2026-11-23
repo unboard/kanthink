@@ -1,6 +1,6 @@
 'use client';
 
-// Pickleball: small shared pieces of the interface.
+// Small shared pieces of the court games' interface.
 
 import { useEffect, useRef } from 'react';
 import { drawPortrait, type Character } from './characters';
@@ -14,7 +14,13 @@ export const chip = (on: boolean) =>
   `rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${on ? 'bg-[#dcff3d] text-[#14200a]' : 'bg-white/[0.07] text-white/80 hover:bg-white/15'}`;
 
 export function Center({ children }: { children: React.ReactNode }) {
-  return <div className="absolute inset-0 flex items-center justify-center overflow-y-auto p-4">{children}</div>;
+  // the inner box grows past the screen instead of being clipped at the top, so short
+  // phone screens can scroll a tall panel from its beginning
+  return (
+    <div className="absolute inset-0 overflow-y-auto overscroll-contain">
+      <div className="flex min-h-full items-center justify-center p-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] sm:p-4">{children}</div>
+    </div>
+  );
 }
 
 export function Spinner() {

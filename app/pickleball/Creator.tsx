@@ -5,15 +5,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { FigurePreview } from './render';
+import type { FigureProp } from './figure';
 import {
   ACCESSORY_LABEL, FACE_LABEL, FACIAL_LABEL, HAIR_COLORS, HAIR_LABEL, HEIGHT_LABEL, OUTFIT_COLORS, OUTFIT_LABEL,
-  PADDLE_COLORS, PRESETS, SKINS, STYLE_LABEL, randomCharacter, type Character,
+  PADDLE_COLORS, PRESETS, SKINS, STYLE_LABEL, VICTORY_LABEL, randomCharacter, victoryOf, type Character,
 } from './characters';
 import { Label, Options, Portrait, Swatches, btnGhost, btnPrimary, chip, panel } from './ui';
 
 type Tab = 'look' | 'outfit' | 'play';
 
-export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
+export function Creator({ initial, isNew, onSave, onCancel, onDelete, prop = 'paddle' }: {
+  prop?: FigureProp;
   initial: Character;
   isNew: boolean;
   onSave: (c: Character) => void;
@@ -29,18 +31,18 @@ export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
   useEffect(() => {
     if (!stage.current) return;
     try {
-      preview.current = new FigurePreview(stage.current);
+      preview.current = new FigurePreview(stage.current, prop);
     } catch {
       preview.current = null; // no WebGL: the portrait still shows the look
     }
     return () => { preview.current?.dispose(); preview.current = null; };
-  }, []);
+  }, [prop]);
   const key = JSON.stringify({ ...c, name: '' });
   useEffect(() => { preview.current?.show(c); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`${panel} flex max-h-[calc(100dvh-32px)] w-[min(1040px,calc(100vw-32px))] flex-col overflow-hidden md:flex-row`}>
-      <div className="relative h-[260px] shrink-0 bg-gradient-to-b from-[#1b3352] to-[#0b1424] md:h-auto md:w-[44%]">
+    <div className={`${panel} flex max-h-[calc(100dvh-24px)] w-[min(1040px,calc(100vw-24px))] flex-col overflow-hidden md:flex-row`}>
+      <div className="relative h-[min(260px,30dvh)] shrink-0 bg-gradient-to-b from-[#1b3352] to-[#0b1424] md:h-auto md:w-[44%]">
         <div ref={stage} className="absolute inset-0" />
         <div className="pointer-events-none absolute left-5 top-5 flex items-center gap-3">
           <Portrait c={c} size={52} ring="#dcff3d" />
@@ -52,8 +54,8 @@ export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
         <div className="pointer-events-none absolute bottom-4 left-0 right-0 text-center text-[12px] text-white/40">Drag to spin</div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-white/10 p-5 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col [@media(max-height:520px)]:overflow-y-auto">
+        <div className="border-b border-white/10 p-5 pb-4 [@media(max-height:520px)]:p-3">
           {isNew && (
             <>
               <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-white/45">Start from</div>
@@ -77,13 +79,13 @@ export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
           <div className="mt-3 flex gap-1.5">
             {(['look', 'outfit', 'play'] as Tab[]).map((t) => (
               <button key={t} type="button" onClick={() => setTab(t)} className={chip(tab === t)}>
-                {t === 'look' ? 'Look' : t === 'outfit' ? 'Outfit & paddle' : 'How you play'}
+                {t === 'look' ? 'Look' : t === 'outfit' ? (prop === 'paddle' ? 'Outfit & paddle' : 'Outfit') : 'How you play'}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 [@media(max-height:520px)]:flex-none [@media(max-height:520px)]:overflow-visible">
           {tab === 'look' && (
             <>
               <Label>Size</Label>
@@ -115,8 +117,12 @@ export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
                 onChange={(e) => set('number', Math.max(0, Math.min(99, Math.round(Number(e.target.value) || 0))))}
                 className="w-24 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[18px] font-bold text-white outline-none focus:border-[#dcff3d]/70"
               />
-              <Label>Paddle</Label>
-              <Swatches colors={PADDLE_COLORS} value={c.paddle} onChange={(v) => set('paddle', v)} round={false} />
+              {prop === 'paddle' && (
+                <>
+                  <Label>Paddle</Label>
+                  <Swatches colors={PADDLE_COLORS} value={c.paddle} onChange={(v) => set('paddle', v)} round={false} />
+                </>
+              )}
             </>
           )}
           {tab === 'play' && (
@@ -137,11 +143,13 @@ export function Creator({ initial, isNew, onSave, onCancel, onDelete }: {
                   </button>
                 ))}
               </div>
+              <Label>Victory move</Label>
+              <Options value={victoryOf(c)} options={VICTORY_LABEL} onChange={(v) => { set('victory', v); setTimeout(() => preview.current?.cheer(), 60); }} />
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-2.5 border-t border-white/10 p-4">
+        <div className="flex items-center gap-2.5 border-t border-white/10 p-4 [@media(max-height:520px)]:sticky [@media(max-height:520px)]:bottom-0 [@media(max-height:520px)]:bg-[#0b1424] [@media(max-height:520px)]:p-2.5">
           <button type="button" className={btnPrimary} disabled={!c.name.trim()} onClick={() => onSave({ ...c, name: c.name.trim() })}>
             {isNew ? 'Save player' : 'Save changes'}
           </button>

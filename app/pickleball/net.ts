@@ -9,7 +9,8 @@
 // or point jumps the queue so everyone sees it right away.
 
 import Pusher, { type PresenceChannel } from 'pusher-js';
-import type { GameState } from './sim';
+import type { BaseState } from './sport';
+import { isVenue, type VenueId } from './venue';
 import type { Character } from './characters';
 import { sanitize } from './characters';
 import type { BotTier } from './bot';
@@ -41,6 +42,9 @@ export interface Lobby {
   started: boolean;
   /** bumps for every new game, so guests reset */
   game: number;
+  /** which game this room is playing, and where */
+  sport: 'pickleball' | 'volleyball';
+  venue: VenueId;
 }
 
 export interface NetEvents {
@@ -49,7 +53,7 @@ export interface NetEvents {
   onMembers: (guests: string[], hostHere: boolean) => void;
   onHello?: (from: string, chars: Character[]) => void;
   onLobby?: (lobby: Lobby) => void;
-  onSnapshot?: (state: GameState) => void;
+  onSnapshot?: (state: BaseState) => void;
   onInput?: (from: string, inputs: WireInput[]) => void;
   onRematch?: (from: string) => void;
   /** fatal for this room: full, missing, not configured */
@@ -65,12 +69,12 @@ function round(v: number): number {
 }
 
 /** numbers rounded to 3 places; everything else as is. Keeps snapshots small. */
-export function packState(s: GameState): GameState {
+export function packState(s: BaseState): BaseState {
   return JSON.parse(JSON.stringify(s, (_k, v) => (typeof v === 'number' && !Number.isInteger(v) ? round(v) : v)));
 }
 
-function looksLikeState(v: unknown): v is GameState {
-  const s = v as GameState;
+function looksLikeState(v: unknown): v is BaseState {
+  const s = v as BaseState;
   return !!s && typeof s === 'object' && Array.isArray(s.players) && (s.players.length === 2 || s.players.length === 4) &&
     typeof s.ball === 'object' && Array.isArray(s.scores) && typeof s.phase === 'string' && Array.isArray(s.traits);
 }
@@ -87,6 +91,8 @@ export function sanitizeLobby(v: unknown): Lobby | null {
     format: o.format === 'doubles' ? 'doubles' : 'singles',
     started: Boolean(o.started),
     game: clampInt(o.game, 0, 1e9),
+    sport: o.sport === 'volleyball' ? 'volleyball' : 'pickleball',
+    venue: isVenue(o.venue) ? o.venue : 'park',
     seats: o.seats.map((s) => ({
       kind: s?.kind === 'human' || s?.kind === 'bot' ? s.kind : 'open',
       owner: typeof s?.owner === 'string' ? s.owner.slice(0, 40) : null,
@@ -288,7 +294,7 @@ export class RoomNet {
   }
 
   /** host: call every frame; sends when due, or right away after a hit/bounce/point */
-  maybeSendSnapshot(state: GameState, now: number) {
+  maybeSendSnapshot(state: BaseState, now: number) {
     if (!this.ready() || !this.hasAudience()) return;
     const key = `${state.hitSeq}|${state.bounceSeq}|${state.pointSeq}|${state.phase}`;
     if (key !== this.lastSentKey) this.pendingUrgent = true;

@@ -30,6 +30,21 @@ export interface Character {
   number: number;
   paddle: string;
   style: PlayStyle;
+  /** what they do when they win a rally; picked for them from their name when unset */
+  victory?: Victory;
+}
+
+export type Victory = 'pump' | 'flex' | 'dance' | 'spin' | 'robot' | 'jump';
+export const VICTORY_LABEL: Record<Victory, string> = { pump: 'Fist pump', flex: 'Flex', dance: 'Dance', spin: 'Spin', robot: 'Robot', jump: 'Jump for joy' };
+/** how a face looks right now, on top of the character's usual expression */
+export type Mood = 'play' | 'blink' | 'effort' | 'joy' | 'sad' | 'ouch';
+
+export function victoryOf(c: Pick<Character, 'victory' | 'name' | 'number'>): Victory {
+  if (c.victory) return c.victory;
+  const all = Object.keys(VICTORY_LABEL) as Victory[];
+  let h = c.number;
+  for (const ch of c.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return all[h % all.length];
 }
 
 export const HEIGHT_SCALE: Record<HeightTier, number> = { kid: 0.82, youth: 0.91, adult: 1, tall: 1.08 };
@@ -95,10 +110,10 @@ export function traitsOf(c: Pick<Character, 'style'> | null | undefined): Traits
 
 export const BOT_NAMES = ['Dinky', 'Lobster', 'Spinny', 'Volley', 'Pickles', 'Kitchen', 'Zippy', 'Ace'];
 
-export function botCharacter(seat: number): Character {
+export function botCharacter(seat: number, names: string[] = BOT_NAMES): Character {
   const base = PRESETS[(seat + 1) % PRESETS.length].c;
   return {
-    ...base, id: `bot${seat}`, name: BOT_NAMES[seat % BOT_NAMES.length], style: 'arcade', facialHair: 'none',
+    ...base, id: `bot${seat}`, name: names[seat % names.length], style: 'arcade', facialHair: 'none',
     hair: (['spiky', 'afro', 'bob', 'buzz'] as const)[seat % 4], hairColor: HAIR_COLORS[(seat * 3 + 2) % HAIR_COLORS.length],
     skin: SKINS[(seat * 3 + 1) % SKINS.length], primary: OUTFIT_COLORS[(seat * 5 + 3) % OUTFIT_COLORS.length], accessory: 'none', face: 'focused',
   };
@@ -154,13 +169,16 @@ export function sanitize(v: unknown): Character | null {
     number: Math.max(0, Math.min(99, Math.round(Number(o.number) || 0))),
     paddle: color(o.paddle, PADDLE_COLORS[0]),
     style: oneOf(o.style, ['pro', 'arcade', 'turbo'] as const, 'pro'),
+    ...(typeof o.victory === 'string' && o.victory in VICTORY_LABEL ? { victory: o.victory as Victory } : {}),
   };
 }
 
 // ————— drawing a face (shared by the portrait and the 3D head texture) —————
 
 /** Draw a face looking out of a circle of radius r centered at (cx, cy). */
-export function drawFace(g: CanvasRenderingContext2D, c: Character, cx: number, cy: number, r: number) {
+export function drawFace(g: CanvasRenderingContext2D, c0: Character, cx: number, cy: number, r: number, mood: Mood = 'play') {
+  // a mood borrows the nearest of the drawn expressions, then changes the eyes and mouth
+  const c: Character = mood === 'effort' ? { ...c0, face: 'focused' } : mood === 'joy' ? { ...c0, face: 'grin' } : c0;
   const ink = '#1b1b22';
   const lw = Math.max(2, r * 0.07);
   g.lineCap = 'round';
@@ -198,8 +216,32 @@ export function drawFace(g: CanvasRenderingContext2D, c: Character, cx: number, 
   };
   const left = cx - ex;
   const right = cx + ex;
-  eye(left, c.face === 'sparkle' ? 'sparkle' : 'dot');
-  eye(right, c.face === 'wink' ? 'closed' : c.face === 'sparkle' ? 'sparkle' : 'dot');
+  if (mood === 'blink') {
+    eye(left, 'closed');
+    eye(right, 'closed');
+  } else if (mood === 'joy') {
+    // squeezed shut and smiling
+    for (const x of [left, right]) {
+      g.beginPath();
+      g.arc(x, ey + r * 0.06, r * 0.12, Math.PI * 1.1, Math.PI * 1.9);
+      g.stroke();
+    }
+  } else if (mood === 'ouch') {
+    // seeing stars
+    g.lineWidth = lw * 0.9;
+    for (const x of [left, right]) {
+      g.beginPath();
+      g.moveTo(x - r * 0.11, ey - r * 0.11);
+      g.lineTo(x + r * 0.11, ey + r * 0.11);
+      g.moveTo(x + r * 0.11, ey - r * 0.11);
+      g.lineTo(x - r * 0.11, ey + r * 0.11);
+      g.stroke();
+    }
+    g.lineWidth = lw;
+  } else {
+    eye(left, c.face === 'sparkle' ? 'sparkle' : 'dot');
+    eye(right, c.face === 'wink' ? 'closed' : c.face === 'sparkle' ? 'sparkle' : 'dot');
+  }
   // brows
   g.lineWidth = lw * 0.9;
   const brow = (x: number, tilt: number) => {
@@ -208,7 +250,7 @@ export function drawFace(g: CanvasRenderingContext2D, c: Character, cx: number, 
     g.lineTo(x + r * 0.13, ey - r * 0.25 - tilt);
     g.stroke();
   };
-  const tilt = c.face === 'focused' ? r * 0.06 : c.face === 'smirk' ? r * 0.03 : -r * 0.02;
+  const tilt = mood === 'sad' || mood === 'ouch' ? -r * 0.09 : mood === 'effort' ? r * 0.09 : c.face === 'focused' ? r * 0.06 : c.face === 'smirk' ? r * 0.03 : -r * 0.02;
   brow(left, -tilt);
   brow(right, tilt);
   // cheeks
@@ -221,7 +263,28 @@ export function drawFace(g: CanvasRenderingContext2D, c: Character, cx: number, 
   // mouth
   const my = cy + r * 0.32;
   g.lineWidth = lw;
-  if (c.face === 'grin' || c.face === 'sparkle') {
+  if (mood === 'sad') {
+    g.beginPath();
+    g.arc(cx, my + r * 0.2, r * 0.2, 1.15 * Math.PI, 1.85 * Math.PI);
+    g.stroke();
+  } else if (mood === 'ouch') {
+    g.beginPath();
+    g.moveTo(cx - r * 0.24, my + r * 0.05);
+    for (let k = 1; k <= 6; k++) g.lineTo(cx - r * 0.24 + (k / 6) * r * 0.48, my + r * 0.05 + (k % 2 ? -1 : 1) * r * 0.05);
+    g.stroke();
+  } else if (mood === 'effort') {
+    // gritted teeth
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.roundRect(cx - r * 0.22, my - r * 0.06, r * 0.44, r * 0.18, r * 0.05);
+    g.fill();
+    g.stroke();
+    g.lineWidth = lw * 0.5;
+    g.beginPath();
+    for (const k of [-0.11, 0, 0.11]) { g.moveTo(cx + r * k, my - r * 0.06); g.lineTo(cx + r * k, my + r * 0.12); }
+    g.stroke();
+    g.lineWidth = lw;
+  } else if (c.face === 'grin' || c.face === 'sparkle') {
     g.beginPath();
     g.moveTo(cx - r * 0.26, my - r * 0.04);
     g.quadraticCurveTo(cx, my + r * 0.3, cx + r * 0.26, my - r * 0.04);

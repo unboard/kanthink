@@ -3,8 +3,13 @@
 Arcade doubles (or singles) pickleball at `/pickleball`, built for a family to play
 together: everyone makes a character of themselves, plays with a play style that suits
 them, and builds heat until they catch fire. Play on one computer (shared keyboard and
-gamepads, bots in empty spots) or online with a four-letter room code. Everything on
-screen and every sound is generated in code: no image, model, texture, audio or font files.
+gamepads, bots in empty spots), on a phone or tablet with an on-screen stick and button, or
+online with a four-letter room code. Pick where to play: a park at sunset, a beach, an
+indoor arena or a city rooftop at night. Everything on screen and every sound is generated
+in code: no image, model, texture, audio or font files.
+
+This folder is also the engine `/volleyball` runs on (see `app/volleyball/README.md`).
+Anything not named for pickleball here is shared: `sport.ts` is the contract a sport fills in.
 
 The game design numbers (characters, hot streaks, play styles, announcer lines, bot
 tiers, family moments) came from a Gemini 4 Neon design pass and are noted where used.
@@ -55,18 +60,28 @@ bounce instead of faulting). Bots leave a ball to a human teammate who's close t
 
 | File | Role |
 | --- | --- |
-| `sim.ts` | Deterministic rules, physics and hot streaks. `createGame(seed, opts)`, `step(state, inputs)` |
-| `bot.ts` | Bots: a pure function from state to the same input a keyboard produces; doubles positioning, tiers |
-| `characters.ts` | Character model, presets, storage, sanitizing, the 2D portrait and face drawing |
-| `figure.ts` | The 3D big-head character, shared by the court and the creator's turntable |
-| `render.ts` | Three.js scene; reads state, never writes it. Also `FigurePreview` for the creator |
-| `controller.ts` | Game loop: seats, keyboard/gamepads, the online lobby (host) and prediction (guest), callouts, awards |
-| `net.ts` | Pusher presence-channel client: hello, lobby, snapshots, inputs, rate-limited client events |
-| `room.ts` | Room codes and member ids, shared by client and server |
+| `sim.ts` | Pickleball's deterministic rules, physics and hot streaks. `createGame(seed, opts)`, `step(state, inputs)` |
+| `bot.ts` | Pickleball bots: a pure function from state to the same input a keyboard produces |
+| `pickle.ts` | Pickleball as a `Sport`: announcer lines, awards, poses, serve target, kitchen warning |
+| `sport.ts` | What any court sport provides to the shared pieces below |
+| `characters.ts` | Character model, presets, storage, sanitizing, victory moves, the 2D portrait |
+| `figure.ts` | The 3D person: a lofted body (torso, limbs with muscle shape, fingers, sneakers), a sculpted head with eyes, lids, brows, nose, ears and a mouth, printed jersey, hair; and the animator (run, ready, swing, bump, set, spike, block, dive, knock-down, victory moves, sulk, blinking, moods) |
+| `venue.ts` | The four venues: sky, light, the surface and its lines, the net, surroundings, the crowd |
+| `render.ts` | Three.js view: ball, camera, sparks, dust, shockwaves, confetti, nameplates, bloom, quality fallback. Also `FigurePreview` |
+| `controller.ts` | Game loop for any sport: seats, keyboard/gamepads/touch, the online lobby (host) and prediction (guest), callouts, slow motion |
+| `net.ts`, `room.ts` | Pusher presence-channel client and room codes |
 | `audio.ts` | Synthesized hits, bounces, points and announcer stingers (Web Audio) |
-| `Pickleball.tsx`, `Creator.tsx`, `Hud.tsx`, `ui.tsx` | React: menus, creator, setup, lobby, HUD, awards |
+| `CourtGame.tsx`, `Creator.tsx`, `Hud.tsx`, `Touch.tsx`, `ui.tsx` | React: menus, venue picker, creator, setup, lobby, HUD, awards, touch controls |
 | `app/api/pickleball/room` | `POST` a free room code, `GET ?code=` open/full/missing |
 | `app/api/pickleball/pusher-auth` | Presence auth for `presence-pickleball-XXXX`: one host, up to three guests |
+
+## Phones and slower machines
+
+Touch devices get an on-screen stick (left half of the screen) and one button, and the
+menus scroll on short screens. The renderer has two paths: "high" (bloom, 4x MSAA, 2k
+shadows) and "low" (no post-processing, smaller shadows, lower pixel ratio). Touch devices
+and low-memory machines start on low; anything else steps down by itself if it can't hold
+its frame rate in the first couple of seconds.
 
 ## Setup and env vars
 

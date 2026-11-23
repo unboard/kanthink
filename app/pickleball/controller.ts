@@ -9,19 +9,21 @@
 // and the keys follow the screen.
 
 import { botCharacter, traitsOf, type Character } from './characters';
-import { botInput, type BotTier } from './bot';
+import type { BotTier } from './bot';
 import { Sfx } from './audio';
 import { CourtRenderer, type RenderView } from './render';
 import { RoomNet, stableClientId, type Lobby, type NetStatus, type Seat, type WireInput } from './net';
-import {
-  DT, IDLE, SWING_TOTAL, cloneState, createGame, serveCourtSign, movePlayer, rematch, scoreCall, sgn, stepBall, step,
-  type CallKind, type Format, type GameState, type Player, type PlayerInput, type PointResult, type PlayerStats, type Team,
-} from './sim';
+import { IDLE, sgn, type Format, type PlayerInput, type Team } from './sim';
+import type { BasePlayer, BasePoint, BaseState, Sport } from './sport';
+import type { VenueId } from './venue';
 import type { Role } from './room';
+
+type GameState = BaseState;
+type Player = BasePlayer;
 
 export type Mode = 'attract' | 'local' | 'host' | 'guest';
 export type LinkStatus = 'local' | NetStatus;
-export type Device = 'keys' | 'keysL' | 'keysR' | 'pad0' | 'pad1' | 'pad2' | 'pad3';
+export type Device = 'keys' | 'keysL' | 'keysR' | 'pad0' | 'pad1' | 'pad2' | 'pad3' | 'touch';
 
 export const DEVICE_LABEL: Record<Device, string> = {
   keys: 'Keyboard',
@@ -31,6 +33,7 @@ export const DEVICE_LABEL: Record<Device, string> = {
   pad1: 'Gamepad 2',
   pad2: 'Gamepad 3',
   pad3: 'Gamepad 4',
+  touch: 'Touch screen',
 };
 
 export interface LocalPlayer {
@@ -54,12 +57,12 @@ export interface HudPlayer {
   bot: boolean;
   away: boolean;
   char: Character;
-  stats: PlayerStats;
+  stats: object;
 }
 
 export interface Callout {
   seq: number;
-  kind: CallKind;
+  kind: string;
   text: string;
   sub: string;
   team: Team | null;
@@ -74,10 +77,14 @@ export interface Hud {
   server: number;
   serverNum: 1 | 2;
   scoreCall: string;
+  sport: 'pickleball' | 'volleyball';
+  venue: VenueId;
+  /** someone here is playing on the touch screen */
+  touch: boolean;
   players: HudPlayer[];
   localSeats: number[];
   myTeam: Team;
-  lastPoint: PointResult | null;
+  lastPoint: BasePoint | null;
   pointSeq: number;
   winner: Team | -1;
   status: LinkStatus;
@@ -99,32 +106,6 @@ const KEYS = {
 } as const;
 const GAME_KEYS = new Set<string>(Object.values(KEYS).flatMap((k) => [...k.up, ...k.down, ...k.left, ...k.right, ...k.swing]));
 
-/** The announcer: the Neon design pass's lines, with names. */
-function callText(kind: CallKind, name: string, n?: number): { text: string; sub: string } {
-  switch (kind) {
-    case 'start': return { text: 'Paddles up!', sub: 'Let’s pickle' };
-    case 'side-out': return { text: 'New server!', sub: `${name} has the ball` };
-    case 'ace': return { text: 'Untouchable!', sub: `${name}, right past them` };
-    case 'kitchen': return { text: 'Whoa! Toes in the kitchen!', sub: `${name} gets the chef hat` };
-    case 'two-bounce': return { text: 'Hold your horses!', sub: 'Let it bounce' };
-    case 'dink': return { text: 'Silky soft!', sub: `${name}, right in the pocket` };
-    case 'lob': return { text: 'Sky high!', sub: `${name} says look up` };
-    case 'smash': return { text: 'Boom!', sub: `${name}, straight to the floor` };
-    case 'rally10': return { text: `${n ?? 10} shots!`, sub: 'Nobody is blinking' };
-    case 'rally20': return { text: `${n ?? 20} shots!`, sub: 'Legendary rally' };
-    case 'warm': return { text: 'Heating up!', sub: `Watch ${name}’s paddle` };
-    case 'fire': return { text: `${name} is on fire!`, sub: 'Call the fire truck' };
-    case 'cooled': return { text: 'Ice cold defense!', sub: `${name} is out of flames` };
-    case 'doused': return { text: 'Doused!', sub: `${name}’s fire is out` };
-    case 'combo': return { text: 'Team combo!', sub: 'Teamwork magic' };
-    case 'streak': return { text: `${name} ×${n ?? 3}`, sub: 'Can’t miss right now' };
-    case 'tied': return { text: 'All tied up!', sub: 'We got a game' };
-    case 'game-point': return { text: 'Game point!', sub: 'One more for glory' };
-    case 'overtime': return { text: 'Overtime!', sub: 'Gotta win by two' };
-    case 'win': return { text: 'Champs of the court!', sub: 'High fives all around' };
-  }
-}
-
 function newSeed(): number {
   // only used to pick a game's seed; the sim itself never touches Math.random
   return (Math.random() * 4294967296) >>> 0;
@@ -136,6 +117,12 @@ function teamsFor(format: Format): Team[] {
 
 export class Controller {
   private renderer: CourtRenderer;
+  private sport: Sport;
+  private container: HTMLElement;
+  private venue: VenueId;
+  /** the screen's stick and button, for phones and tablets */
+  private touchStick: [number, number] = [0, 0];
+  private slowUntil = 0;
   private sfx = new Sfx();
   private onHud: (h: Hud) => void;
   private onFatal: (msg: string) => void;
@@ -184,8 +171,11 @@ export class Controller {
   private fived = -1;
   private hudKey = '';
 
-  constructor(container: HTMLElement, onHud: (h: Hud) => void, onFatal: (msg: string) => void) {
-    this.renderer = new CourtRenderer(container);
+  constructor(container: HTMLElement, sport: Sport, venue: VenueId, onHud: (h: Hud) => void, onFatal: (msg: string) => void) {
+    this.sport = sport;
+    this.container = container;
+    this.venue = venue;
+    this.renderer = new CourtRenderer(container, sport, venue);
     this.onHud = onHud;
     this.onFatal = onFatal;
     this.state = this.attractGame();
@@ -199,14 +189,32 @@ export class Controller {
     if (process.env.NODE_ENV !== 'production') (window as unknown as { __pb: Controller }).__pb = this;
   }
 
+  private bot(seat: number): Character {
+    return botCharacter(seat, this.sport.botNames);
+  }
+
+  /** move the game somewhere else; in a room only the host can */
+  setVenue(venue: VenueId) {
+    if (this.mode === 'guest') return;
+    this.applyVenue(venue);
+    if (this.lobby) { this.lobby.venue = venue; this.lobbyChanged(); }
+  }
+
+  private applyVenue(venue: VenueId) {
+    if (venue === this.venue) return;
+    this.venue = venue;
+    this.renderer.dispose();
+    this.renderer = new CourtRenderer(this.container, this.sport, venue);
+  }
+
   // ————— modes —————
 
   private attractGame(): GameState {
     this.format = 'doubles';
-    this.chars = [0, 1, 2, 3].map(botCharacter);
+    this.chars = [0, 1, 2, 3].map((i) => this.bot(i));
     this.bots = ['club', 'club', 'club', 'club'];
     this.locals.clear();
-    return createGame(newSeed(), { format: 'doubles', traits: this.chars.map(traitsOf) });
+    return this.sport.createGame(newSeed(), { format: 'doubles', traits: this.chars.map(traitsOf) });
   }
 
   startAttract() {
@@ -225,14 +233,14 @@ export class Controller {
     this.mode = 'local';
     this.format = format;
     this.applyPlan(plan);
-    this.state = createGame(newSeed(), { format, traits: this.chars.map(traitsOf) });
+    this.state = this.sport.createGame(newSeed(), { format, traits: this.chars.map(traitsOf) });
     this.view = this.state;
     this.syncHeard(this.state);
     this.heard.call = 0;
   }
 
   private applyPlan(plan: SeatPlan[]) {
-    this.chars = plan.map((p, i) => p.char ?? botCharacter(i));
+    this.chars = plan.map((p, i) => p.char ?? this.bot(i));
     this.bots = plan.map((p) => (p.kind === 'bot' ? p.tier ?? 'club' : null));
     this.locals.clear();
     plan.forEach((p, i) => { if (p.kind === 'human' && p.device) this.locals.set(i, p.device); });
@@ -252,7 +260,7 @@ export class Controller {
     const seats: Seat[] = teamsFor(format).map(() => ({ kind: 'open', owner: null, char: null, tier: 'club', away: false }));
     // the host's players take team 0 (two of them share it in doubles)
     this.myLocals.forEach((lp, k) => { seats[k] = { kind: 'human', owner: id, char: lp.char, tier: 'club', away: false }; });
-    this.lobby = { format, seats, started: false, game: 0 };
+    this.lobby = { format, seats, started: false, game: 0, sport: this.sport.id, venue: this.venue };
     this.guests = [];
     this.rematchAsks.clear();
     this.status = 'connecting';
@@ -336,7 +344,7 @@ export class Controller {
     if (this.mode !== 'host' || !this.lobby || this.lobby.started) return;
     const s = this.lobby.seats[i];
     if (!s || s.kind === 'human') return;
-    this.lobby.seats[i] = { ...s, ...patch, char: patch.kind === 'bot' ? botCharacter(i) : patch.kind === 'open' ? null : s.char };
+    this.lobby.seats[i] = { ...s, ...patch, char: patch.kind === 'bot' ? this.bot(i) : patch.kind === 'open' ? null : s.char };
     this.lobbyChanged();
   }
 
@@ -352,12 +360,12 @@ export class Controller {
   /** host: start the game; empty seats get bots */
   startOnlineGame() {
     if (this.mode !== 'host' || !this.lobby) return;
-    this.lobby.seats = this.lobby.seats.map((s, i) => (s.kind === 'open' ? { kind: 'bot', owner: null, char: botCharacter(i), tier: s.tier, away: false } : s));
+    this.lobby.seats = this.lobby.seats.map((s, i) => (s.kind === 'open' ? { kind: 'bot', owner: null, char: this.bot(i), tier: s.tier, away: false } : s));
     this.lobby.started = true;
     this.lobby.game += 1;
     this.rematchAsks.clear();
     this.adoptLobby(this.lobby);
-    this.state = createGame(newSeed(), { format: this.lobby.format, traits: this.chars.map(traitsOf) });
+    this.state = this.sport.createGame(newSeed(), { format: this.lobby.format, traits: this.chars.map(traitsOf) });
     this.view = this.state;
     this.syncHeard(this.state);
     this.heard.call = 0;
@@ -381,7 +389,7 @@ export class Controller {
   /** derive characters, bots and this computer's seats from the lobby */
   private adoptLobby(lobby: Lobby) {
     this.format = lobby.format;
-    this.chars = lobby.seats.map((s, i) => s.char ?? botCharacter(i));
+    this.chars = lobby.seats.map((s, i) => s.char ?? this.bot(i));
     this.bots = lobby.seats.map((s) => (s.kind === 'bot' || s.away || s.kind === 'open' ? s.tier : null));
     const me = this.myId();
     this.locals.clear();
@@ -395,6 +403,12 @@ export class Controller {
   }
 
   private receiveLobby(lobby: Lobby) {
+    if (lobby.sport !== this.sport.id) {
+      this.startAttract();
+      this.onFatal(`That room is playing ${lobby.sport}. Open ${lobby.sport === 'volleyball' ? 'Volleyball' : 'Pickleball'} and join with the same code.`);
+      return;
+    }
+    this.applyVenue(lobby.venue);
     const wasGame = this.lobby?.game;
     this.lobby = lobby;
     this.adoptLobby(lobby);
@@ -408,14 +422,14 @@ export class Controller {
 
   requestRematch() {
     if (this.mode === 'local') {
-      this.state = rematch(this.state, newSeed());
+      this.state = this.sport.rematch(this.state, newSeed());
       this.syncHeard(this.state);
       this.heard.call = 0;
       return;
     }
     if (this.mode === 'host') {
       this.rematchAsks.clear();
-      this.state = rematch(this.state, newSeed());
+      this.state = this.sport.rematch(this.state, newSeed());
       this.syncHeard(this.state);
       this.heard.call = 0;
       return;
@@ -449,7 +463,7 @@ export class Controller {
     this.sfx.unlock();
     if (!e.repeat) {
       for (const [seat, dev] of this.locals) {
-        if (dev.startsWith('pad')) continue;
+        if (dev.startsWith('pad') || dev === 'touch') continue;
         if ((KEYS[dev as keyof typeof KEYS].swing as readonly string[]).includes(e.code)) this.press(seat);
       }
     }
@@ -470,6 +484,17 @@ export class Controller {
     if (this.mode === 'guest' && (this.ownSwing.get(seat) ?? -1) < 0) this.ownSwing.set(seat, 0);
   }
 
+  /** the on-screen stick: x right, y up, each -1..1 */
+  setTouchStick(x: number, y: number) {
+    this.touchStick = [Math.abs(x) > 0.35 ? Math.sign(x) : 0, Math.abs(y) > 0.35 ? Math.sign(y) : 0];
+  }
+
+  /** the on-screen button */
+  touchPress() {
+    this.sfx.unlock();
+    for (const [seat, dev] of this.locals) if (dev === 'touch') this.press(seat);
+  }
+
   /** gamepads: poll once a frame; a button going down is a press */
   private pollPads() {
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
@@ -485,6 +510,7 @@ export class Controller {
 
   /** screen-space direction for a device: x right, y up */
   private stick(dev: Device): [number, number] {
+    if (dev === 'touch') return this.touchStick;
     if (dev.startsWith('pad')) {
       const pad = navigator.getGamepads?.()[Number(dev.slice(3))];
       if (!pad) return [0, 0];
@@ -540,7 +566,7 @@ export class Controller {
     const prevPhase = this.view.phase;
     const prevPoint = this.view.pointSeq;
     this.snapAt = performance.now();
-    this.view = cloneState(s);
+    this.view = this.sport.cloneState(s);
     for (const seat of this.locals.keys()) {
       const sp = s.players[seat];
       if (!sp) continue;
@@ -555,7 +581,8 @@ export class Controller {
   private applyOwn() {
     for (const [seat, own] of this.own) {
       if (!this.view.players[seat]) continue;
-      this.view.players[seat] = { ...this.view.players[seat], x: own.x, z: own.z, vx: own.vx, vz: own.vz, swingT: this.ownSwing.get(seat) ?? -1 };
+      const sw = this.sport.id === 'pickleball' ? { swingT: this.ownSwing.get(seat) ?? -1 } : {};
+      this.view.players[seat] = { ...this.view.players[seat], x: own.x, z: own.z, vx: own.vx, vz: own.vz, ...sw };
     }
   }
 
@@ -564,7 +591,7 @@ export class Controller {
     v.phaseTicks += 1;
     for (const [seat, own] of this.own) {
       const input = { ...this.localInput(seat, v), swing: false };
-      movePlayer(own, input, v.phase, v.server === seat, serveCourtSign(v, own.team), v.traits[seat]?.speed ?? 1);
+      this.sport.moveOwn(v, seat, own, input);
       const snap = this.snapOwn.get(seat);
       // standing still, both sides agree on where you are; drift back toward the host's copy
       if (input.mx === 0 && input.mz === 0 && snap) {
@@ -572,24 +599,9 @@ export class Controller {
         own.z += (snap.z - own.z) * 0.04;
       }
       const sw = this.ownSwing.get(seat) ?? -1;
-      if (sw >= 0) this.ownSwing.set(seat, sw + 1 > SWING_TOTAL ? -1 : sw + 1);
+      if (sw >= 0) this.ownSwing.set(seat, sw + 1 > this.sport.swingTicks ? -1 : sw + 1);
     }
-    const age = (performance.now() - this.snapAt) / 1000;
-    if (age < 0.3) {
-      v.players.forEach((o, i) => {
-        if (this.own.has(i)) return;
-        o.x += o.vx * DT;
-        o.z += o.vz * DT;
-        if (o.swingT >= 0 && o.swingT < SWING_TOTAL) o.swingT += 1;
-      });
-    }
-    if (v.phase === 'serve') {
-      const sp = v.players[v.server];
-      const s = sgn(sp.team);
-      v.ball = { ...v.ball, x: sp.x + s * 1.1, y: 1.6, z: sp.z - s * 0.9, vx: 0, vy: 0, vz: 0 };
-    } else if (age < 1.5) {
-      stepBall(v.ball);
-    }
+    this.sport.coast(v, (performance.now() - this.snapAt) / 1000, (seat) => this.own.has(seat));
     this.applyOwn();
   }
 
@@ -600,6 +612,9 @@ export class Controller {
     const dt = this.last ? Math.min(0.1, (now - this.last) / 1000) : 1 / 60;
     this.last = now;
     this.pollPads();
+    const DT = this.sport.dt;
+    // a super spike gets a beat of slow motion
+    const scale = now < this.slowUntil ? 0.28 : 1;
 
     const playing = this.mode !== 'host' && this.mode !== 'guest' ? true : !!this.lobby?.started;
     if (this.mode === 'guest') {
@@ -612,7 +627,7 @@ export class Controller {
       }
       this.latched.clear();
       if (playing && this.hostHere && this.status === 'connected') {
-        this.acc += dt;
+        this.acc += dt * scale;
         while (this.acc >= DT) {
           this.guestStep();
           this.acc -= DT;
@@ -623,9 +638,9 @@ export class Controller {
     } else {
       const live = playing && (this.mode !== 'host' || this.status === 'connected');
       if (live) {
-        this.acc += dt;
+        this.acc += dt * scale;
         while (this.acc >= DT) {
-          this.state = step(this.state, this.inputsFor(this.state));
+          this.state = this.sport.step(this.state, this.inputsFor(this.state));
           this.acc -= DT;
           if (this.mode === 'attract' && this.state.phase === 'over' && this.state.phaseTicks > 240) {
             this.state = this.attractGame();
@@ -649,6 +664,7 @@ export class Controller {
       focus,
       broadcast: this.broadcast(),
       showServeTarget: this.mode !== 'attract' && focus.includes(this.view.server),
+      orbit: this.mode === 'attract',
     };
     this.renderer.render(this.view, rv, dt);
     if (this.callout && now - this.calloutAt > 1900) this.callout = null;
@@ -669,7 +685,7 @@ export class Controller {
         return input;
       }
       if (this.mode === 'host' && seat?.kind === 'human' && !seat.away) return IDLE;
-      return botInput(s, i, { tier: this.bots[i] ?? 'club', humans });
+      return this.sport.botInput(s, i, { tier: this.bots[i] ?? 'club', humans });
     });
     this.latched.clear(); // a press is consumed by exactly one step
     return out;
@@ -688,13 +704,14 @@ export class Controller {
     const fresh = s.calls.filter((c) => c.seq > this.heard.call);
     if (!fresh.length) return;
     this.heard.call = s.callSeq;
-    // the most exciting one wins the banner; every one gets its sound
-    const rank: CallKind[] = ['win', 'fire', 'doused', 'cooled', 'tied', 'overtime', 'game-point', 'kitchen', 'ace', 'smash', 'combo', 'streak', 'rally20', 'rally10', 'dink', 'lob', 'two-bounce', 'warm', 'side-out', 'start'];
+    // the most exciting one wins the banner
+    const rank = this.sport.callRank;
     const best = [...fresh].sort((a, b) => rank.indexOf(a.kind) - rank.indexOf(b.kind))[0];
-    const t = callText(best.kind, this.nameOf(best.player), best.n);
+    const t = this.sport.callText(best.kind, this.nameOf(best.player), best.n);
     this.callout = { seq: best.seq, kind: best.kind, ...t, team: s.players[best.player]?.team ?? null };
     this.calloutAt = now;
     this.sfx.call(best.kind);
+    if (fresh.some((c) => this.sport.slowmo.includes(c.kind))) this.slowUntil = now + 520;
   }
 
   private playSounds(s: GameState) {
@@ -702,8 +719,8 @@ export class Controller {
       this.syncHeard(s);
       return;
     }
-    if (s.hitSeq > this.heard.hit) this.sfx.hit(s.ball.hot ? 1.4 : 1);
-    if (s.bounceSeq > this.heard.bounce && s.phase === 'rally') this.sfx.bounce();
+    if (s.hitSeq > this.heard.hit) this.sfx.hit(s.ball.super ? 1.9 : s.ball.hot ? 1.4 : 1, this.sport.ball);
+    if (s.bounceSeq > this.heard.bounce && (s.phase === 'rally' || this.sport.ball === 'volley')) this.sfx.bounce(this.sport.ball);
     if (s.pointSeq > this.heard.point && s.lastPoint) {
       const mine = [...this.locals.keys()].map((i) => s.players[i]?.team);
       this.sfx.point(!mine.length || !mine.includes(s.lastPoint.faultTeam));
@@ -720,7 +737,7 @@ export class Controller {
     const team = s.lastPoint.faultTeam === 0 ? 1 : 0;
     const mates = s.players.map((p, i) => (p.team === team ? i : -1)).filter((i) => i >= 0);
     const [a, b] = mates.map((i) => s.players[i]);
-    if (a && b && Math.hypot(a.x - b.x, a.z - b.z) < 3.6) {
+    if (a && b && Math.hypot(a.x - b.x, a.z - b.z) < 3.6 && (a.y ?? 0) < 0.1 && (b.y ?? 0) < 0.1) {
       this.fived = s.pointSeq;
       this.sfx.slap();
       this.toastNow(`High five! ${this.nameOf(mates[0])} and ${this.nameOf(mates[1])}`);
@@ -742,8 +759,11 @@ export class Controller {
       scores: [s.scores[0], s.scores[1]],
       servingTeam: s.servingTeam,
       server: s.server,
-      serverNum: s.serverNum,
-      scoreCall: scoreCall(s),
+      serverNum: s.serverNum ?? 1,
+      scoreCall: this.sport.scoreCall(s),
+      sport: this.sport.id,
+      venue: this.venue,
+      touch: [...this.locals.values()].includes('touch'),
       players: s.players.map((p, i) => ({
         name: this.nameOf(i),
         team: p.team,
@@ -753,7 +773,7 @@ export class Controller {
         bot: this.bots[i] !== null && this.bots[i] !== undefined,
         away: !!this.lobby?.seats[i]?.away,
         char: this.chars[i],
-        stats: s.phase === 'over' ? p.stats : ZERO_STATS,
+        stats: s.phase === 'over' ? p.stats : this.sport.zeroStats,
       })),
       localSeats,
       myTeam: localSeats.length ? s.players[localSeats[0]]?.team ?? 0 : 0,
@@ -785,32 +805,6 @@ export class Controller {
     this.renderer.dispose();
     this.sfx.dispose();
   }
-}
-
-const ZERO_STATS: PlayerStats = { hits: 0, dinks: 0, lobs: 0, winners: 0, run: 0, fires: 0, bestStreak: 0, kitchen: 0 };
-
-/** Everyone gets an award at the end, winners and runners-up alike. */
-export function awardsFor(players: HudPlayer[]): Array<{ player: number; title: string; line: string }> {
-  const kinds: Array<{ title: string; score: (s: PlayerStats) => number; line: (s: PlayerStats) => string }> = [
-    { title: 'Fire Starter', score: (s) => s.fires * 3, line: (s) => `Caught fire ${s.fires} time${s.fires === 1 ? '' : 's'}` },
-    { title: 'Closer', score: (s) => s.winners * 1.2, line: (s) => `${s.winners} winners` },
-    { title: 'Streak Machine', score: (s) => (s.bestStreak >= 3 ? s.bestStreak * 2 : 0), line: (s) => `${s.bestStreak} in a row` },
-    { title: 'Dink Chef', score: (s) => s.dinks * 1.1, line: (s) => `${s.dinks} soft dinks` },
-    { title: 'Sky Watcher', score: (s) => s.lobs * 1.3, line: (s) => `${s.lobs} lobs` },
-    { title: 'Cardio Champ', score: (s) => s.run / 250, line: (s) => `Ran ${Math.round(s.run)} feet` },
-    { title: 'Workhorse', score: (s) => s.hits / 6, line: (s) => `${s.hits} shots` },
-    { title: 'Kitchen Regular', score: (s) => s.kitchen * 2.5, line: (s) => `${s.kitchen} chef hat${s.kitchen === 1 ? '' : 's'}` },
-  ];
-  const taken = new Set<string>();
-  const order = players.map((_, i) => i).sort((a, b) => players[b].stats.hits - players[a].stats.hits);
-  const out: Array<{ player: number; title: string; line: string }> = [];
-  for (const i of order) {
-    const s = players[i].stats;
-    const best = kinds.filter((k) => !taken.has(k.title)).sort((a, b) => b.score(s) - a.score(s))[0] ?? kinds[6];
-    taken.add(best.title);
-    out.push({ player: i, title: best.title, line: best.line(s) });
-  }
-  return out.sort((a, b) => a.player - b.player);
 }
 
 export type { Role };

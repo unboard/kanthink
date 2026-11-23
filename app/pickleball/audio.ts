@@ -1,4 +1,4 @@
-// Pickleball — every sound is synthesized here; no audio files.
+// Every sound in pickleball and volleyball is synthesized here; no audio files.
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -26,10 +26,17 @@ export class Sfx {
   }
 
   /** the hollow "pock" of a paddle on a plastic ball */
-  hit(strength = 1) {
+  hit(strength = 1, kind: 'pickle' | 'volley' = 'pickle') {
     const ctx = this.ready();
     if (!ctx || !this.noise) return;
     const t = ctx.currentTime;
+    if (kind === 'volley') {
+      // forearms or a palm on a leather ball: a short thud, with a crack when it's hit hard
+      this.tone(210 * Math.min(1.4, strength), 95, 0, 0.11, Math.min(0.5, 0.2 * strength), 'sine');
+      this.hiss(0, 0.05, Math.min(0.6, 0.22 * strength), 900 * strength, 350);
+      if (strength > 1.3) this.hiss(0, 0.12, 0.4, 3200, 900);
+      return;
+    }
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const bp = ctx.createBiquadFilter();
@@ -54,10 +61,15 @@ export class Sfx {
     osc.stop(t + 0.1);
   }
 
-  bounce() {
+  bounce(kind: 'pickle' | 'volley' = 'pickle') {
     const ctx = this.ready();
     if (!ctx) return;
     const t = ctx.currentTime;
+    if (kind === 'volley') {
+      this.tone(120, 60, 0, 0.14, 0.22, 'sine');
+      this.hiss(0, 0.16, 0.2, 700, 200);
+      return;
+    }
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(260, t);
@@ -152,11 +164,21 @@ export class Sfx {
       case 'tied': this.hiss(0, 0.6, 0.12, 500, 1500); arp([523, 659, 784], 0, 0.5, 'triangle'); break;
       case 'game-point': [0, 0.18, 0.36].forEach((t) => this.tone(98, 90, t, 0.16, v * 2, 'sine')); this.tone(1568, 1568, 0.5, 0.4, v * 0.6, 'sine'); break;
       case 'overtime': this.tone(131, 131, 0, 0.48, v * 1.4, 'sawtooth'); this.tone(523, 523, 0, 0.48, v, 'square'); break;
+      // volleyball
+      case 'kill': this.tone(180, 55, 0, 0.3, v * 2, 'sine'); this.hiss(0, 0.08, 0.3, 2200, 700); break;
+      case 'super': this.tone(140, 1500, 0, 0.42, v * 1.2, 'sawtooth'); this.hiss(0, 0.45, 0.2, 500, 5000); break;
+      case 'boom': this.tone(110, 28, 0, 0.7, v * 3.2, 'sine'); this.hiss(0, 0.3, 0.5, 1400, 120); arp([262, 392, 523, 784], 0.05, 0.4, 'sawtooth'); break;
+      case 'roof': this.tone(90, 60, 0, 0.25, v * 2.6, 'square'); this.tone(660, 990, 0.1, 0.25, v, 'triangle'); break;
+      case 'tool': this.tone(700, 350, 0, 0.2, v, 'triangle'); this.tone(350, 500, 0.18, 0.2, v, 'triangle'); break;
+      case 'tip': this.tone(1568, 1760, 0, 0.18, v, 'sine'); this.tone(2093, 2093, 0.12, 0.25, v * 0.6, 'sine'); break;
+      case 'pancake': this.hiss(0, 0.2, 0.35, 900, 250); arp([392, 523, 659], 0.07, 0.22, 'triangle'); break;
+      case 'dig': arp([330, 494], 0.08, 0.2, 'triangle'); break;
+      case 'knocked': this.tone(500, 120, 0, 0.5, v * 1.3, 'triangle'); [0.5, 0.62, 0.74].forEach((t) => this.tone(1800, 2200, t, 0.08, v * 0.5, 'sine')); break;
       case 'win': arp([523, 659, 784, 1047, 784, 1047], 0.13, 0.3, 'square'); break;
     }
   }
 
-  /** two teammates' paddles meeting */
+  /** two teammates meeting: paddles or palms */
   slap() {
     this.hiss(0, 0.06, 0.4, 2500, 1200);
     this.tone(900, 600, 0, 0.08, 0.12, 'sine');

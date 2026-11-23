@@ -429,6 +429,7 @@ export function MiniNav() {
     pathname.startsWith('/proof') ||  // a printer's customer page: their brand, not ours
     pathname.startsWith('/catlife') ||  // Whisker Wilds game owns the full viewport
     pathname.startsWith('/pickleball') ||  // so does pickleball
+    pathname.startsWith('/volleyball') ||  // and volleyball
     pathname.startsWith('/prototypes/kan/city')  // Kan City is its own world: chat is the way around
   ) return null;
 

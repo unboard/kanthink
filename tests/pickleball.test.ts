@@ -247,7 +247,8 @@ describe('pickleball room codes', () => {
 import {
   FIRE_PER_RALLY, HEAT_MAX, HEAT_WINNER, STYLE_TRAITS, awardRally as award, receiverOf, scoreCall, teamPlayers,
 } from '@/app/pickleball/sim';
-import { awardsFor, type HudPlayer } from '@/app/pickleball/controller';
+import { awardsFor } from '@/app/pickleball/pickle';
+import type { HudPlayer } from '@/app/pickleball/controller';
 import { PRESETS, botCharacter, sanitize, traitsOf } from '@/app/pickleball/characters';
 import { sanitizeLobby } from '@/app/pickleball/net';
 

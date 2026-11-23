@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'volleyball-and-court-upgrade',
+    date: '2026-11-24',
+    kind: 'capability',
+    title: 'Volleyball, new venues and phone play for the court games',
+    body: 'There is a volleyball game at /volleyball: one button bumps, sets, spikes and blocks, with super spikes when you get hot. It and pickleball now share the same players (rebuilt as full 3D people), four places to play (park, beach, arena, rooftop) and on-screen touch controls for phones.',
+  },
+  {
     id: 'pickleball-family-doubles',
     date: '2026-11-23',
     kind: 'capability',
