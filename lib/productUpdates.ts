@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'small-game-skill',
+    date: '2026-11-23',
+    kind: 'capability',
+    title: 'Small games come out playable',
+    body: 'Ask for a quick one-tap game (hop, stack, throw, dodge) and it is built on a game kit: animated stick figures, sound, effects, phone and laptop controls, and a bot that plays it to check runs last and get harder.',
+  },
+  {
     id: 'gemini-4-gpt-6-2-models',
     date: '2026-11-21',
     kind: 'capability',

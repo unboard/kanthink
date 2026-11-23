@@ -148,7 +148,7 @@ export async function growSprouts(ownerId: string, opts: { force?: boolean } = {
   const { keys } = await resolveProviderKeys(ownerId)
   const provider = keys.anthropic ? 'anthropic' : keys.openai ? 'openai' : null
   if (!provider) return { planted: 0, grew: 0, why: 'no key' }
-  const model = getPlaygroundModel(provider === 'anthropic' ? 'claude-opus-5-5' : 'gpt-5.6-sol')
+  const model = getPlaygroundModel(provider === 'anthropic' ? 'claude-opus-5-5' : 'gpt-6.2-sol')
   const apiKey = provider === 'anthropic' ? keys.anthropic!.apiKey : keys.openai!.apiKey
   const first = owner?.name?.split(/\s+/)[0] ?? 'them'
   // A nearly empty field gets a proper first planting; after that, a couple at a time.

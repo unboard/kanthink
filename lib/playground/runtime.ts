@@ -27,6 +27,9 @@ export const BASE_SPECIFIERS = ['react', 'react-dom', 'react-dom/client', 'lucid
  */
 export const KIT_SPECIFIER = 'kit';
 export const KIT_PATH = '/kit/v1.js';
+/** The game kit (skills/game.ts), mapped the same way as the kit. */
+export const GAME_KIT_SPECIFIER = 'kit/game';
+export const GAME_KIT_PATH = '/kit/game-v1.js';
 
 /** The kit's URL on this deployment, or null for an origin that is not plain http(s). */
 export function kitModuleUrl(origin: string | null | undefined): string | null {
@@ -148,7 +151,7 @@ export function resolveDeps(declarations: string[]): {
 } {
   const deps: ResolvedDep[] = [];
   const rejected: Array<{ raw: string; reason: string }> = [];
-  const seen = new Set<string>([...BASE_SPECIFIERS, KIT_SPECIFIER]);
+  const seen = new Set<string>([...BASE_SPECIFIERS, KIT_SPECIFIER, GAME_KIT_SPECIFIER]);
 
   for (const declaration of declarations) {
     if (deps.length >= MAX_RUNTIME_DEPS) {
@@ -198,7 +201,10 @@ export function buildImportMap(deps: ResolvedDep[], options?: { kitOrigin?: stri
   // Last, so nothing above can shadow it. Re-derived from the origin rather than
   // trusted as passed.
   const kit = kitModuleUrl(options?.kitOrigin);
-  if (kit) imports[KIT_SPECIFIER] = kit;
+  if (kit) {
+    imports[KIT_SPECIFIER] = kit;
+    imports[GAME_KIT_SPECIFIER] = kit.replace(KIT_PATH, GAME_KIT_PATH);
+  }
 
   return JSON.stringify({ imports }, null, 2);
 }

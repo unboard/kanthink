@@ -21,7 +21,7 @@ import type { PaymentFinding, PaymentReview } from './types'
 
 const MODEL: Record<PlaygroundProvider, { id: string; maxTokens: number }> = {
   google: { id: 'gemini-3.1-flash-lite', maxTokens: 1500 },
-  openai: { id: 'gpt-5.6-luna', maxTokens: 5000 },
+  openai: { id: 'gpt-6-luna', maxTokens: 5000 },
   anthropic: { id: 'claude-haiku-4-5', maxTokens: 1500 },
 }
 

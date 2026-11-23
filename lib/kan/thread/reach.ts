@@ -136,7 +136,7 @@ export async function reachOut(ownerId: string, opts: { force?: boolean; notify?
   const { keys } = await resolveProviderKeys(ownerId)
   const provider = keys.anthropic ? 'anthropic' : keys.openai ? 'openai' : null
   if (!provider) return { said: false, why: 'no key' }
-  const model = getPlaygroundModel(provider === 'anthropic' ? 'claude-opus-5-5' : 'gpt-5.6-sol')
+  const model = getPlaygroundModel(provider === 'anthropic' ? 'claude-opus-5-5' : 'gpt-6.2-sol')
   const apiKey = provider === 'anthropic' ? keys.anthropic!.apiKey : keys.openai!.apiKey
 
   const first = owner?.name?.split(/\s+/)[0] ?? 'them'

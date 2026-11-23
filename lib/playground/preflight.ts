@@ -10,7 +10,7 @@ import { getPlaygroundModel, type PlaygroundProvider } from './models';
  */
 const PREFLIGHT_MODEL: Record<Exclude<PlaygroundProvider, 'google'>, { id: string; maxTokens: number }> = {
   // Luna reasons before answering, and that spends from the same ceiling.
-  openai: { id: 'gpt-5.6-luna', maxTokens: 4000 },
+  openai: { id: 'gpt-6-luna', maxTokens: 4000 },
   anthropic: { id: 'claude-haiku-4-5', maxTokens: 1500 },
 };
 

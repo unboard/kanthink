@@ -23,7 +23,7 @@ import { describeTopics, fitDecisions, listTopics, type Topic } from './topics'
  * changes nothing, so the judgment can be read before it's trusted.
  */
 
-const MODEL_ID = 'gpt-5.6-sol'
+const MODEL_ID = 'gpt-6.2-sol'
 const FIRST_WINDOW_DAYS = 14
 const DAY_MS = 86400_000
 

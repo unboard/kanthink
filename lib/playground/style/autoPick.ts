@@ -13,7 +13,7 @@ import { normalizeStyle, styleForLook, type AppStyle } from './tokens'
 
 const PICK_MODEL: Record<PlaygroundProvider, { id: string; maxTokens: number }> = {
   google: { id: 'gemini-3.1-flash-lite', maxTokens: 800 },
-  openai: { id: 'gpt-5.6-luna', maxTokens: 4000 },
+  openai: { id: 'gpt-6-luna', maxTokens: 4000 },
   anthropic: { id: 'claude-haiku-4-5', maxTokens: 800 },
 }
 

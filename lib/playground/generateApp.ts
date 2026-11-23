@@ -51,6 +51,7 @@ import { codeSignals } from '@/lib/playground/payments/check';
 import { reviewPayments } from '@/lib/playground/payments/review';
 import { after } from 'next/server';
 import { CANVAS_PROMPT, isCanvasApp } from '@/lib/playground/skills/canvas';
+import { GAME_PROMPT, isSmallGame, usesGameKit } from '@/lib/playground/skills/game';
 
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
 // cleanly exceed 60s. 800s is the Vercel Pro ceiling (300s is only the default),
@@ -1187,9 +1188,14 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // The style rides with the runtime section, so every call path (patch, rewrite,
   // the capability retry) is briefed the same way.
   // Skills: an app of a known shape is built on the piece of the kit made for it.
-  const canvasApp = isCanvasApp(body.prompt, currentCode, threadContext, card.title, ...cardMessages.map((m) => m.content));
+  const briefTexts = [body.prompt, currentCode, threadContext, card.title, ...cardMessages.map((m) => m.content)];
+  const canvasApp = isCanvasApp(...briefTexts);
+  // The game skill reads the brief, not the code: code is full of words like "run" and "drop".
+  // An app already built on the game kit keeps it.
+  const smallGame = !canvasApp && (usesGameKit(currentCode) || isSmallGame(body.prompt, threadContext, card.title, ...cardMessages.map((m) => m.content)));
   const runtimeSection = buildRuntimeSection(seeded.deps)
     + (canvasApp ? `\n\n${CANVAS_PROMPT}` : '')
+    + (smallGame ? `\n\n${GAME_PROMPT}` : '')
     + (resolvedStyle ? `\n\n${stylePrompt(resolvedStyle)}` : '')
     + `\n\n${paymentContract(payments.settings)}`;
 

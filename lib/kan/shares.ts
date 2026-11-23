@@ -219,7 +219,7 @@ export async function actOnShare(ownerId: string, cardId: string, prefs: SharePr
       import('@/lib/ai/keys'), import('@/lib/playground/generateClient'), import('@/lib/playground/models'), import('@/lib/kan/attention/topics'),
     ])
     const { keys } = await resolveProviderKeys(ownerId)
-    const choice = keys.anthropic ? { id: 'claude-sonnet-5', key: keys.anthropic } : keys.openai ? { id: 'gpt-5.6-terra', key: keys.openai } : keys.google ? { id: 'gemini-3.1-pro-preview', key: keys.google } : null
+    const choice = keys.anthropic ? { id: 'claude-sonnet-5', key: keys.anthropic } : keys.openai ? { id: 'gpt-6.1-terra', key: keys.openai } : keys.google ? { id: 'gemini-3.1-pro-preview', key: keys.google } : null
     if (!choice) return { move: null, why: 'no key' }
 
     // Bots on duty with a tool, for the episode route (only when they didn't say why).
