@@ -4,7 +4,7 @@
  * Tests the core card operations (create, update, delete) by calling
  * the route handlers directly with mocked auth and database.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 
 // Mock auth before importing routes
 vi.mock('@/lib/auth', () => ({
@@ -69,6 +69,12 @@ function createRequest(method: string, body?: Record<string, unknown>): Request 
 }
 
 describe('POST /api/channels/:id/cards', () => {
+  // The route pulls in a large module graph; load it once up front so a busy machine's
+  // cold import doesn't count against the first test's 5 s budget.
+  beforeAll(async () => {
+    await import('@/app/api/channels/[id]/cards/route')
+    await import('@/app/api/channels/[id]/cards/[cardId]/route')
+  }, 60_000)
   beforeEach(() => {
     vi.clearAllMocks()
   })
