@@ -4,6 +4,7 @@ import { type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useNav } from '@/components/providers/NavProvider';
 import { getPanelWidth } from './NavPanel';
+import { isGameRoute } from '@/lib/gameRoutes';
 
 interface MainContentProps {
   children: ReactNode;
@@ -26,12 +27,9 @@ export function MainContent({ children }: MainContentProps) {
   const isFullViewport =
     pathname.startsWith('/watch') ||
     pathname.startsWith('/play') ||
-    pathname.startsWith('/rescue') ||
     pathname.startsWith('/print') ||
     pathname.startsWith('/proof') ||
-    pathname.startsWith('/catlife') ||
-    pathname.startsWith('/pickleball') ||
-    pathname.startsWith('/volleyball') ||
+    isGameRoute(pathname) ||
     pathname.startsWith('/prototypes/kan/city');
   const needsBottomPadding = isMobile && !isCardPage && !isFullViewport;
 

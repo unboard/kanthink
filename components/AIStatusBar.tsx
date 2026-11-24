@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import type { AIOperationContext } from '@/lib/types';
+import { isGameRoute } from '@/lib/gameRoutes';
 
 // Verbs that work with different contexts
 const VERBS = ['Reading', 'Analyzing', 'Processing', 'Exploring', 'Considering', 'Examining', 'Parsing'];
@@ -125,7 +126,7 @@ export function AIStatusBar() {
     return () => clearInterval(interval);
   }, [aiOperation.isActive, aiOperation.startedAt]);
 
-  if (!aiOperation.isActive || pathname.startsWith('/marketplace') || pathname.startsWith('/public') || pathname.startsWith('/play') || pathname.startsWith('/proof')) {
+  if (!aiOperation.isActive || pathname.startsWith('/marketplace') || pathname.startsWith('/public') || pathname.startsWith('/play') || pathname.startsWith('/proof') || isGameRoute(pathname)) {
     return null;
   }
 

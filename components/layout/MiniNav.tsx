@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { useNotificationStore } from '@/lib/notificationStore';
+import { isGameRoute } from '@/lib/gameRoutes';
 
 interface NavIconButtonProps {
   panel?: NavPanelType;
@@ -424,12 +425,9 @@ export function MiniNav() {
     pathname.startsWith('/play') ||  // public playground apps own the full viewport
     pathname.startsWith('/apps/u') ||  // a publisher's public shelf is for strangers
     pathname.startsWith('/watch') ||  // the recording watch page owns the full viewport
-    pathname.startsWith('/rescue') ||  // Paws & Found game owns the full viewport
     pathname.startsWith('/print') ||  // the print studio owns the full viewport
     pathname.startsWith('/proof') ||  // a printer's customer page: their brand, not ours
-    pathname.startsWith('/catlife') ||  // Whisker Wilds game owns the full viewport
-    pathname.startsWith('/pickleball') ||  // so does pickleball
-    pathname.startsWith('/volleyball') ||  // and volleyball
+    isGameRoute(pathname) ||  // the family games own the full viewport
     pathname.startsWith('/prototypes/kan/city')  // Kan City is its own world: chat is the way around
   ) return null;
 

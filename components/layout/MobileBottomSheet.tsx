@@ -36,6 +36,7 @@ import { signInWithGoogle } from '@/lib/actions/auth';
 import { ShroomButton } from '@/components/shrooms/ShroomButton';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import type { Channel, ChannelStatus, Folder, ID, Card, Task } from '@/lib/types';
+import { isGameRoute } from '@/lib/gameRoutes';
 
 // ============================================
 // STREAK UTILS
@@ -1575,7 +1576,7 @@ export function MobileBottomSheet() {
   }, [activePanel]);
 
   // Don't render on marketplace pages or when not visible
-  if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || sheetPathname.startsWith('/play') || sheetPathname.startsWith('/rescue') || sheetPathname.startsWith('/pickleball') || sheetPathname.startsWith('/volleyball') || sheetPathname.startsWith('/print') || sheetPathname.startsWith('/proof') || !isVisible) {
+  if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || sheetPathname.startsWith('/play') || isGameRoute(sheetPathname) || sheetPathname.startsWith('/print') || sheetPathname.startsWith('/proof') || !isVisible) {
     return null;
   }
 
