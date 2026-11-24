@@ -12,6 +12,7 @@ import { tsParticles } from '@tsparticles/engine';
 import { FreewayView } from '@/components/kan/freeway/FreewayView';
 import { ZooView } from '@/components/kan/zoo/ZooView';
 import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
+import { GAMES } from '@/components/kan/city/games';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import type { EmailDraft } from '@/lib/kan/agent/events';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
@@ -412,6 +413,8 @@ export default function CityPage() {
     setBoard(null);
     if (p?.kind === 'portal') { setPick(null); setFreeway(true); return; }
     if (p?.kind === 'zoo') { setPick(null); setZoo(true); return; }
+    // A lot in the Game Park: off to play it.
+    if (p?.kind === 'game') { setPick(null); window.location.assign(GAMES[p.id].path); return; }
     // Kan is a conversation, not a panel: tapping it opens its thread.
     if (p?.kind === 'kan') { setPick(null); setSide((s) => (wide ? s : null)); chat.current?.open(); return; }
     setPick(p);
@@ -900,7 +903,7 @@ export default function CityPage() {
               className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
-              {near.kind === 'bot' ? <MessageCircle className="h-4 w-4 text-violet-600" /> : <DoorOpen className="h-4 w-4 text-violet-600" />} {near.kind === 'bot' ? 'Talk to' : near.kind === 'car' ? (near.name === 'your moped' ? 'Hop on' : 'Get in') : 'Go into'} {near.kind === 'car' ? '' : near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+              {near.kind === 'bot' ? <MessageCircle className="h-4 w-4 text-violet-600" /> : near.kind === 'game' ? <Gamepad2 className="h-4 w-4 text-violet-600" /> : <DoorOpen className="h-4 w-4 text-violet-600" />} {near.kind === 'bot' ? 'Talk to' : near.kind === 'game' ? 'Play' : near.kind === 'car' ? (near.name === 'your moped' ? 'Hop on' : 'Get in') : 'Go into'} {near.kind === 'car' ? '' : near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
             </button>
           )}
           {(mode === 'drive' || mode === 'ride') && (
@@ -2136,6 +2139,8 @@ const LABEL_CSS = `
 .kc-sprout { font-size: 11.5px; }
 .kc-badge[data-tone="ready"] { background: #facc15; color: #422006; padding: 0 7px; }
 .kc-badge[data-tone="rain"] { background: #3b82f6; padding: 0 7px; }
+.kc-games { background: #1a0f2e; color: #ffd23f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #22c55e, 0 4px 18px rgba(34,197,94,.4); }
+.kc-game { background: #fff; color: #14532d; font-size: 12px; box-shadow: 0 0 0 2px #86efac, 0 4px 14px rgba(20,10,40,0.3); }
 .kc-zoo { background: #065f46; color: #fef3c7; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 0 0 2px #facc15, 0 4px 18px rgba(250,204,21,.4); }
 .kc-strip { background: #1a0f2e; color: #ffd23f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #ff3cac, 0 4px 18px rgba(255,60,172,.45); }
 .kc-badge[data-tone="gold"] { background: #ffcc33; color: #5a3a00; padding: 0 7px; }

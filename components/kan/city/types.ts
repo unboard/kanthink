@@ -26,6 +26,8 @@ export type Pick =
   /** An idea growing in the Sprout Field, and the field itself. */
   | { kind: 'sprout'; id: string }
   | { kind: 'field' }
+  /** A lot in the Game Park: opens that game. */
+  | { kind: 'game'; id: import('./games').GameId }
   /** What Kan built on its own (lib/kan/madeForYou.ts). */
   | { kind: 'made' }
   /** A resident: the mushroom who lives on a channel's plot, to talk with. */

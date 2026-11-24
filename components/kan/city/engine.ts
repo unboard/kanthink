@@ -14,6 +14,7 @@ import {
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildMarket as buildStrip, inRect, NEW_MS, type Market as Strip } from './market';
 import { buildField, sproutView, stepSprout, type Field, type SproutView } from './field';
+import { buildGamePark, GAMES, type GamePark } from './games';
 import { CityFx, buildSea, seaColor, type Sea } from './fx';
 import { Workshop } from './workshop';
 import { decorate, THEME_COLORS } from './themes';
@@ -167,7 +168,7 @@ export interface PlayerKit {
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
 /** The place you're next to in first person: a building, or an app in the Market. */
-export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo' | 'sprout'; id: string; name: string }
+export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo' | 'sprout' | 'game'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -259,6 +260,8 @@ export class CityEngine {
   private strip: Strip | null = null;
   /** The Sprout Field, out past the west edge of town. */
   private field: Field | null = null;
+  /** The Game Park, off the east edge: a lot for each of the family's games. */
+  private games: GamePark | null = null;
   private sproutViews = new Map<string, SproutView & { label: HTMLDivElement; proxy: THREE.Mesh; slot: number }>();
   private leavingSprouts: SproutView[] = [];
   private fieldLayer = new THREE.Group();
@@ -909,6 +912,7 @@ export class CityEngine {
     for (const v of this.sproutViews.values()) { v.label.remove(); v.group.removeFromParent(); }
     this.sproutViews.clear();
     this.field = null;
+    this.games = null;
     this.parcels = null;
     this.jobViews.clear();
     this.kan = null;
@@ -1140,8 +1144,22 @@ export class CityEngine {
       const f = this.field.bounds;
       this.fixedLabels.push({ el: this.makeLabel('Sprout Field', 'field', () => this.cb.onPick({ kind: 'field' })), pos: new THREE.Vector3((f.x0 + f.x1) / 2, 6, f.z0 + 1), always: true });
     }
-    // The sea: town, the Strip and the field are islands with sandy shores.
+    // The Game Park, out east, across a short road.
+    this.games = buildGamePark(grid);
+    this.city.add(this.games.group);
+    this.ticks.push(...this.games.ticks);
+    {
+      const b = this.games.bounds;
+      this.fixedLabels.push({ el: this.makeLabel('Game Park', 'games', () => this.focusGames()), pos: new THREE.Vector3((b.x0 + b.x1) / 2, 7, b.z0 + 1), always: true });
+      for (const lot of this.games.lots) {
+        const id = lot.id;
+        this.addPickable(lot.group, { kind: 'game', id });
+        this.fixedLabels.push({ el: this.makeLabel(GAMES[id].name, 'game', () => this.cb.onPick({ kind: 'game', id })), pos: new THREE.Vector3(lot.center.x, GROUND_Y + lot.top, lot.center.z), always: false });
+      }
+    }
+    // The sea: town, the Strip, the field and the Game Park are islands with sandy shores.
     this.sea = buildSea([
+      this.games.bounds,
       { x0: -W / 2 - 3, z0: -D / 2 - 3, x1: W / 2 + 3, z1: D / 2 + 3 },
       ...(this.strip ? [this.strip.bounds] : []),
       this.field.bounds,
@@ -1405,6 +1423,13 @@ export class CityEngine {
   }
 
   // ---------- The Sprout Field ----------
+
+  /** Swing over to the Game Park. */
+  focusGames() {
+    if (!this.games || this.mode !== 'map') return;
+    const b = this.games.bounds;
+    this.focus({ x: (b.x0 + b.x1) / 2, z: 0 }, 1.8);
+  }
 
   /** Swing over to the field. */
   focusField() {
@@ -2321,6 +2346,7 @@ export class CityEngine {
   private drivable(x: number, z: number) {
     const g = this.grid!;
     if (this.field && inRect(this.field.road, x, z, -0.4)) return true;
+    if (this.games && inRect(this.games.road, x, z, -0.4)) return true;
     if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.9))) return true;
     return Math.abs(x) <= g.width / 2 - 1.2 && Math.abs(z) <= g.depth / 2 - 1.2 && this.onBlock(x, z, 1.3) === null;
   }
@@ -2329,6 +2355,7 @@ export class CityEngine {
   private walkable(x: number, z: number) {
     const g = this.grid!;
     if (this.field && (inRect(this.field.bounds, x, z, -1.4) || inRect(this.field.road, x, z, 0))) return true;
+    if (this.games && (inRect(this.games.bounds, x, z, -1.4) || inRect(this.games.road, x, z, 0))) return true;
     if (this.strip && inRect(this.strip.bounds, x, z, -0.8)) return !this.strip.lots.some((l) => inRect(l.footprint, x, z, 0.4));
     if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.5))) return true;
     if (Math.abs(x) > g.width / 2 + 2.2 || Math.abs(z) > g.depth / 2 + 2.2) return false;
@@ -2572,6 +2599,12 @@ export class CityEngine {
       const d = Math.hypot(this.zooAt.x - p.x, this.zooAt.z - p.z);
       if (d < (this.mode === 'walk' ? 5 : 8) && d < bestD) { best = { kind: 'zoo', id: 'zoo', name: 'the Omaha Zoo' }; bestD = d; }
     }
+    for (const l of this.games?.lots ?? []) {
+      if (flying) break;
+      const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
+      const reach = this.mode === 'walk' ? 6 : 9;
+      if (d < reach && d < bestD) { best = { kind: 'game', id: l.id, name: GAMES[l.id].name }; bestD = d; }
+    }
     for (const l of this.strip?.lots ?? []) {
       const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
       const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' || this.mode === 'ride' ? 8 : 12;
@@ -2620,7 +2653,7 @@ export class CityEngine {
 
   // ---------- Labels ----------
 
-  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip' | 'zoo' | 'sprout' | 'field', onClick: () => void) {
+  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip' | 'zoo' | 'sprout' | 'field' | 'games' | 'game', onClick: () => void) {
     const el = document.createElement('div');
     el.className = `kc-label kc-${kind}`;
     const dot = document.createElement('span');
@@ -2861,7 +2894,7 @@ export class CityEngine {
   private clampTarget() {
     if (!this.grid) return;
     const t = this.controls.target;
-    const lx = this.grid.width / 2 + 30, lz = Math.max(this.grid.depth / 2, this.strip?.bounds.z1 ?? 0) + 30;
+    const lx = Math.max(this.grid.width / 2 + 30, this.games ? this.games.bounds.x1 + 10 : 0), lz = Math.max(this.grid.depth / 2, this.strip?.bounds.z1 ?? 0) + 30;
     const west = Math.max(lx, this.field ? -this.field.bounds.x0 + 10 : 0);
     const cx = THREE.MathUtils.clamp(t.x, -west, lx), cz = THREE.MathUtils.clamp(t.z, -lz, lz);
     if (cx !== t.x || cz !== t.z) {
@@ -2900,6 +2933,7 @@ export class CityEngine {
     if (p.kind === 'park') return this.grid.blockCenter(L.park.cx, L.park.cz);
     if (p.kind === 'sprout') { const v = this.sproutViews.get(p.id); return v ? v.at : null; }
     if (p.kind === 'field') { const b = this.field?.bounds; return b ? { x: (b.x0 + b.x1) / 2, z: 0 } : null; }
+    if (p.kind === 'game') { const lot = this.games?.lots.find((l) => l.id === p.id); return lot ? lot.center : null; }
     if (p.kind === 'proposal') {
       const lot = this.data.proposals.find((x) => x.name === p.name)?.lot;
       return lot ? this.grid.cellCenter(lot.cx, lot.cz) : null;

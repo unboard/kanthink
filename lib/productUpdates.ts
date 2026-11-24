@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'kan-city-game-park',
+    date: '2026-11-24',
+    kind: 'capability',
+    title: 'A Game Park in Kan City',
+    body: 'Off the east edge of Kan City, across a short road, the Game Park has a plot for each family game: a striped lawn for Clean Cut, a sand court for Volleyball, a court for Pickleball and a cat meadow for Whisker Wilds. Tap one, or walk up and press Play, to open the game.',
+  },
+  {
     id: 'volleyball-and-court-upgrade',
     date: '2026-11-24',
     kind: 'capability',
