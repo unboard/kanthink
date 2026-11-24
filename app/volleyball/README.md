@@ -19,6 +19,22 @@ too, with the same venues, online rooms, bots and touch controls.
 - **Serve:** press to toss, press again near the top for a jump serve. Don't press again
   and you get a safe float serve.
 
+### The shot pad (phones, the right stick, or I J K L U O)
+
+The left thumb only moves. The right thumb is the shot: swipe the way you want the ball
+to go, early, while it's still in the air.
+
+- **Tap** (or a sideways swipe): pass. It waits for the ball and bumps or sets it when it
+  comes down to you; sideways sets that side.
+- **Swipe up**: spike. Tilt the swipe to aim, swipe long to go deep, flick short to tip.
+  On a ball set to you, the last steps of the approach and the jump are taken for you;
+  how hard and clean it goes depends on the read: commit early and be close.
+  On their ball at the net, swipe up is a block, timed off their hitter.
+- **Swipe down**: dive, the way you swiped (straight down dives at the ball).
+
+On a gamepad the right stick does the same flicks; on one keyboard, I U O are up, J L
+are sideways and K is down. The old one-button press still works everywhere.
+
 ## Rules
 
 Rally scoring to 15, win by 2. The rally's winner serves; a team's servers alternate.

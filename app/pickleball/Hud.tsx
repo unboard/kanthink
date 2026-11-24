@@ -119,7 +119,7 @@ export function GameHud({ sport, hud, onLeave, onRematch, onLobby, devices }: {
               {d === DEVICE_LABEL.keysL ? <><Key>WASD</Key> move · <Key>Space</Key> {act}</>
                 : d === DEVICE_LABEL.keysR ? <><Key>←↑↓→</Key> move · <Key>Enter</Key> {act}</>
                   : d.startsWith('Gamepad') ? <>stick · <Key>A</Key> {act}</>
-                    : d === DEVICE_LABEL.touch ? null : <><Key>WASD</Key>/<Key>←↑↓→</Key> move · <Key>Space</Key> {act}</>}
+                    : d === DEVICE_LABEL.touch ? null : <><Key>WASD</Key>/<Key>←↑↓→</Key> move · <Key>Space</Key> {act} · shots <Key>I</Key><Key>U</Key><Key>O</Key> up <Key>J</Key><Key>L</Key> sides <Key>K</Key> down</>}
             </span>
           ))}
           <span>{sport.hint}</span>

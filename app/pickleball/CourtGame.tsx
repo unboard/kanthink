@@ -440,7 +440,7 @@ export default function CourtGame({ sport }: { sport: Sport }) {
         />
       )}
       {inGame && hud?.touch && hud.phase !== 'over' && (
-        <TouchControls label={sport.action} onStick={(x, y) => ctrl.current?.setTouchStick(x, y)} onPress={() => ctrl.current?.touchPress()} />
+        <TouchControls hint={sport.touchHint} onStick={(x, y) => ctrl.current?.setTouchStick(x, y)} onShot={(dx, dy) => ctrl.current?.touchShot(dx, dy) ?? ''} />
       )}
     </div>
   );

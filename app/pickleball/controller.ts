@@ -13,7 +13,7 @@ import type { BotTier } from './bot';
 import { Sfx } from './audio';
 import { CourtRenderer, type RenderView } from './render';
 import { RoomNet, stableClientId, type Lobby, type NetStatus, type Seat, type WireInput } from './net';
-import { IDLE, sgn, type Format, type PlayerInput, type Team } from './sim';
+import { IDLE, sgn, type Format, type PlayerInput, type Shot, type Team } from './sim';
 import type { BasePlayer, BasePoint, BaseState, Sport } from './sport';
 import type { VenueId } from './venue';
 import type { Role } from './room';
@@ -104,7 +104,12 @@ const KEYS = {
   keysL: { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], swing: ['Space', 'KeyF', 'ShiftLeft'] },
   keysR: { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], swing: ['Enter', 'NumpadEnter', 'ShiftRight', 'Slash', 'Numpad0'] },
 } as const;
-const GAME_KEYS = new Set<string>(Object.values(KEYS).flatMap((k) => [...k.up, ...k.down, ...k.left, ...k.right, ...k.swing]));
+/** One keyboard player's right hand: the shot keys, like swipes. */
+const SHOT_KEYS: Record<string, [number, number]> = {
+  KeyI: [0, 120], KeyU: [-80, 100], KeyO: [80, 100], KeyK: [0, -120], KeyJ: [-120, 0], KeyL: [120, 0], KeyY: [0, 40],
+};
+const SHOT_CODES = ['pass', 'jump', 'dive', 'hit'] as const;
+const GAME_KEYS = new Set<string>([...Object.values(KEYS).flatMap((k) => [...k.up, ...k.down, ...k.left, ...k.right, ...k.swing]), ...Object.keys(SHOT_KEYS)]);
 
 function newSeed(): number {
   // only used to pick a game's seed; the sim itself never touches Math.random
@@ -144,6 +149,12 @@ export class Controller {
   private held = new Set<string>();
   private swings = new Map<number, number>(); // seat → presses so far
   private latched = new Set<number>();
+  /** the right-thumb shot that goes with a seat's press this step */
+  private shots = new Map<number, Shot>();
+  /** the word for the last shot, for the touch pad to flash */
+  lastShotWord = '';
+  private lastShots = new Map<number, Shot>();
+  private padShot: boolean[] = [];
   private padPrev: boolean[] = [];
 
   // networking
@@ -153,7 +164,7 @@ export class Controller {
   private guests: string[] = [];
   private hostHere = false;
   private myLocals: LocalPlayer[] = [];
-  private remote = new Map<number, { input: PlayerInput; sw: number; latched: boolean }>();
+  private remote = new Map<number, { input: PlayerInput; sw: number; latched: boolean; shot?: Shot }>();
   private rematchAsks = new Set<string>();
 
   // guest prediction
@@ -465,6 +476,7 @@ export class Controller {
       for (const [seat, dev] of this.locals) {
         if (dev.startsWith('pad') || dev === 'touch') continue;
         if ((KEYS[dev as keyof typeof KEYS].swing as readonly string[]).includes(e.code)) this.press(seat);
+        else if (dev === 'keys' && SHOT_KEYS[e.code]) this.shoot(seat, ...SHOT_KEYS[e.code]);
       }
     }
     this.held.add(e.code);
@@ -478,9 +490,13 @@ export class Controller {
     this.held.clear();
   };
 
-  private press(seat: number) {
+  private press(seat: number, shot?: Shot) {
     this.swings.set(seat, (this.swings.get(seat) ?? 0) + 1);
     this.latched.add(seat);
+    if (shot) this.shots.set(seat, shot);
+    else this.shots.delete(seat);
+    if (shot) this.lastShots.set(seat, shot);
+    else this.lastShots.delete(seat);
     if (this.mode === 'guest' && (this.ownSwing.get(seat) ?? -1) < 0) this.ownSwing.set(seat, 0);
   }
 
@@ -495,6 +511,22 @@ export class Controller {
     for (const [seat, dev] of this.locals) if (dev === 'touch') this.press(seat);
   }
 
+  /** a swipe on the touch pad (dx right, dy up, in pixels): the shot it means; returns its word */
+  touchShot(dx: number, dy: number): string {
+    this.sfx.unlock();
+    let word = '';
+    for (const [seat, dev] of this.locals) if (dev === 'touch') word = this.shoot(seat, dx, dy);
+    return word;
+  }
+
+  private shoot(seat: number, dx: number, dy: number): string {
+    // in the side view the screen is turned: up on screen is toward the far end
+    const g = this.sport.gesture(dx, dy);
+    this.press(seat, g.shot);
+    this.lastShotWord = g.word;
+    return g.word;
+  }
+
   /** gamepads: poll once a frame; a button going down is a press */
   private pollPads() {
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
@@ -505,6 +537,12 @@ export class Controller {
       const down = !!pad && [0, 1, 2, 3, 5, 7].some((b) => pad.buttons[b]?.pressed);
       if (down && !this.padPrev[k]) { this.sfx.unlock(); this.press(seat); }
       this.padPrev[k] = down;
+      // the right stick is the shot: flick it the way you'd swipe
+      const rx = pad?.axes[2] ?? 0;
+      const ry = -(pad?.axes[3] ?? 0);
+      const flick = Math.hypot(rx, ry);
+      if (flick > 0.8 && !this.padShot[k]) { this.sfx.unlock(); this.shoot(seat, rx * 130, ry * 130); }
+      this.padShot[k] = flick > 0.8 || (this.padShot[k] && flick > 0.35);
     }
   }
 
@@ -535,12 +573,13 @@ export class Controller {
     if (!dev) return IDLE;
     const [x, y] = this.stick(dev);
     const swing = this.latched.has(seat);
+    const shot = swing ? this.shots.get(seat) : undefined;
     if (this.broadcast()) {
       // keys follow the screen: right is toward the far end, up is away from the camera
       const sg = sgn(s.players[seat]?.team ?? 0);
-      return { mx: -sg * y, mz: sg * x, swing };
+      return { mx: -sg * y, mz: sg * x, swing, ...(shot ? { shot } : {}) };
     }
-    return { mx: x, mz: y, swing };
+    return { mx: x, mz: y, swing, ...(shot ? { shot } : {}) };
   }
 
   private broadcast(): boolean {
@@ -554,7 +593,10 @@ export class Controller {
       if (this.lobby.seats[w.seat]?.owner !== from) continue; // only your own seats
       const r = this.remote.get(w.seat) ?? { input: { ...IDLE }, sw: -1, latched: false };
       r.input = { mx: w.mx, mz: w.mz, swing: false };
-      if (r.sw >= 0 && w.sw > r.sw) r.latched = true;
+      if (r.sw >= 0 && w.sw > r.sw) {
+        r.latched = true;
+        r.shot = w.g ? { act: SHOT_CODES[w.g[0]] ?? 'pass', ax: w.g[1], az: w.g[2] } : undefined;
+      }
       r.sw = w.sw;
       this.remote.set(w.seat, r);
     }
@@ -621,11 +663,13 @@ export class Controller {
       if (playing) {
         const list: WireInput[] = [...this.locals.keys()].map((seat) => {
           const i = this.localInput(seat, this.view);
-          return { seat, mx: i.mx, mz: i.mz, sw: this.swings.get(seat) ?? 0 };
+          const sh = this.lastShots.get(seat);
+          return { seat, mx: i.mx, mz: i.mz, sw: this.swings.get(seat) ?? 0, ...(sh ? { g: [SHOT_CODES.indexOf(sh.act), sh.ax, sh.az] as [number, number, number] } : {}) };
         });
         this.net?.maybeSendInput(list, now);
       }
       this.latched.clear();
+      this.shots.clear();
       if (playing && this.hostHere && this.status === 'connected') {
         this.acc += dt * scale;
         while (this.acc >= DT) {
@@ -680,7 +724,7 @@ export class Controller {
       const r = this.remote.get(i);
       const seat = this.lobby?.seats[i];
       if (this.mode === 'host' && seat?.kind === 'human' && !seat.away && r) {
-        const input = { ...r.input, swing: r.latched };
+        const input = { ...r.input, swing: r.latched, ...(r.latched && r.shot ? { shot: r.shot } : {}) };
         r.latched = false;
         return input;
       }
@@ -688,6 +732,7 @@ export class Controller {
       return this.sport.botInput(s, i, { tier: this.bots[i] ?? 'club', humans });
     });
     this.latched.clear(); // a press is consumed by exactly one step
+    this.shots.clear();
     return out;
   }
 

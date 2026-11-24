@@ -141,6 +141,14 @@ export interface Player {
   streak: number;
   /** unused here; kept so code shared with pickleball can read it */
   chefUntil: number;
+  /** a right-thumb shot waiting for the ball: what, how long it's waited, and its aim */
+  qAct: 'none' | 'pass' | 'jump';
+  qT: number;
+  aimX: number;
+  aimZ: number;
+  aimOn: boolean;
+  /** 0..1, how well the read went (how early you committed, how well you got there); -1 for the classic press */
+  readQ: number;
   stats: PlayerStats;
 }
 
@@ -276,7 +284,7 @@ function clamp(v: number, lo: number, hi: number): number {
 function newPlayer(team: Team): Player {
   return {
     team, x: 0, z: sgn(team) * 17, vx: 0, vz: 0, y: 0, vy: 0, swingT: -1, act: 'none', swingHit: false, cooldown: 0, down: 0,
-    heat: 0, fire: 0, refilled: false, chill: 0, streak: 0, chefUntil: 0,
+    heat: 0, fire: 0, refilled: false, chill: 0, streak: 0, chefUntil: 0, qAct: 'none', qT: 0, aimX: 0, aimZ: 0, aimOn: false, readQ: -1,
     stats: { hits: 0, digs: 0, sets: 0, kills: 0, blocks: 0, aces: 0, supers: 0, dives: 0, run: 0, fires: 0, bestStreak: 0 },
   };
 }
@@ -476,6 +484,9 @@ export function setupServe(state: GameState) {
     p.swingHit = false;
     p.cooldown = 0;
     p.down = 0;
+    p.qAct = 'none';
+    p.aimOn = false;
+    p.readQ = -1;
   }
   state.phase = 'serve';
   state.phaseTicks = 0;
@@ -696,6 +707,21 @@ export function movePlayer(state: GameState, i: number, p: Player, input: Player
     wz *= 0.7071;
   }
   const air = p.y > 0;
+  // A committed spike takes its approach for you once you're close: the last few
+  // steps to the spot under the ball, at the pace that gets you there in time.
+  const spot = p.qAct === 'jump' && !air && p.swingT < 0 ? approachSpot(state, i) : null;
+  if (spot) {
+    const dx = spot.x - p.x;
+    const dz = spot.z - p.z;
+    const d = Math.hypot(dx, dz);
+    const sp = Math.min(PLAYER_SPEED * 1.15, d / Math.max(0.08, spot.t - JUMP_LEAD));
+    p.vx = d > 0.05 ? (dx / d) * sp : 0;
+    p.vz = d > 0.05 ? (dz / d) * sp : 0;
+    p.x += p.vx * DT;
+    p.z += p.vz * DT;
+    zClamp();
+    return;
+  }
   if (air) {
     // in the air you keep the momentum you jumped with; the stick only aims
     p.vx *= 0.992;
@@ -742,6 +768,160 @@ export function coastPlayer(p: Player) {
 function jump(p: Player, scale: number) {
   p.vy = JUMP_V * scale * (p.fire > 0 ? FIRE_JUMP : 1);
   p.y = Math.max(p.y, 0.001);
+}
+
+// ————— right-thumb shots —————
+
+/** the hand's height at the top of a spike jump, and how long before contact to leave the ground */
+const HAND_AT_TOP = 7.6 + 3.0;
+const JUMP_LEAD = 0.33;
+/** how far an approach will carry you in on its own */
+const APPROACH = 5.2;
+const PASS_PULL = 2.6;
+const SHOT_WAIT = 160;
+
+/** this player may touch the ball next, and it's on (or coming to) their side */
+function mine(state: GameState, i: number): { n: number; fromOpp: boolean } | null {
+  const p = state.players[i];
+  const b = state.ball;
+  const s = sgn(p.team);
+  const onMySide = b.z * s > 0;
+  const land = landing(b);
+  const coming = onMySide || (b.vz * s > 0 && land.z * s > 0);
+  if (!coming) return null;
+  const legal = onMySide ? state.touches < 3 && (state.format === 'singles' || state.lastHitter !== i || state.lastTouch === 'block') : true;
+  if (!legal) return null;
+  return { n: onMySide ? state.touches : 0, fromOpp: state.lastHitter >= 0 && state.players[state.lastHitter].team !== p.team };
+}
+
+/** where to stand to spike this ball, and when it'll be at the hand; null if it can't be spiked */
+function approachSpot(state: GameState, i: number): { x: number; z: number; t: number } | null {
+  const p = state.players[i];
+  const s = sgn(p.team);
+  const b = state.ball;
+  if (!mine(state, i)) return null;
+  const t = timeToHeight(b, HAND_AT_TOP);
+  if (t < 0) return null;
+  const c = ballAt(b, t);
+  if (c.z * s < -0.3) return null;
+  // the hand is a little in front of the body
+  const z = s > 0 ? Math.max(1, c.z + s * 0.8) : Math.min(-1, c.z + s * 0.8);
+  const d = Math.hypot(c.x - p.x, z - p.z);
+  if (d > APPROACH * state.traits[i].reach + Math.max(0, t - JUMP_LEAD) * PLAYER_SPEED * 0.35) return null;
+  return { x: c.x, z, t };
+}
+
+/** a shot from the right thumb arrives with the press */
+function shotPress(state: GameState, i: number, input: PlayerInput) {
+  const p = state.players[i];
+  const shot = input.shot!;
+  p.aimX = clamp(shot.ax, -1, 1);
+  p.aimZ = clamp(shot.az, -1, 1);
+  if (shot.act === 'dive') {
+    if (p.swingT >= 0 || p.down > 0 || p.y > 0) return;
+    p.qAct = 'none';
+    const s = sgn(p.team);
+    const b = state.ball;
+    const land = landing(b);
+    let dx = shot.ax * s;
+    let dz = -shot.az * s;
+    const len = Math.hypot(dx, dz);
+    // straight down: dive at the ball
+    if (len < 0.3) { dx = land.x - p.x; dz = land.z - p.z; }
+    const d = Math.hypot(dx, dz) || 1;
+    p.act = 'dive';
+    p.swingT = 0;
+    p.swingHit = false;
+    p.aimOn = false;
+    p.vx = (dx / d) * 24;
+    p.vz = (dz / d) * 24;
+    return;
+  }
+  p.qAct = shot.act === 'jump' ? 'jump' : 'pass';
+  p.qT = 0;
+}
+
+/** a waiting shot: fire it when the ball gets there */
+function tickShot(state: GameState, i: number) {
+  const p = state.players[i];
+  if (p.qAct === 'none') return;
+  p.qT += 1;
+  if (p.qT > SHOT_WAIT || state.phase !== 'rally') { p.qAct = 'none'; return; }
+  if (p.swingT >= 0 || p.down > 0 || p.y > 0 || p.cooldown > 0) return;
+  const s = sgn(p.team);
+  const b = state.ball;
+  const t = state.traits[i];
+  const own = mine(state, i);
+
+  if (p.qAct === 'jump') {
+    if (!own) {
+      // their ball: up to the net to block, timed off their hitter's jump
+      const atNet = Math.abs(p.z) <= 4.8;
+      const hitterUp = state.players.some((o) => o.team !== p.team && o.y > 1.2 && o.vy < 7);
+      if (atNet && hitterUp && b.z * s < 0) {
+        p.qAct = 'none';
+        p.act = 'block';
+        p.swingT = 0;
+        p.swingHit = false;
+        jump(p, 1);
+      }
+      return;
+    }
+    const spot = approachSpot(state, i);
+    if (!spot) {
+      // too low to spike: play it as a pass instead of jumping at nothing
+      if (timeToHeight(b, HAND_AT_TOP) < 0 && b.y < HAND_AT_TOP) p.qAct = 'pass';
+      return;
+    }
+    if (spot.t > JUMP_LEAD + DT) return;
+    const miss = Math.hypot(spot.x - p.x, spot.z - p.z);
+    // the read: committing early (half a second before takeoff is plenty) and being there
+    const early = clamp((p.qT * DT) / 0.55, 0, 1);
+    p.readQ = clamp(0.58 + 0.42 * early - miss * 0.18, 0.15, 1);
+    p.readQ += (1 - p.readQ) * t.forgive * 0.35;
+    p.qAct = 'none';
+    p.act = 'spike';
+    p.swingT = 0;
+    p.swingHit = false;
+    p.aimOn = true;
+    jump(p, 1);
+    return;
+  }
+
+  // a pass: bump or set when the ball comes down into your arms
+  if (!own) return;
+  const n = own.n;
+  const thr = n === 1 ? SET_HEIGHT : BUMP_HEIGHT;
+  const reach = REACH * t.reach;
+  const tThr = timeToHeight(b, thr);
+  const at = tThr >= 0 ? ballAt(b, tThr) : b;
+  const off = Math.hypot(at.x - p.x, at.z - p.z);
+  if (b.z * s <= 0 || b.y > thr || b.vy > 3 || Math.hypot(b.x - p.x, b.z - p.z) > reach) return;
+  p.readQ = clamp(1 - (off / reach) * 0.3, 0.5, 1);
+  p.qAct = 'none';
+  p.act = n === 1 ? 'set' : 'bump';
+  p.swingT = n === 1 ? SET_SWEET : BUMP_SWEET;
+  p.swingHit = false;
+  p.aimOn = true;
+}
+
+/** the pass's gentle pull: a step or two toward where the ball comes down, if you're nearly there */
+function passPull(state: GameState, i: number, input: PlayerInput): PlayerInput {
+  const p = state.players[i];
+  if (p.qAct !== 'pass' || p.swingT >= 0 || p.y > 0 || input.mx !== 0 || input.mz !== 0) return input;
+  if (!mine(state, i)) return input;
+  const b = state.ball;
+  const thr = state.touches === 1 && b.z * sgn(p.team) > 0 ? SET_HEIGHT : BUMP_HEIGHT;
+  const tThr = timeToHeight(b, thr);
+  if (tThr < 0) return input;
+  const at = ballAt(b, tThr);
+  const s = sgn(p.team);
+  const dx = at.x - p.x;
+  const dz = at.z - p.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.5 || d > PASS_PULL * state.traits[i].reach + 1.5) return input;
+  // in the player's own frame: right is +x for team 0, toward the net is -z
+  return { ...input, mx: Math.abs(dx) > 0.4 ? Math.sign(dx) * s : 0, mz: Math.abs(dz) > 0.4 ? -Math.sign(dz) * s : 0 };
 }
 
 /** a press during a rally: pick the action from the moment */
@@ -947,6 +1127,7 @@ function tryContact(state: GameState, i: number, input: PlayerInput) {
     }
     if (state.touches >= 3) return;
     if (state.format === 'doubles' && state.lastHitter === i && state.lastTouch !== 'block') return;
+    if (p.aimOn) input = { ...input, mx: p.aimX, mz: p.aimZ > 0.45 ? 1 : p.aimZ < -0.45 ? -1 : 0 };
     spike(state, i, input);
     return;
   }
@@ -954,6 +1135,7 @@ function tryContact(state: GameState, i: number, input: PlayerInput) {
   if (zz <= 0) return;
   if (state.touches >= 3) return;
   if (state.format === 'doubles' && state.lastHitter === i && state.lastTouch !== 'block') return;
+  if (p.aimOn) input = { ...input, mx: p.aimX, mz: p.aimZ > 0.45 ? 1 : p.aimZ < -0.45 ? -1 : 0 };
   const n = state.touches;
   const fromOpp = state.lastHitter >= 0 && state.players[state.lastHitter].team !== p.team;
   const attack = n === 0 && fromOpp && (state.lastTouch === 'spike' || state.lastTouch === 'serve' || state.lastTouch === 'block' || state.lastTouch === 'tip');
@@ -1004,7 +1186,9 @@ function tryContact(state: GameState, i: number, input: PlayerInput) {
   if (b.y > (isSet ? SET_HEIGHT : BUMP_HEIGHT)) return;
   if (b.vy > 3) return; // still on its way up from a teammate
 
-  const tq = timingQuality(p.swingT, isSet ? SET_SWEET : BUMP_SWEET, active, t.forgive);
+  const tq = p.readQ >= 0 ? p.readQ : timingQuality(p.swingT, isSet ? SET_SWEET : BUMP_SWEET, active, t.forgive);
+  p.readQ = -1;
+  p.aimOn = false;
   let q = tq;
   const speed = Math.hypot(b.vx, b.vy, b.vz);
   const wasSuper = b.super;
@@ -1085,7 +1269,10 @@ function spike(state: GameState, i: number, input: PlayerInput) {
   const fire = p.fire > 0;
   const warm = !fire && p.heat >= HEAT_WARM;
   const dev = (p.swingT < SPIKE_SWEET ? (SPIKE_SWEET - p.swingT) / 34 : (p.swingT - SPIKE_SWEET) / 44) * (t.guard ? 0.35 : 1) * (1 - t.forgive * 0.6);
-  const q = clamp(1 - dev * 0.95, 0, 1);
+  // a right-thumb spike is as good as the read that set it up
+  const q = p.readQ >= 0 ? p.readQ : clamp(1 - dev * 0.95, 0, 1);
+  p.readQ = -1;
+  p.aimOn = false;
   const err = (1 - q) * (fire ? FIRE_ACCURACY : 1);
   const mz = clamp(Math.round(input.mz), -1, 1);
   const mx = clamp(input.mx, -1, 1);
@@ -1210,15 +1397,18 @@ export function step(prev: GameState, inputs: PlayerInput[]): GameState {
             state.ball = { x: p.x - s * 0.3, y: 6.5, z: p.z - s * 0.9, vx: 0, vy: 17, vz: -s * 1.2, hot: p.fire > 0, super: false };
           }
         } else if (state.toss >= 10) {
-          serveHit(state, input, true);
+          serveHit(state, input.shot ? { ...input, mx: input.shot.ax, mz: input.shot.az > 0.45 ? 1 : input.shot.az < -0.45 ? -1 : 0 } : input, true);
         }
+      } else if (input.shot) {
+        if (state.phase === 'rally') shotPress(state, i, input);
       } else if (p.swingT < 0 && p.cooldown <= 0 && p.down <= 0 && p.y <= 0) {
         startAct(state, i, input);
       }
     }
+    if (state.phase === 'rally') tickShot(state, i);
     const bx = p.x;
     const bz = p.z;
-    movePlayer(state, i, p, input);
+    movePlayer(state, i, p, passPull(state, i, input));
     fall(p);
     p.stats.run += Math.hypot(p.x - bx, p.z - bz);
     if (state.phase === 'rally' && p.fire > 0) {

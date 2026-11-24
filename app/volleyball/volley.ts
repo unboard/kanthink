@@ -114,6 +114,19 @@ export const VOLLEYBALL: Sport<GameState> = {
   ballRadius: BALL_R * 1.3,
   dt: DT,
   botNames: ['Sandy', 'Spike', 'Coco', 'Digger', 'Sunny', 'Roofer', 'Bumper', 'Ace'],
+  gesture(dx, dy) {
+    const len = Math.hypot(dx, dy);
+    if (len < 16) return { shot: { act: 'pass', ax: 0, az: 0 }, word: 'Pass' };
+    if (dy > len * 0.55) {
+      const ax = Math.max(-1, Math.min(1, (dx / len) * 1.7));
+      if (len < 55) return { shot: { act: 'jump', ax, az: 1 }, word: 'Tip' };
+      const deep = len > 170;
+      return { shot: { act: 'jump', ax, az: deep ? -1 : 0 }, word: deep ? 'Spike deep' : ax > 0.4 ? 'Spike right' : ax < -0.4 ? 'Spike left' : 'Spike' };
+    }
+    if (dy < -len * 0.55) return { shot: { act: 'dive', ax: dx / len, az: dy / len }, word: 'Dive' };
+    return { shot: { act: 'pass', ax: Math.sign(dx), az: 0 }, word: dx > 0 ? 'Set right' : 'Set left' };
+  },
+  touchHint: 'Tap to pass · swipe up to spike or block (tilt to aim, flick to tip) · swipe down to dive · sideways to set that way',
   action: 'Hit',
   hint: 'One button bumps, sets, spikes and blocks. Left/right aims, up tips it short, down goes deep',
   teamNames: ['Coral team', 'Teal team'],
@@ -178,7 +191,7 @@ export const VOLLEYBALL: Sport<GameState> = {
     if (how === 'tool') return `Off the block · ${team}`;
     return `Point ${team}`;
   },
-  serveHint: (_s, serverName, shared) => `${shared ? `${serverName}, serve` : 'Your serve'}: press to toss, press again near the top for a jump serve`,
+  serveHint: (_s, serverName, shared) => `${shared ? `${serverName}, serve` : 'Your serve'}: tap to toss, then swipe up near the top for a jump serve (or let it float)`,
   awards: awardsFor,
   zeroStats: ZERO,
 };

@@ -1,20 +1,28 @@
 'use client';
 
-// Touch controls for phones and tablets: a stick that appears wherever your left thumb
-// lands, and one big button under your right thumb. Pointer events with capture, so two
-// thumbs work at once and a thumb that slides off the stick still steers.
+// Touch controls for phones and tablets. One job per thumb:
+//   left thumb  — move. A stick appears wherever it lands.
+//   right thumb — the shot. Tap, or swipe the way you want the ball to go: up to spike
+//                 or drive, a short flick to tip or dink, down to dive or lob, sideways
+//                 to set or angle it. The game times the contact as the ball arrives,
+//                 so your job is reading the ball and getting there.
+// Pointer events with capture, so both thumbs work at once.
 
 import { useRef, useState } from 'react';
 
-export function TouchControls({ label, onStick, onPress }: {
-  label: string;
+export function TouchControls({ hint, onStick, onShot }: {
+  hint: string;
   onStick: (x: number, y: number) => void;
-  onPress: () => void;
+  /** dx right, dy up, in pixels; returns the word for the shot */
+  onShot: (dx: number, dy: number) => string;
 }) {
   const [base, setBase] = useState<{ x: number; y: number } | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const [down, setDown] = useState(false);
   const origin = useRef<{ id: number; x: number; y: number } | null>(null);
+  const swipe = useRef<{ id: number; x: number; y: number; lx: number; ly: number } | null>(null);
+  const [trail, setTrail] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [flash, setFlash] = useState<{ word: string; x: number; y: number; k: number } | null>(null);
+  const flashK = useRef(0);
   const R = 56;
 
   const move = (cx: number, cy: number) => {
@@ -34,9 +42,24 @@ export function TouchControls({ label, onStick, onPress }: {
     onStick(0, 0);
   };
 
+  const release = (cx: number, cy: number, pad: DOMRect) => {
+    const s = swipe.current;
+    if (!s) return;
+    swipe.current = null;
+    const dx = cx - s.x;
+    const dy = s.y - cy;
+    const word = onShot(dx, dy);
+    flashK.current += 1;
+    setFlash({ word, x: s.x - pad.left, y: s.y - pad.top, k: flashK.current });
+    const k = flashK.current;
+    setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 650);
+    setTimeout(() => setTrail(null), 180);
+  };
+
   return (
     <>
-      {/* the left half of the screen is the stick */}
+      <style>{`@keyframes pbShot { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.8) } 25% { opacity: 1; transform: translate(-50%, -80%) scale(1.08) } 100% { opacity: 0; transform: translate(-50%, -140%) scale(1) } }`}</style>
+      {/* left half: the stick */}
       <div
         className="absolute bottom-0 left-0 top-[22%] w-1/2"
         style={{ touchAction: 'none' }}
@@ -63,18 +86,50 @@ export function TouchControls({ label, onStick, onPress }: {
           </div>
         )}
       </div>
-      <button
-        type="button"
-        aria-label={label}
-        className={`absolute bottom-[max(26px,env(safe-area-inset-bottom))] right-[max(22px,env(safe-area-inset-right))] flex h-[104px] w-[104px] items-center justify-center rounded-full border-4 border-[#14200a]/30 text-[15px] font-black uppercase tracking-wide text-[#14200a] shadow-[0_8px_0_#93b000,0_18px_40px_rgba(0,0,0,0.45)] transition-transform ${down ? 'translate-y-[5px] bg-[#f1ff9a] shadow-[0_3px_0_#93b000]' : 'bg-[#dcff3d]'}`}
+
+      {/* right half: the shot pad */}
+      <div
+        className="absolute bottom-0 right-0 top-[22%] w-1/2"
         style={{ touchAction: 'none' }}
-        onPointerDown={(e) => { e.preventDefault(); setDown(true); onPress(); }}
-        onPointerUp={() => setDown(false)}
-        onPointerLeave={() => setDown(false)}
-        onPointerCancel={() => setDown(false)}
+        onPointerDown={(e) => {
+          if (swipe.current) return;
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
+          const r = e.currentTarget.getBoundingClientRect();
+          setTrail({ x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top });
+        }}
+        onPointerMove={(e) => {
+          const s = swipe.current;
+          if (!s || s.id !== e.pointerId) return;
+          s.lx = e.clientX;
+          s.ly = e.clientY;
+          const r = e.currentTarget.getBoundingClientRect();
+          setTrail((t) => (t ? { ...t, x1: e.clientX - r.left, y1: e.clientY - r.top } : t));
+          // a long, fast swipe doesn't wait for the finger to lift
+          if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 190) release(e.clientX, e.clientY, r);
+        }}
+        onPointerUp={(e) => { if (swipe.current?.id === e.pointerId) release(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); }}
+        onPointerCancel={(e) => { if (swipe.current?.id === e.pointerId) { swipe.current = null; setTrail(null); } }}
       >
-        {label}
-      </button>
+        <svg className="pointer-events-none absolute inset-0 h-full w-full">
+          {trail && (
+            <>
+              <line x1={trail.x0} y1={trail.y0} x2={trail.x1} y2={trail.y1} stroke="#dcff3d" strokeWidth={10} strokeLinecap="round" opacity={0.75} />
+              <circle cx={trail.x1} cy={trail.y1} r={14} fill="#dcff3d" opacity={0.9} />
+            </>
+          )}
+        </svg>
+        {flash && (
+          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full bg-[#dcff3d] px-3 py-1 text-[15px] font-black uppercase italic text-[#14200a] shadow-xl" style={{ left: flash.x, top: flash.y, animation: 'pbShot 650ms ease-out both' }}>
+            {flash.word}
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-[max(22px,env(safe-area-inset-bottom))] right-[max(18px,env(safe-area-inset-right))] flex w-[min(230px,44vw)] flex-col items-center gap-1.5 rounded-3xl border-2 border-dashed border-white/25 bg-white/[0.05] px-3 py-3 text-center">
+          <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#dcff3d]">Shot pad</div>
+          <div className="text-[11px] leading-snug text-white/65">{hint}</div>
+        </div>
+      </div>
     </>
   );
 }

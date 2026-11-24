@@ -24,6 +24,8 @@ export interface WireInput {
   mz: number;
   /** count of swing presses so far; a press is any increase */
   sw: number;
+  /** the right-thumb shot that went with the latest press: act (0 pass, 1 jump, 2 dive, 3 hit), aim x, aim z */
+  g?: [number, number, number];
 }
 
 export interface Seat {
@@ -248,6 +250,9 @@ export class RoomNet {
         mx: clampInt(x?.mx, -1, 1),
         mz: clampInt(x?.mz, -1, 1),
         sw: clampInt(x?.sw, 0, 1e9),
+        ...(Array.isArray(x?.g) && x.g.length === 3 && x.g.every((n) => typeof n === 'number' && Number.isFinite(n))
+          ? { g: [clampInt(x.g[0], 0, 3), Math.max(-1, Math.min(1, x.g[1])), Math.max(-1, Math.min(1, x.g[2]))] as [number, number, number] }
+          : {}),
       }));
       this.events.onInput?.(from(meta), list);
     });
@@ -310,7 +315,7 @@ export class RoomNet {
   /** guest: call every frame; sends on change, with a slow heartbeat */
   maybeSendInput(inputs: WireInput[], now: number) {
     if (!this.ready() || !this.hasAudience() || !inputs.length) return;
-    const key = inputs.map((i) => `${i.seat}:${i.mx}|${i.mz}|${i.sw}`).join(',');
+    const key = inputs.map((i) => `${i.seat}:${i.mx}|${i.mz}|${i.sw}|${i.g?.join('/') ?? ''}`).join(',');
     if (key === this.lastInputKey && now - this.lastInputAt < 500) return;
     if (!this.take(now)) return;
     this.lastInputKey = key;

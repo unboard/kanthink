@@ -105,6 +105,23 @@ export interface PlayerInput {
   mz: number;
   /** pressed this step (edge, not held) */
   swing: boolean;
+  /**
+   * A shot chosen with the right thumb (a swipe on a phone, the right stick on a
+   * gamepad), sent with the press. Without it the press is the classic one-button
+   * press and the left stick aims. With it, the left stick only moves: this says what
+   * to do and where, and the game times the contact as the ball arrives.
+   */
+  shot?: Shot;
+}
+
+/** what the right thumb asked for: a kind, and an aim in the player's own frame */
+export interface Shot {
+  /** pass: a tap (or sideways swipe) · jump: swipe up · dive: swipe down · hit: pickleball */
+  act: 'pass' | 'jump' | 'dive' | 'hit';
+  /** -1 left … 1 right */
+  ax: number;
+  /** -1 deep / lob … 1 short / tip / dink */
+  az: number;
 }
 
 export const IDLE: PlayerInput = { mx: 0, mz: 0, swing: false };
@@ -164,6 +181,12 @@ export interface Player {
   streak: number;
   /** a kitchen fault: the chef hat stays on until this tick */
   chefUntil: number;
+  /** ticks since a right-thumb shot was asked for, -1 when none is waiting */
+  qT: number;
+  /** that shot's aim, used at contact instead of the stick while aimOn */
+  aimX: number;
+  aimZ: number;
+  aimOn: boolean;
   stats: PlayerStats;
 }
 
@@ -376,7 +399,7 @@ function clamp(v: number, lo: number, hi: number): number {
 function newPlayer(team: Team): Player {
   return {
     team, x: 0, z: sgn(team) * 20, vx: 0, vz: 0, swingT: -1, cooldown: 0, swingHit: false,
-    heat: 0, fire: 0, refilled: false, chill: 0, streak: 0, chefUntil: 0,
+    heat: 0, fire: 0, refilled: false, chill: 0, streak: 0, chefUntil: 0, qT: -1, aimX: 0, aimZ: 0, aimOn: false,
     stats: { hits: 0, dinks: 0, lobs: 0, winners: 0, run: 0, fires: 0, bestStreak: 0, kitchen: 0 },
   };
 }
@@ -484,6 +507,8 @@ export function setupServe(state: GameState) {
     p.swingT = -1;
     p.cooldown = 0;
     p.swingHit = false;
+    p.qT = -1;
+    p.aimOn = false;
   }
   state.phase = 'serve';
   state.phaseTicks = 0;
@@ -744,11 +769,50 @@ function tickSwing(p: Player, input: PlayerInput) {
     if (p.swingT > SWING_TOTAL) {
       p.swingT = -1;
       p.cooldown = SWING_COOLDOWN;
+      p.aimOn = false;
     }
-  } else if (input.swing && p.cooldown <= 0) {
+  } else if (input.swing && !input.shot && p.cooldown <= 0) {
     p.swingT = 0;
     p.swingHit = false;
   }
+}
+
+/** how long a right-thumb shot waits for the ball before it's forgotten */
+const SHOT_WAIT = 150;
+
+/**
+ * A shot asked for with the right thumb: remember it, then start the swing on our own
+ * at the moment the paddle will meet the ball, keeping the rules (let the serve and
+ * return bounce; no volleys from the kitchen). Where you stand is still yours.
+ */
+function queueShot(state: GameState, i: number, input: PlayerInput) {
+  const p = state.players[i];
+  const shot = input.shot!;
+  p.qT = 0;
+  p.aimX = clamp(shot.ax, -1, 1);
+  p.aimZ = clamp(shot.az, -1, 1);
+}
+
+function tickShot(state: GameState, i: number) {
+  const p = state.players[i];
+  if (p.qT < 0) return;
+  p.qT += 1;
+  if (p.qT > SHOT_WAIT) { p.qT = -1; return; }
+  if (p.swingT >= 0 || p.cooldown > 0) return;
+  if (state.lastHitter >= 0 && state.players[state.lastHitter].team === p.team) return;
+  // where the ball will be when a swing started now is at its sweet spot
+  const b: Ball = { ...state.ball };
+  let bounced = state.bounces >= 1;
+  for (let k = 0; k < SWING_SWEET; k++) if (stepBall(b) === 'bounce') bounced = true;
+  if (sideOfZ(b.z) !== p.team || b.y > 7.5) return;
+  const mustBounce = state.hits <= 2 || Math.abs(p.z) <= KITCHEN;
+  if (mustBounce && !bounced) return;
+  const reach = REACH * state.traits[i].reach;
+  if (Math.hypot(b.x - p.x, b.z - p.z) > reach * 0.92) return;
+  p.swingT = 0;
+  p.swingHit = false;
+  p.aimOn = true;
+  p.qT = -1;
 }
 
 // ————— the step —————
@@ -769,7 +833,15 @@ export function step(prev: GameState, inputs: PlayerInput[]): GameState {
     const input = inputs[i] ?? IDLE;
     const serving = i === state.server;
     const wasIdle = p.swingT < 0;
+    if (input.swing && input.shot) {
+      if (state.phase === 'serve' && serving) {
+        if (p.swingT < 0 && p.cooldown <= 0) { p.swingT = 0; p.swingHit = false; }
+      } else if (state.phase === 'rally') {
+        queueShot(state, i, input);
+      }
+    }
     tickSwing(p, input);
+    if (state.phase === 'rally') tickShot(state, i);
     const bx = p.x;
     const bz = p.z;
     movePlayer(p, input, state.phase, serving, serveCourtSign(state, p.team), state.traits[i].speed);
@@ -783,7 +855,7 @@ export function step(prev: GameState, inputs: PlayerInput[]): GameState {
       if (state.phaseTicks < SERVE_READY) {
         p.swingT = -1; // too soon after the last point; ignore the press
       } else {
-        serve(state, input);
+        serve(state, input.shot ? { ...input, mx: input.shot.ax, mz: input.shot.az } : input);
         p.swingHit = true;
       }
     }
@@ -872,6 +944,8 @@ function tryContact(state: GameState, i: number, input: PlayerInput) {
   if (dx * dx + dz * dz > reach * reach) return;
 
   const volley = state.bounces === 0;
+  // a right-thumb shot keeps the rules for you: it waits for the bounce rather than fault
+  if (p.aimOn && volley && (state.hits <= 2 || Math.abs(p.z) <= KITCHEN)) return;
   if (volley && state.hits <= 2 && t.guard) {
     // Turbo Fun's ready-hop: hold the swing until it bounces instead of faulting
     p.swingT = Math.min(p.swingT, 6);
@@ -907,6 +981,8 @@ function tryContact(state: GameState, i: number, input: PlayerInput) {
   const timing = (p.swingT - SWING_SWEET) / SWING_SWEET;
   const quality = clamp(1 - Math.abs(timing) * 0.9 * (1 - t.forgive * 0.6), 0, 1);
   const err = (1 - quality) * (fire ? FIRE_ACCURACY : 1);
+  if (p.aimOn) input = { ...input, mx: p.aimX, mz: p.aimZ > 0.5 ? 1 : p.aimZ < -0.5 ? -1 : 0 };
+  p.aimOn = false;
   const offsetLocal = dx * s; // + when the ball is on the player's right
   const aimLocal = clamp(input.mx, -1, 1) * 4.5 + offsetLocal * 0.9 - timing * 2.6 * (1 - t.forgive * 0.5);
   let tx = clamp(aimLocal, -11, 11) * s + (rand(state) - 0.5) * err * 5;

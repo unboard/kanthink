@@ -404,3 +404,71 @@ describe('volleyball bots', () => {
     expect(Math.max(...s.scores)).toBeGreaterThanOrEqual(GAME_TO);
   }, 60_000);
 });
+
+describe('right-thumb shots', () => {
+  const shot = (act: 'pass' | 'jump' | 'dive', ax = 0, az = 0): Partial<PlayerInput> => ({ shot: { act, ax, az } });
+
+  it('a tap early is a pass that waits for the ball and plays it', () => {
+    let s = rally('doubles', { x: -6, y: 14, z: 17, vy: 0 });
+    s.players[0].x = -6;
+    s.players[0].z = 17;
+    s = pressOnce(s, 0, shot('pass'));
+    expect(s.players[0].qAct).toBe('pass');
+    s = runUntil(s, (x) => x.hitSeq > 0, HZ * 2);
+    expect(s.lastTouch).toBe('bump');
+    expect(s.passQuality).toBeGreaterThan(0.7);
+  });
+
+  it('a swipe up on a set ball: the approach is taken for you and the spike goes over hard', () => {
+    // a set coming down near the net; the hitter is a few steps off and only swipes
+    let s = rally('doubles', { x: 3, y: 9, z: 6, vx: 0, vy: 14, vz: -1.2 }, { touches: 2, lastHitter: 1, lastTouch: 'set' });
+    s.players[0].x = 0;
+    s.players[0].z = 7.5;
+    s.setQuality = 0.95;
+    s = pressOnce(s, 0, shot('jump', 0.8, 0));
+    expect(s.players[0].qAct).toBe('jump');
+    s = runUntil(s, (x) => x.lastTouch === 'spike' || x.phase !== 'rally', HZ * 3);
+    expect(s.lastTouch).toBe('spike');
+    expect(s.lastHitter).toBe(0);
+    expect(s.ball.vz).toBeLessThan(-20);
+    // aimed right: toward the player's right (team 0 faces -z, so +x)
+    expect(landing(s.ball).x).toBeGreaterThan(2);
+  });
+
+  it('committing early is a better read than committing late', () => {
+    const go = (wait: number) => {
+      let s = rally('doubles', { x: 0, y: 9, z: 6, vy: 14, vz: -1.2 }, { touches: 2, lastHitter: 1, lastTouch: 'set' });
+      s.players[0].x = 0;
+      s.players[0].z = 7;
+      s.setQuality = 0.95;
+      s = run(s, wait);
+      s = pressOnce(s, 0, shot('jump'));
+      s = runUntil(s, (x) => x.lastTouch === 'spike' || x.phase !== 'rally', HZ * 3);
+      return { touch: s.lastTouch, speed: Math.hypot(s.ball.vx, s.ball.vz) };
+    };
+    const early = go(0);
+    const late = go(70);
+    expect(early.touch).toBe('spike');
+    expect(late.touch).toBe('spike');
+    expect(early.speed).toBeGreaterThan(late.speed);
+  });
+
+  it('a swipe down dives the way you swiped', () => {
+    let s = rally('doubles', { x: 0, y: 6, z: 14, vy: -2 });
+    s.players[0].x = 0;
+    s.players[0].z = 17;
+    s = pressOnce(s, 0, shot('dive', 1, 0));
+    expect(s.players[0].act).toBe('dive');
+    expect(s.players[0].vx).toBeGreaterThan(10);
+  });
+
+  it('a short flick up is a tip over the block', () => {
+    let s = rally('doubles', { x: 0, y: 9, z: 6, vy: 14, vz: -1.2 }, { touches: 2, lastHitter: 1, lastTouch: 'set' });
+    s.players[0].x = 0;
+    s.players[0].z = 7;
+    s = pressOnce(s, 0, shot('jump', 0, 1));
+    s = runUntil(s, (x) => x.lastTouch === 'tip' || x.phase !== 'rally', HZ * 3);
+    expect(s.lastTouch).toBe('tip');
+    expect(Math.abs(landing(s.ball).z)).toBeLessThan(10);
+  });
+});

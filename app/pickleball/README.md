@@ -29,6 +29,11 @@ tiers, family moments) came from a Gemini 4 Neon design pass and are noted where
 - While swinging: left/right aims, up dinks into the kitchen, down lobs. Timing and where
   the ball is relative to your body bend the shot.
 
+- **Shot pad** (phones, the right stick, I J K L U O): tap to hit, swipe up to drive (tilt
+  to aim), flick up to dink, swipe down to lob. Ask early; the swing is timed for you as
+  the ball arrives and keeps the rules (it waits for the bounce on the serve and return,
+  and in the kitchen). Where you stand is still yours.
+
 ## Rules implemented
 
 - Doubles serving: games start 0–0–2, two servers per side after that, the server serves

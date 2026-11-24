@@ -76,6 +76,15 @@ export const PICKLEBALL: Sport<GameState> = {
   ballRadius: BALL_R * 2.4, // drawn a little larger than life so it reads on screen
   dt: DT,
   botNames: BOT_NAMES,
+  gesture(dx, dy) {
+    const len = Math.hypot(dx, dy);
+    if (len < 16) return { shot: { act: 'hit', ax: 0, az: 0 }, word: 'Hit' };
+    const ax = Math.max(-1, Math.min(1, (dx / len) * 1.7));
+    if (dy > len * 0.55) return len < 55 ? { shot: { act: 'hit', ax, az: 1 }, word: 'Dink' } : { shot: { act: 'hit', ax, az: 0 }, word: ax > 0.4 ? 'Drive right' : ax < -0.4 ? 'Drive left' : 'Drive' };
+    if (dy < -len * 0.55) return { shot: { act: 'hit', ax, az: -1 }, word: 'Lob' };
+    return { shot: { act: 'hit', ax: Math.sign(dx), az: 0 }, word: dx > 0 ? 'Angle right' : 'Angle left' };
+  },
+  touchHint: 'Tap to hit · swipe up to drive (tilt to aim) · flick up to dink · swipe down to lob',
   action: 'Swing',
   hint: 'While swinging: left/right aims, up dinks, down lobs',
   teamNames: ['Coral team', 'Teal team'],

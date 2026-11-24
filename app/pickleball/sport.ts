@@ -2,7 +2,7 @@
 // lobby, the renderer, the menus and HUD) can run it. Pickleball and volleyball each
 // export one of these; nothing shared imports a particular sport's rules.
 
-import type { Format, PlayerInput, Team, Traits } from './sim';
+import type { Format, PlayerInput, Shot, Team, Traits } from './sim';
 import type { BotTier } from './bot';
 import type { CourtSpec } from './venue';
 import type { FigureAction, FigureProp } from './figure';
@@ -106,6 +106,13 @@ export interface Sport<S extends BaseState = BaseState> {
   /** seconds per sim tick */
   dt: number;
   botNames: string[];
+  /**
+   * A right-thumb swipe as a shot. dx right, dy up, in screen pixels (or a stick flick
+   * scaled to about 120). Returns the shot and a word for it to flash on screen.
+   */
+  gesture(dx: number, dy: number): { shot: Shot; word: string };
+  /** the one line under the touch pad saying what swipes do */
+  touchHint: string;
   /** what the one button is called, and what the directions do while pressing it */
   action: string;
   hint: string;

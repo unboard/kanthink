@@ -387,3 +387,27 @@ describe('play styles', () => {
     expect(a[1].title).toBe('Dink Chef');
   });
 });
+
+describe('right-thumb shots', () => {
+  it('a shot asked for early waits for the ball, keeps the two-bounce rule, and goes where it was aimed', () => {
+    // the return of serve: it must bounce first, so the swing waits for the bounce
+    const s0 = createGame(5, 0);
+    s0.phase = 'rally';
+    s0.hits = 1;
+    s0.bounces = 0;
+    s0.lastHitter = 0;
+    s0.players[1].x = 0;
+    s0.players[1].z = -18;
+    s0.ball = { x: 0, y: 6, z: -6, vx: 0, vy: 2, vz: -16, hot: false };
+    const press: PlayerInput = { mx: 0, mz: 0, swing: true, shot: { act: 'hit', ax: 1, az: 0 } };
+    let s = step(s0, [IDLE, press]);
+    expect(s.players[1].qT).toBeGreaterThanOrEqual(0);
+    for (let k = 0; k < 240 && s.hitSeq === s0.hitSeq; k++) s = step(s, [IDLE, IDLE]);
+    expect(s.hitSeq).toBe(s0.hitSeq + 1);
+    expect(s.lastHitter).toBe(1);
+    expect(s.phase).toBe('rally');
+    // team 1 faces +z, so its right is -x
+    expect(s.ball.vx).toBeLessThan(0);
+    expect(s.ball.vz).toBeGreaterThan(0);
+  });
+});
