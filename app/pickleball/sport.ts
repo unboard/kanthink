@@ -111,8 +111,8 @@ export interface Sport<S extends BaseState = BaseState> {
    * scaled to about 120). Returns the shot and a word for it to flash on screen.
    */
   gesture(dx: number, dy: number): { shot: Shot; word: string };
-  /** the one line under the touch pad saying what swipes do */
-  touchHint: string;
+  /** the short words on the touch shot pad: tap, swipe up, short flick up, swipe down, sideways, and the serve */
+  pad: { tap: string; up: string; flick: string; down: string; side: string; serve: string };
   /** what the one button is called, and what the directions do while pressing it */
   action: string;
   hint: string;

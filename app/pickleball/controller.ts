@@ -81,6 +81,8 @@ export interface Hud {
   venue: VenueId;
   /** someone here is playing on the touch screen */
   touch: boolean;
+  /** the ball is yours to play now (your serve, or coming to your side): the shot pad lights up */
+  ready: boolean;
   players: HudPlayer[];
   localSeats: number[];
   myTeam: Team;
@@ -794,6 +796,17 @@ export class Controller {
     this.toastAt = performance.now();
   }
 
+  private readyFor(seats: number[]): boolean {
+    const s = this.view;
+    if (!seats.length) return false;
+    if (s.phase === 'serve') return seats.includes(s.server);
+    if (s.phase !== 'rally') return false;
+    const g = sgn(s.players[seats[0]]?.team ?? 0);
+    const b = s.ball;
+    // coming over to us, or (volleyball) on our side still to be played
+    return g * b.vz > 0.5 || (this.sport.id === 'volleyball' && g * b.z > 0);
+  }
+
   private emitHud() {
     const s = this.view;
     const localSeats = [...this.locals.keys()];
@@ -809,6 +822,7 @@ export class Controller {
       sport: this.sport.id,
       venue: this.venue,
       touch: [...this.locals.values()].includes('touch'),
+      ready: this.readyFor(localSeats),
       players: s.players.map((p, i) => ({
         name: this.nameOf(i),
         team: p.team,

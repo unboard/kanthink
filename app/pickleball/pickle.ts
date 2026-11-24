@@ -73,7 +73,7 @@ export const PICKLEBALL: Sport<GameState> = {
   court: { sport: 'pickleball', halfWidth: HALF_WIDTH, halfLength: HALF_LENGTH, netHeight: NET_HEIGHT - 0.07, postX: POST_X, kitchen: KITCHEN },
   prop: 'paddle',
   ball: 'pickle',
-  ballRadius: BALL_R * 2.4, // drawn a little larger than life so it reads on screen
+  ballRadius: BALL_R * 3.3, // drawn a little larger than life so it reads on screen
   dt: DT,
   botNames: BOT_NAMES,
   gesture(dx, dy) {
@@ -84,7 +84,7 @@ export const PICKLEBALL: Sport<GameState> = {
     if (dy < -len * 0.55) return { shot: { act: 'hit', ax, az: -1 }, word: 'Lob' };
     return { shot: { act: 'hit', ax: Math.sign(dx), az: 0 }, word: dx > 0 ? 'Angle right' : 'Angle left' };
   },
-  touchHint: 'Tap to hit · swipe up to drive (tilt to aim) · flick up to dink · swipe down to lob',
+  pad: { tap: 'Hit', up: 'Drive', flick: 'Dink', down: 'Lob', side: 'Angle', serve: 'Serve' },
   action: 'Swing',
   hint: 'While swinging: left/right aims, up dinks, down lobs',
   teamNames: ['Coral team', 'Teal team'],

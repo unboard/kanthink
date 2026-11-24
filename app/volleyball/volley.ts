@@ -111,7 +111,7 @@ export const VOLLEYBALL: Sport<GameState> = {
   court: { sport: 'volleyball', halfWidth: HALF_WIDTH, halfLength: HALF_LENGTH, netHeight: NET_HEIGHT, postX: POST_X, kitchen: 0 },
   prop: 'none',
   ball: 'volley',
-  ballRadius: BALL_R * 1.3,
+  ballRadius: BALL_R * 1.75,
   dt: DT,
   botNames: ['Sandy', 'Spike', 'Coco', 'Digger', 'Sunny', 'Roofer', 'Bumper', 'Ace'],
   gesture(dx, dy) {
@@ -126,7 +126,7 @@ export const VOLLEYBALL: Sport<GameState> = {
     if (dy < -len * 0.55) return { shot: { act: 'dive', ax: dx / len, az: dy / len }, word: 'Dive' };
     return { shot: { act: 'pass', ax: Math.sign(dx), az: 0 }, word: dx > 0 ? 'Set right' : 'Set left' };
   },
-  touchHint: 'Tap to pass · swipe up to spike or block (tilt to aim, flick to tip) · swipe down to dive · sideways to set that way',
+  pad: { tap: 'Pass', up: 'Spike', flick: 'Tip', down: 'Dive', side: 'Set', serve: 'Serve' },
   action: 'Hit',
   hint: 'One button bumps, sets, spikes and blocks. Left/right aims, up tips it short, down goes deep',
   teamNames: ['Coral team', 'Teal team'],

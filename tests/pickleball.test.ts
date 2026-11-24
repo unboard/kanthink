@@ -410,4 +410,29 @@ describe('right-thumb shots', () => {
     expect(s.ball.vx).toBeLessThan(0);
     expect(s.ball.vz).toBeGreaterThan(0);
   });
+
+  it('a tap on the shot pad serves', () => {
+    let s = createGame(11, 0);
+    for (let i = 0; i < SERVE_READY + 2; i++) s = step(s, [IDLE, IDLE]);
+    const tap: PlayerInput = { mx: 0, mz: 0, swing: true, shot: { act: 'hit', ax: 0, az: 0 } };
+    s = step(s, s.server === 0 ? [tap, IDLE] : [IDLE, tap]);
+    expect(s.phase).toBe('rally');
+    expect(s.hits).toBe(1);
+  });
+
+  it('with the stick at rest, a queued shot takes the steps to the ball and hits it', () => {
+    const s0 = createGame(5, 0);
+    s0.phase = 'rally';
+    s0.hits = 3;
+    s0.bounces = 1;
+    s0.lastHitter = 0;
+    s0.players[1].x = 6; // well off to the side of the ball's path
+    s0.players[1].z = -16;
+    s0.ball = { x: 0, y: 5, z: -4, vx: 0, vy: 1, vz: -13, hot: false };
+    const press: PlayerInput = { mx: 0, mz: 0, swing: true, shot: { act: 'hit', ax: 0, az: 0 } };
+    let s = step(s0, [IDLE, press]);
+    for (let k = 0; k < 240 && s.hitSeq === s0.hitSeq && s.phase === 'rally'; k++) s = step(s, [IDLE, IDLE]);
+    expect(s.lastHitter).toBe(1);
+    expect(s.ball.vz).toBeGreaterThan(0);
+  });
 });

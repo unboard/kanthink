@@ -419,7 +419,7 @@ export class CourtRenderer {
     this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     // a phone held upright sees a narrow slice: widen the lens so the whole court fits
-    this.camera.fov = w >= h ? 46 : Math.min(74, 46 + (1 - w / h) * 44);
+    this.camera.fov = w >= h ? 50 : Math.min(66, 50 + (1 - w / h) * 30);
     this.camera.updateProjectionMatrix();
   }
 
@@ -547,8 +547,12 @@ export class CourtRenderer {
       const s = sgn(view.team);
       const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
       const fx = focus.reduce((acc, i) => acc + (state.players[i]?.x ?? 0), 0) / Math.max(1, focus.length);
-      this.camPosTarget.set(fx * 0.35, (vb ? 21.5 : 15.5) * pull, s * (HL + (vb ? 26 : 19) * pull));
-      this.camLookTarget.set(fx * 0.14, vb ? 2 : 0.5, -s * (vb ? 0 : 4));
+      // Low and close behind your side, riding with the play: the camera leans toward the
+      // ball across the court and lifts its gaze with it, so the ball stays big and in frame.
+      const bx = Math.max(-HW, Math.min(HW, b.x));
+      const bzc = Math.max(-HL, Math.min(HL, b.z));
+      this.camPosTarget.set(fx * 0.3 + bx * 0.25, (vb ? 18 : 13) * pull + Math.min(6, b.y * 0.25), s * (HL + (vb ? 21 : 13.5) * pull) + (bzc - s * HL) * 0.12);
+      this.camLookTarget.set(fx * 0.12 + bx * 0.35, (vb ? 3 : 1) + Math.min(5, b.y * 0.3), bzc * 0.4 - s * (vb ? 1 : 3));
     }
     for (const o of this.venue.nearSide) o.visible = !view.broadcast;
     const k = this.camReady ? Math.min(1, frameDt * (view.orbit ? 1.2 : 3)) : 1;

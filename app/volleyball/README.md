@@ -21,8 +21,10 @@ too, with the same venues, online rooms, bots and touch controls.
 
 ### The shot pad (phones, the right stick, or I J K L U O)
 
-The left thumb only moves. The right thumb is the shot: swipe the way you want the ball
-to go, early, while it's still in the air.
+The left thumb only moves. The right thumb is the shot: swipe anywhere on the right half
+the way you want the ball to go, early, while it's still in the air. There's no help text:
+a small compass under the thumb shows the moves, lights up when the ball is yours, and
+names the shot while your thumb is still moving (the words fade once you've played a while).
 
 - **Tap** (or a sideways swipe): pass. It waits for the ball and bumps or sets it when it
   comes down to you; sideways sets that side.

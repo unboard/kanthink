@@ -778,7 +778,7 @@ function tickSwing(p: Player, input: PlayerInput) {
 }
 
 /** how long a right-thumb shot waits for the ball before it's forgotten */
-const SHOT_WAIT = 150;
+const SHOT_WAIT = 300;
 
 /**
  * A shot asked for with the right thumb: remember it, then start the swing on our own
@@ -793,26 +793,52 @@ function queueShot(state: GameState, i: number, input: PlayerInput) {
   p.aimZ = clamp(shot.az, -1, 1);
 }
 
-function tickShot(state: GameState, i: number) {
+function tickShot(state: GameState, i: number, input: PlayerInput): PlayerInput {
   const p = state.players[i];
-  if (p.qT < 0) return;
+  if (p.qT < 0) return input;
   p.qT += 1;
-  if (p.qT > SHOT_WAIT) { p.qT = -1; return; }
-  if (p.swingT >= 0 || p.cooldown > 0) return;
-  if (state.lastHitter >= 0 && state.players[state.lastHitter].team === p.team) return;
-  // where the ball will be when a swing started now is at its sweet spot
+  if (p.qT > SHOT_WAIT) { p.qT = -1; return input; }
+  if (p.swingT >= 0 || p.cooldown > 0) return input;
+  if (state.lastHitter >= 0 && state.players[state.lastHitter].team === p.team) return input;
+  // only the diagonal receiver may return the serve
+  if (state.hits === 1 && state.format === 'doubles' && i !== receiverOf(state)) { p.qT = -1; return input; }
+  const reach = REACH * state.traits[i].reach;
+  const mustBounce = state.hits <= 2 || Math.abs(p.z) <= KITCHEN;
+  // follow the ball forward: the first moment it's legal and low enough to hit
   const b: Ball = { ...state.ball };
   let bounced = state.bounces >= 1;
-  for (let k = 0; k < SWING_SWEET; k++) if (stepBall(b) === 'bounce') bounced = true;
-  if (sideOfZ(b.z) !== p.team || b.y > 7.5) return;
-  const mustBounce = state.hits <= 2 || Math.abs(p.z) <= KITCHEN;
-  if (mustBounce && !bounced) return;
-  const reach = REACH * state.traits[i].reach;
-  if (Math.hypot(b.x - p.x, b.z - p.z) > reach * 0.92) return;
-  p.swingT = 0;
-  p.swingHit = false;
-  p.aimOn = true;
-  p.qT = -1;
+  let meet: { x: number; z: number; k: number } | null = null;
+  for (let k = 1; k <= 150; k++) {
+    const ev = stepBall(b);
+    if (ev === 'bounce') { if (bounced) break; bounced = true; }
+    if (ev === 'net') break;
+    if (k < SWING_SWEET) continue;
+    if (sideOfZ(b.z) !== p.team || b.y > 7.5 || (mustBounce && !bounced)) continue;
+    // reachable from here by the time it arrives, with a step or two
+    const d = Math.hypot(b.x - p.x, b.z - p.z);
+    if (k === SWING_SWEET && d <= reach * 0.95) {
+      p.swingT = 0;
+      p.swingHit = false;
+      p.aimOn = true;
+      p.qT = -1;
+      return input;
+    }
+    if (!meet && d - reach * 0.6 <= PLAYER_SPEED * (k - SWING_SWEET) * DT * 1.05) meet = { x: b.x, z: b.z, k };
+  }
+  // a shot asked for with the stick at rest: take the steps to the ball for you
+  if (meet && Math.abs(input.mx) < 0.2 && Math.abs(input.mz) < 0.2) {
+    const s = sgn(p.team);
+    // stand a little to the side so it comes onto the paddle, not the body
+    const wantX = meet.x - s * 0.9;
+    const dx = wantX - p.x;
+    const dz = meet.z - p.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.5) {
+      // world → stick: mx is right (+x for team 0), mz is toward the net
+      return { ...input, mx: (dx * s) / d, mz: (-dz * s) / d };
+    }
+  }
+  return input;
 }
 
 // ————— the step —————
@@ -833,18 +859,19 @@ export function step(prev: GameState, inputs: PlayerInput[]): GameState {
     const input = inputs[i] ?? IDLE;
     const serving = i === state.server;
     const wasIdle = p.swingT < 0;
+    tickSwing(p, input);
     if (input.swing && input.shot) {
       if (state.phase === 'serve' && serving) {
-        if (p.swingT < 0 && p.cooldown <= 0) { p.swingT = 0; p.swingHit = false; }
+        if (wasIdle && p.cooldown <= 0) { p.swingT = 0; p.swingHit = false; }
       } else if (state.phase === 'rally') {
         queueShot(state, i, input);
       }
     }
-    tickSwing(p, input);
-    if (state.phase === 'rally') tickShot(state, i);
+    let move = input;
+    if (state.phase === 'rally') move = tickShot(state, i, input);
     const bx = p.x;
     const bz = p.z;
-    movePlayer(p, input, state.phase, serving, serveCourtSign(state, p.team), state.traits[i].speed);
+    movePlayer(p, move, state.phase, serving, serveCourtSign(state, p.team), state.traits[i].speed);
     p.stats.run += Math.hypot(p.x - bx, p.z - bz);
     if (state.phase === 'rally' && p.fire > 0) {
       p.fire -= 100 / (FIRE_SECONDS * HZ);

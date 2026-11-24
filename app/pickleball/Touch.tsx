@@ -2,16 +2,37 @@
 
 // Touch controls for phones and tablets. One job per thumb:
 //   left thumb  — move. A stick appears wherever it lands.
-//   right thumb — the shot. Tap, or swipe the way you want the ball to go: up to spike
-//                 or drive, a short flick to tip or dink, down to dive or lob, sideways
-//                 to set or angle it. The game times the contact as the ball arrives,
-//                 so your job is reading the ball and getting there.
+//   right thumb — the shot. Tap, or swipe the way you want the ball to go. The game times
+//                 the contact as the ball arrives, so your job is reading it and getting there.
+// No instructions to read: a small compass under the right thumb shows the four moves,
+// lights up when the ball is yours to play, and shows the shot you're about to make while
+// your thumb is still moving. Once you've played a while the words fade, leaving the arrows.
 // Pointer events with capture, so both thumbs work at once.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-export function TouchControls({ hint, onStick, onShot }: {
-  hint: string;
+type Pad = { tap: string; up: string; flick: string; down: string; side: string; serve: string };
+type Arm = 'tap' | 'up' | 'down' | 'left' | 'right';
+
+const LIME = '#dcff3d';
+const LEARNED = 30;
+
+function armOf(dx: number, dy: number): Arm {
+  const len = Math.hypot(dx, dy);
+  if (len < 16) return 'tap';
+  if (dy > len * 0.55) return 'up';
+  if (dy < -len * 0.55) return 'down';
+  return dx > 0 ? 'right' : 'left';
+}
+
+export function TouchControls({ pad, sportId, ready, serving, preview, onStick, onShot }: {
+  pad: Pad;
+  sportId: string;
+  /** the ball is yours to play now */
+  ready: boolean;
+  serving: boolean;
+  /** the word a swipe would make, without making it */
+  preview: (dx: number, dy: number) => string;
   onStick: (x: number, y: number) => void;
   /** dx right, dy up, in pixels; returns the word for the shot */
   onShot: (dx: number, dy: number) => string;
@@ -19,11 +40,18 @@ export function TouchControls({ hint, onStick, onShot }: {
   const [base, setBase] = useState<{ x: number; y: number } | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const origin = useRef<{ id: number; x: number; y: number } | null>(null);
-  const swipe = useRef<{ id: number; x: number; y: number; lx: number; ly: number } | null>(null);
-  const [trail, setTrail] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number; arm: Arm; word: string } | null>(null);
   const [flash, setFlash] = useState<{ word: string; x: number; y: number; k: number } | null>(null);
+  const [fired, setFired] = useState<{ arm: Arm; k: number } | null>(null);
   const flashK = useRef(0);
+  const [uses, setUses] = useState(0);
+  const storeKey = `court-pad-uses-${sportId}`;
   const R = 56;
+
+  useEffect(() => {
+    try { setUses(Number(localStorage.getItem(storeKey)) || 0); } catch { /* private mode */ }
+  }, [storeKey]);
 
   const move = (cx: number, cy: number) => {
     const o = origin.current;
@@ -42,7 +70,7 @@ export function TouchControls({ hint, onStick, onShot }: {
     onStick(0, 0);
   };
 
-  const release = (cx: number, cy: number, pad: DOMRect) => {
+  const release = (cx: number, cy: number, box: DOMRect) => {
     const s = swipe.current;
     if (!s) return;
     swipe.current = null;
@@ -50,15 +78,53 @@ export function TouchControls({ hint, onStick, onShot }: {
     const dy = s.y - cy;
     const word = onShot(dx, dy);
     flashK.current += 1;
-    setFlash({ word, x: s.x - pad.left, y: s.y - pad.top, k: flashK.current });
     const k = flashK.current;
-    setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 650);
-    setTimeout(() => setTrail(null), 180);
+    setFlash({ word, x: cx - box.left, y: cy - box.top, k });
+    setFired({ arm: armOf(dx, dy), k });
+    setDrag(null);
+    setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 600);
+    setTimeout(() => setFired((f) => (f && f.k === k ? null : f)), 420);
+    setUses((u) => {
+      const n = u + 1;
+      try { if (n <= LEARNED + 1) localStorage.setItem(storeKey, String(n)); } catch { /* private mode */ }
+      return n;
+    });
   };
+
+  const live = drag?.arm ?? fired?.arm ?? null;
+  const learned = uses >= LEARNED;
+  const showWords = !learned || !!drag;
+  const center = serving ? pad.serve : pad.tap;
+
+  const armStyle = (a: Arm) => {
+    const on = live === a;
+    return {
+      color: on ? '#14200a' : 'rgba(255,255,255,0.92)',
+      background: on ? LIME : 'rgba(10,14,20,0.42)',
+      borderColor: on ? LIME : ready ? 'rgba(220,255,61,0.55)' : 'rgba(255,255,255,0.22)',
+      transform: on ? 'scale(1.12)' : 'scale(1)',
+    };
+  };
+  const Chevron = ({ rot }: { rot: number }) => (
+    <svg width="12" height="12" viewBox="0 0 12 12" style={{ transform: `rotate(${rot}deg)` }} aria-hidden>
+      <path d="M2 8 L6 4 L10 8" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+  const ArmChip = ({ a, rot, label, sub }: { a: Arm; rot: number; label: string; sub?: string }) => (
+    <div className="flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-black uppercase italic leading-none tracking-wide shadow-lg transition-all duration-100" style={armStyle(a)}>
+      <Chevron rot={rot} />
+      {showWords && <span>{label}</span>}
+      {showWords && sub && <span className="font-bold normal-case not-italic opacity-60">{sub}</span>}
+    </div>
+  );
 
   return (
     <>
-      <style>{`@keyframes pbShot { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.8) } 25% { opacity: 1; transform: translate(-50%, -80%) scale(1.08) } 100% { opacity: 0; transform: translate(-50%, -140%) scale(1) } }`}</style>
+      <style>{`
+        @keyframes pbShot { 0% { opacity: 0; transform: translate(-50%, -60%) scale(.7) } 20% { opacity: 1; transform: translate(-50%, -120%) scale(1.12) } 100% { opacity: 0; transform: translate(-50%, -190%) scale(1) } }
+        @keyframes pbReady { 0% { transform: translate(-50%, -50%) scale(.85); opacity: .9 } 100% { transform: translate(-50%, -50%) scale(1.9); opacity: 0 } }
+      `}</style>
+
       {/* left half: the stick */}
       <div
         className="absolute bottom-0 left-0 top-[22%] w-1/2"
@@ -81,13 +147,13 @@ export function TouchControls({ hint, onStick, onShot }: {
             <div className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full bg-white/85 shadow-xl" style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }} />
           </div>
         ) : (
-          <div className="pointer-events-none absolute bottom-[max(26px,env(safe-area-inset-bottom))] left-[max(26px,env(safe-area-inset-left))] flex h-28 w-28 items-center justify-center rounded-full border-2 border-dashed border-white/25 bg-white/[0.04] text-[11px] font-bold uppercase tracking-[0.14em] text-white/45">
-            Move
+          <div className="pointer-events-none absolute bottom-[max(28px,env(safe-area-inset-bottom))] left-[max(28px,env(safe-area-inset-left))] h-24 w-24 rounded-full border-2 border-white/20 bg-white/[0.05]">
+            <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30" />
           </div>
         )}
       </div>
 
-      {/* right half: the shot pad */}
+      {/* right half: the shot pad. Swipe anywhere here. */}
       <div
         className="absolute bottom-0 right-0 top-[22%] w-1/2"
         style={{ touchAction: 'none' }}
@@ -95,39 +161,66 @@ export function TouchControls({ hint, onStick, onShot }: {
           if (swipe.current) return;
           e.preventDefault();
           e.currentTarget.setPointerCapture(e.pointerId);
-          swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
+          swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
           const r = e.currentTarget.getBoundingClientRect();
-          setTrail({ x0: e.clientX - r.left, y0: e.clientY - r.top, x1: e.clientX - r.left, y1: e.clientY - r.top });
+          const x = e.clientX - r.left;
+          const y = e.clientY - r.top;
+          setDrag({ x0: x, y0: y, x1: x, y1: y, arm: 'tap', word: preview(0, 0) });
         }}
         onPointerMove={(e) => {
           const s = swipe.current;
           if (!s || s.id !== e.pointerId) return;
-          s.lx = e.clientX;
-          s.ly = e.clientY;
           const r = e.currentTarget.getBoundingClientRect();
-          setTrail((t) => (t ? { ...t, x1: e.clientX - r.left, y1: e.clientY - r.top } : t));
-          // a long, fast swipe doesn't wait for the finger to lift
-          if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 190) release(e.clientX, e.clientY, r);
+          const dx = e.clientX - s.x;
+          const dy = s.y - e.clientY;
+          // a long swipe doesn't wait for the finger to lift
+          if (Math.hypot(dx, dy) > 190) { release(e.clientX, e.clientY, r); return; }
+          setDrag((d) => (d ? { ...d, x1: e.clientX - r.left, y1: e.clientY - r.top, arm: armOf(dx, dy), word: preview(dx, dy) } : d));
         }}
         onPointerUp={(e) => { if (swipe.current?.id === e.pointerId) release(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); }}
-        onPointerCancel={(e) => { if (swipe.current?.id === e.pointerId) { swipe.current = null; setTrail(null); } }}
+        onPointerCancel={(e) => { if (swipe.current?.id === e.pointerId) { swipe.current = null; setDrag(null); } }}
       >
-        <svg className="pointer-events-none absolute inset-0 h-full w-full">
-          {trail && (
-            <>
-              <line x1={trail.x0} y1={trail.y0} x2={trail.x1} y2={trail.y1} stroke="#dcff3d" strokeWidth={10} strokeLinecap="round" opacity={0.75} />
-              <circle cx={trail.x1} cy={trail.y1} r={14} fill="#dcff3d" opacity={0.9} />
-            </>
-          )}
-        </svg>
+        {/* the thumb's path, and the shot it's about to make */}
+        {drag && (
+          <>
+            <svg className="pointer-events-none absolute inset-0 h-full w-full">
+              <line x1={drag.x0} y1={drag.y0} x2={drag.x1} y2={drag.y1} stroke={LIME} strokeWidth={9} strokeLinecap="round" opacity={0.7} />
+              <circle cx={drag.x0} cy={drag.y0} r={7} fill="white" opacity={0.6} />
+              <circle cx={drag.x1} cy={drag.y1} r={15} fill={LIME} opacity={0.9} />
+            </svg>
+            <div className="pointer-events-none absolute whitespace-nowrap rounded-full bg-black/70 px-3 py-1 text-[15px] font-black uppercase italic text-white shadow-xl" style={{ left: drag.x1, top: drag.y1 - 58, transform: 'translateX(-50%)' }}>
+              {drag.word}
+            </div>
+          </>
+        )}
         {flash && (
-          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full bg-[#dcff3d] px-3 py-1 text-[15px] font-black uppercase italic text-[#14200a] shadow-xl" style={{ left: flash.x, top: flash.y, animation: 'pbShot 650ms ease-out both' }}>
+          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full px-3.5 py-1 text-[17px] font-black uppercase italic text-[#14200a] shadow-xl" style={{ left: flash.x, top: flash.y, background: LIME, animation: 'pbShot 600ms ease-out both' }}>
             {flash.word}
           </div>
         )}
-        <div className="pointer-events-none absolute bottom-[max(22px,env(safe-area-inset-bottom))] right-[max(18px,env(safe-area-inset-right))] flex w-[min(230px,44vw)] flex-col items-center gap-1.5 rounded-3xl border-2 border-dashed border-white/25 bg-white/[0.05] px-3 py-3 text-center">
-          <div className="text-[11px] font-black uppercase tracking-[0.14em] text-[#dcff3d]">Shot pad</div>
-          <div className="text-[11px] leading-snug text-white/65">{hint}</div>
+
+        {/* the compass: four moves around a tap, under the resting thumb */}
+        <div
+          className="pointer-events-none absolute"
+          style={{ right: 'max(18px, env(safe-area-inset-right))', bottom: 'max(18px, env(safe-area-inset-bottom))', width: 214, height: 164, opacity: drag || ready ? 1 : 0.72, transition: 'opacity 150ms' }}
+        >
+          <div className="absolute left-1/2 top-1/2" style={{ width: 64, height: 64 }}>
+            {ready && <div className="absolute left-1/2 top-1/2 h-16 w-16 rounded-full border-[3px]" style={{ borderColor: LIME, animation: 'pbReady 1s ease-out infinite' }} />}
+            <div
+              className="absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[12px] font-black uppercase italic shadow-xl transition-all duration-100"
+              style={{
+                background: live === 'tap' ? LIME : ready ? 'rgba(220,255,61,0.22)' : 'rgba(10,14,20,0.42)',
+                borderColor: ready || live === 'tap' ? LIME : 'rgba(255,255,255,0.25)',
+                color: live === 'tap' ? '#14200a' : 'white',
+              }}
+            >
+              {center}
+            </div>
+          </div>
+          <div className="absolute left-1/2 top-0 -translate-x-1/2"><ArmChip a="up" rot={0} label={pad.up} sub={showWords ? `· flick ${pad.flick}` : undefined} /></div>
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2"><ArmChip a="down" rot={180} label={pad.down} /></div>
+          <div className="absolute left-0 top-1/2 -translate-y-1/2"><ArmChip a="left" rot={-90} label={pad.side} /></div>
+          <div className="absolute right-0 top-1/2 -translate-y-1/2"><ArmChip a="right" rot={90} label={pad.side} /></div>
         </div>
       </div>
     </>
