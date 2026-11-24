@@ -7,7 +7,7 @@ import type { Award, FigurePose, Sport } from '../pickleball/sport';
 import { botInput } from './bot';
 import {
   ACT_TICKS, BALL_R, DOWN_DIVE, DOWN_KNOCKED, DT, FAULT_TEXT, HALF_LENGTH, HALF_WIDTH, NET_HEIGHT, PLAYER_GRAVITY, POST_X, SPIKE_SWEET, SWING_TOTAL,
-  cloneState, coastPlayer, createGame, holdBall, movePlayer, other, rematch, scoreCall, sgn, step, stepBall,
+  cloneState, coastPlayer, createGame, holdBall, landing, movePlayer, other, rematch, scoreCall, sgn, step, stepBall,
   type CallKind, type FaultReason, type GameState, type Player, type PlayerStats, type PointResult,
 } from './sim';
 
@@ -151,6 +151,11 @@ export const VOLLEYBALL: Sport<GameState> = {
   swingTicks: SWING_TOTAL,
 
   pose,
+  landing(state) {
+    const b = state.ball;
+    if (b.y <= BALL_R + 0.05 && b.vy <= 0) return null;
+    return landing(b);
+  },
   serveTarget(state) {
     if (state.toss >= 0) return null;
     const rcv = other(state.servingTeam);

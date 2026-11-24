@@ -157,6 +157,9 @@ export class CourtRenderer {
   private wave: THREE.Mesh;
   private waveAge = 99;
   private flash: THREE.Sprite;
+  /** where the ball will come down */
+  private landMark: THREE.Mesh;
+  private landDot: THREE.Mesh;
   private flashAge = 99;
   private serveTarget: THREE.Mesh;
   private sparks: THREE.Points;
@@ -223,6 +226,9 @@ export class CourtRenderer {
     });
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(R, 32, 20), this.ballMat);
     this.ball.castShadow = true;
+    // Drawn after the nameplates, so a name never hides the ball.
+    this.ballMat.transparent = true;
+    this.ball.renderOrder = 12;
     this.scene.add(this.ball);
     this.ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: radialTexture('rgba(255,190,80,0.95)', 'rgba(255,90,20,0)', 'rgba(255,120,30,0.45)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -261,6 +267,10 @@ export class CourtRenderer {
     this.wave = flat(new THREE.RingGeometry(0.8, 1.0, 64), '#ffb347');
     (this.wave.material as THREE.MeshBasicMaterial).blending = THREE.AdditiveBlending;
     this.serveTarget = flat(new THREE.PlaneGeometry(1, 1), '#ffffff');
+    this.landMark = flat(new THREE.RingGeometry(0.78, 1, 40), '#ffffff');
+    this.landDot = flat(new THREE.CircleGeometry(0.22, 20), '#ffffff');
+    this.landMark.position.y = 0.07;
+    this.landDot.position.y = 0.07;
     this.serveTarget.position.y = 0.04;
     this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
     this.scene.add(this.flash);
@@ -630,11 +640,18 @@ export class CourtRenderer {
       const ringMat = rig.fig.ring.material as THREE.MeshBasicMaterial;
       ringMat.opacity = fire ? 0.7 + Math.sin(this.time * 10) * 0.3 : view.focus.includes(i) ? 0.9 : 0.55;
       ringMat.color.set(fire ? '#ff6a1a' : TEAM_COLORS[p.team]);
-      const top = 7.4 * rig.fig.scale + pose.air + (cheer >= 0 ? 0.6 : 0);
-      rig.plate.sprite.position.set(p.x, top, p.z);
-      const ps = aspect < 1 ? 1.5 : 1;
+      // The name sits under the feet, out of the air where the ball flies.
+      rig.plate.sprite.position.set(p.x, 0.1, p.z);
+      rig.plate.sprite.center.set(0.5, 1.12);
+      const ps = aspect < 1 ? 1.35 : 0.85;
       rig.plate.sprite.scale.set(0.15 * ps, 0.042 * ps, 1);
       rig.plate.sprite.visible = !view.orbit;
+      // and steps back when the ball goes past it on screen
+      this.tmp.set(p.x, 0.1, p.z).project(this.camera);
+      this.tmp2.set(b.x, Math.max(b.y, R), b.z).project(this.camera);
+      const nearBall = Math.hypot((this.tmp.x - this.tmp2.x) * aspect, this.tmp.y - 0.06 - this.tmp2.y) < 0.16;
+      const pm = rig.plate.sprite.material as THREE.SpriteMaterial;
+      pm.opacity += ((nearBall ? 0.25 : view.focus.includes(i) || !view.focus.length ? 1 : 0.8) - pm.opacity) * Math.min(1, frameDt * 12);
       this.drawPlate(rig.plate, this.names[i] ?? '', p.team, p.heat, fire, view.focus.includes(i));
       if (fire && Math.random() < frameDt * 80) {
         handPosition(rig.fig, this.tmp);
@@ -711,6 +728,26 @@ export class CourtRenderer {
     const flashT = Math.min(1, this.flashAge / 0.22);
     (this.flash.material as THREE.SpriteMaterial).opacity = (1 - flashT) * 0.9;
     this.flash.scale.setScalar((hot ? 5 : 2.2) * (0.5 + flashT));
+
+    // where the ball is going to come down: a ring that tightens as it arrives
+    const land = moving && state.phase === 'rally' ? sport.landing?.(state) ?? null : null;
+    const lm = this.landMark.material as THREE.MeshBasicMaterial;
+    const ld = this.landDot.material as THREE.MeshBasicMaterial;
+    if (land && land.t > 0.05) {
+      const k = Math.min(1, land.t / 1.4);
+      this.landMark.position.set(land.x, 0.07, land.z);
+      this.landDot.position.set(land.x, 0.07, land.z);
+      this.landMark.scale.setScalar(R * 2.2 * (1 + k * 1.6));
+      this.landDot.scale.setScalar(R * 2.2);
+      const c = hot ? '#ff8a3d' : '#ffffff';
+      lm.color.set(c);
+      ld.color.set(c);
+      lm.opacity += (0.75 - lm.opacity) * Math.min(1, frameDt * 10);
+      ld.opacity = lm.opacity * 0.8;
+    } else {
+      lm.opacity = Math.max(0, lm.opacity - frameDt * 4);
+      ld.opacity = lm.opacity * 0.8;
+    }
 
     // serve target
     const targetMat = this.serveTarget.material as THREE.MeshBasicMaterial;

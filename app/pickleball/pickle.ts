@@ -5,7 +5,7 @@ import { botInput } from './bot';
 import { BOT_NAMES } from './characters';
 import {
   BALL_R, DT, FAULT_TEXT, HALF_LENGTH, HALF_WIDTH, KITCHEN, NET_HEIGHT, POST_X, SWING_TOTAL,
-  cloneState, createGame, movePlayer, other, rematch, scoreCall, serveCourtSign, sgn, step, stepBall,
+  cloneState, createGame, movePlayer, other, rematch, scoreCall, serveCourtSign, sgn, step, stepBall, timeToGround,
   type CallKind, type FaultReason, type GameState, type Player, type PlayerStats,
 } from './sim';
 import type { Award, Sport } from './sport';
@@ -112,6 +112,12 @@ export const PICKLEBALL: Sport<GameState> = {
   pose(state, i) {
     const p = state.players[i];
     return { action: p.swingT >= 0 ? 'swing' : 'none', phase: p.swingT >= 0 ? p.swingT / SWING_TOTAL : 0, air: 0, chef: p.chefUntil > state.tick };
+  },
+  landing(state) {
+    const b = state.ball;
+    if (b.y <= BALL_R + 0.05 && b.vy <= 0) return null;
+    const t = timeToGround(b);
+    return { x: b.x + b.vx * t, z: b.z + b.vz * t, t };
   },
   serveTarget(state) {
     // the diagonal court past the kitchen line

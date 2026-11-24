@@ -125,6 +125,8 @@ export interface Sport<S extends BaseState = BaseState> {
   swingTicks: number;
 
   pose(state: S, i: number): FigurePose;
+  /** where the ball in flight will come down, and in how many seconds; null when it isn't in flight */
+  landing?(state: S): { x: number; z: number; t: number } | null;
   /** the patch of court to light for a local server, or null */
   serveTarget(state: S): { x: number; z: number; w: number; d: number } | null;
   /** a local player is standing somewhere they shouldn't hit from */
