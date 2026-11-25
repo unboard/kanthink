@@ -167,7 +167,7 @@ export async function makeSomething(ownerId: string, opts: { force?: boolean; dr
   const offLimits = (s: string) => handsOff.some((t) => isAbout(s, t.name))
   const first = owner?.name?.split(/\s+/)[0] ?? 'them'
   const sparks = [
-    inputs.some((i) => i.kind === 'share') ? `Shared to Kanthink (newest first):\n${inputs.filter((i) => i.kind === 'share' && !offLimits(i.text)).slice(0, 15).map((s) => `- ${clip(s.text, 260)}`).join('\n')}` : '',
+    inputs.some((i) => i.kind === 'share') ? `Shared to Kanthink (newest first):\n${inputs.filter((i) => i.kind === 'share' && !offLimits(i.text)).slice(0, 15).map((s) => `- ${clip(s.text, 1800)}`).join('\n')}` : '',
     said.length ? `Things they said to Kan:\n${said.filter((m) => !offLimits(m.text)).map((m) => `- ${clip(m.text, 200)}`).join('\n')}` : '',
     reads.length ? `Pages Kanwatch read (aboutWork is a 0–100 guess):\n${reads.filter((r) => r.verdict !== 'dismissed' && !offLimits(r.title ?? '')).map((r) => `- "${clip(r.title, 90)}" (${r.domain}, aboutWork ${r.aboutWork ?? '?'}): ${clip(r.tldr, 200)}`).join('\n')}` : '',
     trail.searches.length ? `Searches:\n${trail.searches.filter((s) => !offLimits(s.q)).slice(0, 30).map((s) => `- ${clip(s.q, 90)}`).join('\n')}` : '',
@@ -187,6 +187,7 @@ export async function makeSomething(ownerId: string, opts: { force?: boolean; dr
 Suggest 4–8 different things, each grounded in something specific below. Mix the kinds when the evidence allows.
 - Their day job (print shops, MyPrintSite, MyCreativeShop, MissionPrint, 4over, support tickets and the like) is context, never the subject. Never make anything for it.
 - Concrete beats clever: a playable game, a tool they'd reuse, an interactive lesson, a small side-income experiment. Never a page about something.
+- When they described what they want in their own words ("They said: …"), their words are the spec: build what they described, every part of it, not the nearest familiar app. Don't swap a picture of something for a tool to make it (a "canvas" they'd look through is not a drawing app).
 - Don't repeat what's already made, and learn from what they tossed.
 - American spelling.`,
     userText: [

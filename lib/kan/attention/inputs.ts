@@ -23,6 +23,10 @@ export interface InputItem {
   text: string
   /** Where it already lives, when it does. */
   channelId?: string
+  /** A share's card, so a reader can open the whole thing. */
+  cardId?: string
+  /** A share: the owner's own words about it, whole. */
+  said?: string
 }
 
 export interface Area {
@@ -130,7 +134,12 @@ export async function gatherInputs(ownerId: string, since: Date): Promise<InputI
     const msgs = s.messages ?? []
     const page = flat(msgs[0]?.content)
     const said = msgs.filter((m) => m.authorId === ownerId).map((m) => flat(m.content)).join(' ')
-    items.push({ id: `share:${s.id}`, kind: 'share', at: s.createdAt ?? new Date(), text: clip(`${s.title}${said ? ` — they said: "${said}"` : ''} · ${page}`, 400), channelId: inbox })
+    // Their words lead and stay whole. Clipping the line as a unit cut a long note
+    // after its first clause (a post's title alone eats ~70 characters), and builders
+    // then made the clause: "an infinite vertical canvas" became a doodle board,
+    // with the frames, the free placement and the watcher at the bottom gone.
+    const what = clip(`${s.title} · ${page}`, 200)
+    items.push({ id: `share:${s.id}`, kind: 'share', at: s.createdAt ?? new Date(), text: said ? `They said: "${clip(said, 1500)}" (about ${what})` : what, said: said || undefined, cardId: s.id, channelId: inbox })
   }
 
   // Where their browsing went, as Kanwatch already summarized it.

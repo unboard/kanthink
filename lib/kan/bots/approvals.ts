@@ -36,6 +36,25 @@ async function buildSize(cardId: string) {
   return { card, app, briefChars: thread, codeChars: app?.code?.length ?? 0 }
 }
 
+/**
+ * What the owner said about a share, as they wrote it, for the builder.
+ *
+ * A bot's own retelling is where ideas got lost: it read a clipped line, kept the
+ * first clause, and briefed a sketchpad from a note about a gallery of frames with a
+ * watcher at the bottom. Their words ride along whole, marked as the spec.
+ */
+export async function ownerWords(cardId: string, ownerId: string): Promise<string> {
+  if (!cardId) return ''
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId), columns: { title: true, messages: true } }).catch(() => null)
+  if (!card) return ''
+  const msgs = card.messages ?? []
+  const said = msgs.filter((m) => m.authorId === ownerId && m.type !== 'ai_response').map((m) => m.content.trim()).filter(Boolean)
+  if (!said.length) return ''
+  const page = (msgs[0]?.content ?? '').match(/https?:\/\/[^\s)\]]+/)?.[0]
+  const words = said.join('\n\n').slice(0, 2500)
+  return `What the owner shared${page ? ` (${page})` : ''} and said about it, in their words. This is the spec: build what they described, every part of it, not the nearest familiar app.\n"""\n${words}\n"""`
+}
+
 export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
   const menu = buildModelMenu(providers)
   return {
@@ -50,6 +69,7 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
         purpose: { type: 'string', description: 'Why build it: who it serves and what it should achieve. One to three sentences.' },
         modelId: { type: 'string', enum: menu.map((m) => m.id), description: 'Model to build with' },
         brief: { type: 'string', description: 'Direction for the builder beyond the card thread' },
+        fromCardId: { type: 'string', description: 'When the idea came from something the owner shared: that card. Their own words go to the builder as they wrote them.' },
       },
       required: ['cardId', 'title', 'purpose', 'modelId'],
     },
@@ -67,7 +87,8 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
       })
       if (waiting) return { content: `A build of this card is already waiting for the owner ("${waiting.title}"). Don't ask again.`, label: `Already waiting on you: “${waiting.title}”` }
 
-      const est = estimateBuildCost({ modelId, briefChars: size.briefChars + str(input.brief).length, existingCodeChars: size.codeChars })
+      const brief = [await ownerWords(str(input.fromCardId), ctx.userId), str(input.brief)].filter(Boolean).join('\n\n').slice(0, 4000) || null
+      const est = estimateBuildCost({ modelId, briefChars: size.briefChars + (brief?.length ?? 0), existingCodeChars: size.codeChars })
       // A small build inside its budget is the bot's own call: it builds now and says so in its chat.
       const maxMillicents = Math.round(est.maxUsd * MILLICENTS_PER_DOLLAR)
       if (maxMillicents <= AUTO_BUILD_MILLICENTS && !bot.rehearsal) {
@@ -78,7 +99,7 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
           const [auto] = await db.insert(botApprovals).values({
             channelId: bot.channelId, ownerId: ctx.userId, runId: bot.runId ?? null, kind: 'build_app', status: 'approved', decidedAt: new Date(),
             cardId: size.card.id, title: str(input.title).slice(0, 120) || size.card.title, purpose: str(input.purpose).slice(0, 1000),
-            brief: str(input.brief).slice(0, 4000) || null, modelId,
+            brief, modelId,
             likelyMillicents: Math.round(est.likelyUsd * MILLICENTS_PER_DOLLAR), maxMillicents,
           }).returning()
           await runApprovedBuild(auto.id)
@@ -96,7 +117,7 @@ export function proposeBuildTool(providers: PlaygroundProvider[]): BotTool {
         cardId: size.card.id,
         title: str(input.title).slice(0, 120) || size.card.title,
         purpose: str(input.purpose).slice(0, 1000),
-        brief: str(input.brief).slice(0, 4000) || null,
+        brief,
         modelId,
         likelyMillicents: Math.round(est.likelyUsd * MILLICENTS_PER_DOLLAR),
         maxMillicents: Math.round(est.maxUsd * MILLICENTS_PER_DOLLAR),

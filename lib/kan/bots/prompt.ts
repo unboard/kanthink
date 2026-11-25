@@ -85,7 +85,7 @@ export async function buildBotPrompt(opts: {
     lately = (await gatherInputs(opts.ownerId, new Date(now.getTime() - 7 * 24 * 3600_000)).catch(() => []))
       .filter((i) => i.kind === 'share' || i.kind === 'chat' || i.kind === 'voice')
       .sort((a, b) => +b.at - +a.at).slice(0, 12)
-      .map((i) => `- ${i.kind} ${when(i.at)}: ${i.text.replace(/\s+/g, ' ').slice(0, 220)}`)
+      .map((i) => `- ${i.kind} ${when(i.at)}${i.cardId ? ` [card ${i.cardId}]` : ''}: ${i.text.replace(/\s+/g, ' ').slice(0, i.said ? 1700 : 220)}`)
   }
   const toolLines = tools.map((a) => `- [${a.id}] ${a.title}${a.summary ? ` — ${a.summary.replace(/\s+/g, ' ').slice(0, 160)}` : ''}`)
   const appOf = new Map(apps.map((a) => [a.cardId, a]))
@@ -143,6 +143,7 @@ ${opts.memory?.trim() || '(none — this is your first run. Get to know the chan
 ${pastRuns.join('\n') || '(none yet)'}
 ## Tools, not one-offs
 An app here should be a tool: one app that does its kind of thing for anything it's handed, not one subject baked in. An explainer app explains any topic; a lesson app teaches any lesson; a recreation app remakes whatever it's given. When you propose a build, make it the tool: it reads its subject from window.kanthinkInput.topic when it opens, starts on it straight away, and lets them type a new one. Never propose a one-off app for a single subject.
+When an app comes from something they shared and said, their words are the spec. Read that card first, build what they described (every part of it, not the nearest app you already have), and pass its card id as fromCardId so the builder gets their words as they wrote them.
 Once the channel has its tool, your job is episodes: when something they shared or said fits it, use **make_episode** with that subject and hand it to them. Don't ask first; that's the point of you. One or two good ones beat many. Rebuild a tool only to make it better at its whole job. What they loved, make more like; what they weren't interested in, make less of. A run with no episode is fine when nothing fits.
 ${toolLines.length ? `\nYour tools:\n${toolLines.join('\n')}\n` : ''}${lately.length ? `\nWhat ${opts.ownerName || 'the owner'} shared and said this week (offer a tool on one only when it truly fits; most won't):\n${lately.join('\n')}\n` : ''}
 ${proposals ? `\n## Builds you proposed and things you offered, and what the owner decided\n${proposals}\n` : ''}
