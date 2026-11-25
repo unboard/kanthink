@@ -82,8 +82,10 @@ bounce instead of faulting). Bots leave a ball to a human teammate who's close t
 
 ## Phones and slower machines
 
-Touch devices get an on-screen stick (left half of the screen) and one button, and the
-menus scroll on short screens. The renderer has two paths: "high" (bloom, 4x MSAA, 2k
+Touch devices get two circles, the same in every court game (`Touch.tsx`): a move stick
+that appears wherever the left thumb lands (analog, carried online in tenths), and an
+action circle wherever the right thumb lands (tap, or drag to aim, release to shoot).
+Hits buzz the phone. The menus scroll on short screens. The renderer has two paths: "high" (bloom, 4x MSAA, 2k
 shadows) and "low" (no post-processing, smaller shadows, lower pixel ratio). Touch devices
 and low-memory machines start on low; anything else steps down by itself if it can't hold
 its frame rate in the first couple of seconds.

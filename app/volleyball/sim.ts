@@ -700,12 +700,15 @@ export function movePlayer(state: GameState, i: number, p: Player, input: Player
     zClamp();
     return;
   }
-  let wx = clamp(Math.round(input.mx), -1, 1) * s;
-  let wz = -clamp(Math.round(input.mz), -1, 1) * s;
-  if (wx !== 0 && wz !== 0) {
-    wx *= 0.7071;
-    wz *= 0.7071;
-  }
+  // Analog: how far the stick is pushed is how fast you go, in any direction. It used
+  // to be rounded to eight directions at full speed, so a thumb could only lurch, never
+  // shuffle half a step to line up. Keys and bots still send whole numbers, and a
+  // diagonal still comes out at the same speed as a straight line.
+  let wx = clamp(input.mx, -1, 1) * s;
+  let wz = -clamp(input.mz, -1, 1) * s;
+  const push = Math.hypot(wx, wz);
+  if (push > 1) { wx /= push; wz /= push; }
+  else if (push < 0.12) { wx = 0; wz = 0; }
   const air = p.y > 0;
   // A committed spike takes its approach for you once you're close: the last few
   // steps to the spot under the ball, at the pace that gets you there in time.

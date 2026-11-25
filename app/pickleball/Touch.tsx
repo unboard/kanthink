@@ -1,29 +1,33 @@
 'use client';
 
-// Touch controls for phones and tablets. One job per thumb:
-//   left thumb  — move. A stick appears wherever it lands.
-//   right thumb — the shot. Tap, or swipe the way you want the ball to go. The game times
-//                 the contact as the ball arrives, so your job is reading it and getting there.
-// No instructions to read: a small compass under the right thumb shows the four moves,
-// lights up when the ball is yours to play, and shows the shot you're about to make while
-// your thumb is still moving. Once you've played a while the words fade, leaving the arrows.
-// Pointer events with capture, so both thumbs work at once.
+// Touch controls for phones and tablets, the same in every court game. Two circles, one
+// per thumb, and neither has a spot you have to find:
+//
+//   left half  — the move stick. Wherever your thumb lands, a stick appears under it, and
+//                it follows if your thumb wanders past its edge. Analog: a small push is
+//                a small step.
+//   right half — the action stick. Wherever your thumb lands, a matching circle appears.
+//                Tap to make the everyday shot; drag to aim a different one, and the
+//                circle names the shot while you drag. Let go (or flick far) to make it.
+//
+// At rest, each circle waits faintly in its bottom corner as a reminder of what lives on
+// that side; the right one lights up when the ball is yours. There are no arrows, no
+// labels to read and no zones to stay inside: the whole half is yours.
+// Pointer events with capture, so both thumbs work at once and a thumb that slides out
+// of its half keeps working until it lifts.
 
 import { useEffect, useRef, useState } from 'react';
 
 type Pad = { tap: string; up: string; flick: string; down: string; side: string; serve: string };
-type Arm = 'tap' | 'up' | 'down' | 'left' | 'right';
 
 const LIME = '#dcff3d';
+/** circle radius, in CSS pixels */
+const R = 58;
+/** a drag this far makes the shot without waiting for the lift: a flick */
+const FLICK = 190;
+/** after this many shots the "tap · drag" reminder goes */
 const LEARNED = 30;
-
-function armOf(dx: number, dy: number): Arm {
-  const len = Math.hypot(dx, dy);
-  if (len < 16) return 'tap';
-  if (dy > len * 0.55) return 'up';
-  if (dy < -len * 0.55) return 'down';
-  return dx > 0 ? 'right' : 'left';
-}
+const TOP = 'top-[calc(max(8px,env(safe-area-inset-top))+56px)]';
 
 export function TouchControls({ pad, sportId, ready, serving, preview, onStick, onShot }: {
   pad: Pad;
@@ -31,59 +35,73 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
   /** the ball is yours to play now */
   ready: boolean;
   serving: boolean;
-  /** the word a swipe would make, without making it */
+  /** the word a drag would make, without making it */
   preview: (dx: number, dy: number) => string;
   onStick: (x: number, y: number) => void;
   /** dx right, dy up, in pixels; returns the word for the shot */
   onShot: (dx: number, dy: number) => string;
 }) {
-  const [base, setBase] = useState<{ x: number; y: number } | null>(null);
+  // move stick: its center (in client pixels) and the knob, relative to it
+  const move = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [moveAt, setMoveAt] = useState<{ x: number; y: number } | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const origin = useRef<{ id: number; x: number; y: number } | null>(null);
-  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
-  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number; arm: Arm; word: string } | null>(null);
+  // action stick
+  const act = useRef<{ id: number; x: number; y: number } | null>(null);
+  const [actAt, setActAt] = useState<{ x: number; y: number } | null>(null);
+  const [aim, setAim] = useState({ x: 0, y: 0, word: '' });
   const [flash, setFlash] = useState<{ word: string; x: number; y: number; k: number } | null>(null);
-  const [fired, setFired] = useState<{ arm: Arm; k: number } | null>(null);
   const flashK = useRef(0);
   const [uses, setUses] = useState(0);
   const storeKey = `court-pad-uses-${sportId}`;
-  const R = 56;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading a saved count once
     try { setUses(Number(localStorage.getItem(storeKey)) || 0); } catch { /* private mode */ }
   }, [storeKey]);
 
-  const move = (cx: number, cy: number) => {
-    const o = origin.current;
+  const learned = uses >= LEARNED;
+  const everyday = serving ? pad.serve : pad.tap;
+
+  // ——— the move stick ———
+  const moveTo = (cx: number, cy: number, box: DOMRect) => {
+    const o = move.current;
     if (!o) return;
     let dx = cx - o.x;
     let dy = cy - o.y;
     const d = Math.hypot(dx, dy);
-    if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
+    if (d > R) {
+      // the stick follows a thumb that runs past its edge, so you never run out of room
+      o.x += (dx / d) * (d - R);
+      o.y += (dy / d) * (d - R);
+      dx = (dx / d) * R;
+      dy = (dy / d) * R;
+    }
+    setMoveAt({ x: o.x - box.left, y: o.y - box.top });
     setKnob({ x: dx, y: dy });
     onStick(dx / R, -dy / R);
   };
-  const end = () => {
-    origin.current = null;
-    setBase(null);
+  const moveEnd = () => {
+    move.current = null;
+    setMoveAt(null);
     setKnob({ x: 0, y: 0 });
     onStick(0, 0);
   };
 
+  // ——— the action stick ———
   const release = (cx: number, cy: number, box: DOMRect) => {
-    const s = swipe.current;
+    const s = act.current;
     if (!s) return;
-    swipe.current = null;
+    act.current = null;
     const dx = cx - s.x;
     const dy = s.y - cy;
     const word = onShot(dx, dy);
     flashK.current += 1;
     const k = flashK.current;
-    setFlash({ word, x: cx - box.left, y: cy - box.top, k });
-    setFired({ arm: armOf(dx, dy), k });
-    setDrag(null);
+    // the word shows just above where the circle was, not under the thumb
+    setFlash({ word, x: s.x - box.left, y: s.y - box.top - R - 10, k });
+    setActAt(null);
+    setAim({ x: 0, y: 0, word: '' });
     setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 900);
-    setTimeout(() => setFired((f) => (f && f.k === k ? null : f)), 420);
     setUses((u) => {
       const n = u + 1;
       try { if (n <= LEARNED + 1) localStorage.setItem(storeKey, String(n)); } catch { /* private mode */ }
@@ -91,139 +109,128 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
     });
   };
 
-  const live = drag?.arm ?? fired?.arm ?? null;
-  const learned = uses >= LEARNED;
-  const showWords = !learned || !!drag;
-  const center = serving ? pad.serve : pad.tap;
-
-  const armStyle = (a: Arm) => {
-    const on = live === a;
-    return {
-      color: on ? '#14200a' : 'rgba(255,255,255,0.92)',
-      background: on ? LIME : 'rgba(10,14,20,0.42)',
-      borderColor: on ? LIME : ready ? 'rgba(220,255,61,0.55)' : 'rgba(255,255,255,0.22)',
-      transform: on ? 'scale(1.12)' : 'scale(1)',
-    };
-  };
-  const Chevron = ({ rot }: { rot: number }) => (
-    <svg width="12" height="12" viewBox="0 0 12 12" style={{ transform: `rotate(${rot}deg)` }} aria-hidden>
-      <path d="M2 8 L6 4 L10 8" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-  const ArmChip = ({ a, rot, label, sub }: { a: Arm; rot: number; label: string; sub?: string }) => (
-    <div className="flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-black uppercase italic leading-none tracking-wide shadow-lg transition-all duration-100" style={armStyle(a)}>
-      <Chevron rot={rot} />
-      {showWords && <span>{label}</span>}
-      {showWords && sub && <span className="font-bold normal-case not-italic opacity-60">{sub}</span>}
-    </div>
-  );
+  const ring = (on: boolean, glow: boolean): React.CSSProperties => ({
+    borderColor: on ? LIME : glow ? 'rgba(220,255,61,0.75)' : 'rgba(255,255,255,0.28)',
+    background: glow ? 'rgba(220,255,61,0.12)' : 'rgba(255,255,255,0.06)',
+  });
 
   return (
     <>
       <style>{`
-        @keyframes pbShot { 0% { opacity: 0; transform: translate(-50%, -60%) scale(.7) } 20% { opacity: 1; transform: translate(-50%, -120%) scale(1.12) } 100% { opacity: 0; transform: translate(-50%, -190%) scale(1) } }
-        @keyframes pbReady { 0% { transform: translate(-50%, -50%) scale(.85); opacity: .9 } 100% { transform: translate(-50%, -50%) scale(1.9); opacity: 0 } }
+        @keyframes pbShot { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.8) } 18% { opacity: 1; transform: translate(-50%, -70%) scale(1.08) } 100% { opacity: 0; transform: translate(-50%, -150%) scale(1) } }
+        @keyframes pbReady { 0% { transform: scale(1); opacity: .8 } 100% { transform: scale(1.45); opacity: 0 } }
       `}</style>
 
-      {/* left half: the stick */}
+      {/* left half: move */}
       <div
-        className="absolute bottom-0 left-0 top-[calc(max(8px,env(safe-area-inset-top))+56px)] w-1/2"
+        className={`absolute bottom-0 left-0 ${TOP} w-1/2`}
         style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
-          if (origin.current) return;
+          if (move.current) return;
+          capture(e.currentTarget, e.pointerId);
           const r = e.currentTarget.getBoundingClientRect();
-          origin.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setBase({ x: e.clientX - r.left, y: e.clientY - r.top });
+          move.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          setMoveAt({ x: e.clientX - r.left, y: e.clientY - r.top });
           setKnob({ x: 0, y: 0 });
         }}
-        onPointerMove={(e) => { if (origin.current?.id === e.pointerId) move(e.clientX, e.clientY); }}
-        onPointerUp={(e) => { if (origin.current?.id === e.pointerId) end(); }}
-        onPointerCancel={(e) => { if (origin.current?.id === e.pointerId) end(); }}
+        onPointerMove={(e) => { if (move.current?.id === e.pointerId) moveTo(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); }}
+        onPointerUp={(e) => { if (move.current?.id === e.pointerId) moveEnd(); }}
+        onPointerCancel={(e) => { if (move.current?.id === e.pointerId) moveEnd(); }}
       >
-        {/* Nothing drawn until a thumb lands: the whole left half is the stick, so
-            there's no ring to aim for and nothing to slide out of. */}
-        {base && (
-          <div className="pointer-events-none absolute" style={{ left: base.x - R, top: base.y - R, width: R * 2, height: R * 2 }}>
-            <div className="absolute inset-0 rounded-full border-2 border-white/25 bg-white/[0.06]" />
-            <div className="absolute left-1/2 top-1/2 h-12 w-12 rounded-full bg-white/70 shadow-xl" style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }} />
-          </div>
+        {moveAt ? (
+          <Circle x={moveAt.x} y={moveAt.y} style={ring(true, false)}>
+            <div className="absolute left-1/2 top-1/2 h-12 w-12 rounded-full bg-white/80 shadow-xl" style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }} />
+          </Circle>
+        ) : (
+          <Resting side="left" style={ring(false, false)}>
+            <div className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/25" />
+            {!learned && <Hint>move</Hint>}
+          </Resting>
         )}
       </div>
 
-      {/* right half: the shot pad. Swipe anywhere here. */}
+      {/* right half: the shot */}
       <div
-        className="absolute bottom-0 right-0 top-[calc(max(8px,env(safe-area-inset-top))+56px)] w-1/2"
+        className={`absolute bottom-0 right-0 ${TOP} w-1/2`}
         style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
-          if (swipe.current) return;
+          if (act.current) return;
           e.preventDefault();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          capture(e.currentTarget, e.pointerId);
           const r = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - r.left;
-          const y = e.clientY - r.top;
-          setDrag({ x0: x, y0: y, x1: x, y1: y, arm: 'tap', word: preview(0, 0) });
+          act.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+          setActAt({ x: e.clientX - r.left, y: e.clientY - r.top });
+          setAim({ x: 0, y: 0, word: preview(0, 0) });
         }}
         onPointerMove={(e) => {
-          const s = swipe.current;
+          const s = act.current;
           if (!s || s.id !== e.pointerId) return;
-          const r = e.currentTarget.getBoundingClientRect();
           const dx = e.clientX - s.x;
           const dy = s.y - e.clientY;
-          // a long swipe doesn't wait for the finger to lift
-          if (Math.hypot(dx, dy) > 190) { release(e.clientX, e.clientY, r); return; }
-          setDrag((d) => (d ? { ...d, x1: e.clientX - r.left, y1: e.clientY - r.top, arm: armOf(dx, dy), word: preview(dx, dy) } : d));
+          const d = Math.hypot(dx, dy);
+          if (d > FLICK) { release(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); return; }
+          const k = d > R ? R / d : 1;
+          setAim({ x: dx * k, y: -dy * k, word: preview(dx, dy) });
         }}
-        onPointerUp={(e) => { if (swipe.current?.id === e.pointerId) release(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); }}
-        onPointerCancel={(e) => { if (swipe.current?.id === e.pointerId) { swipe.current = null; setDrag(null); } }}
+        onPointerUp={(e) => { if (act.current?.id === e.pointerId) release(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()); }}
+        onPointerCancel={(e) => { if (act.current?.id === e.pointerId) { act.current = null; setActAt(null); } }}
       >
-        {/* the thumb's path, and the shot it's about to make */}
-        {drag && (
-          <>
-            <svg className="pointer-events-none absolute inset-0 h-full w-full">
-              <line x1={drag.x0} y1={drag.y0} x2={drag.x1} y2={drag.y1} stroke={LIME} strokeWidth={9} strokeLinecap="round" opacity={0.7} />
-              <circle cx={drag.x0} cy={drag.y0} r={7} fill="white" opacity={0.6} />
-              <circle cx={drag.x1} cy={drag.y1} r={15} fill={LIME} opacity={0.9} />
+        {actAt ? (
+          <Circle x={actAt.x} y={actAt.y} style={ring(true, ready)}>
+            {/* the aim: a line from the middle to the thumb, and the shot it makes */}
+            <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+              <line x1={R} y1={R} x2={R + aim.x} y2={R + aim.y} stroke={LIME} strokeWidth={6} strokeLinecap="round" opacity={0.8} />
             </svg>
-            <div className="pointer-events-none absolute whitespace-nowrap rounded-full bg-black/70 px-3 py-1 text-[15px] font-black uppercase italic text-white shadow-xl" style={{ left: drag.x1, top: drag.y1 - 58, transform: 'translateX(-50%)' }}>
-              {drag.word}
+            <div className="absolute left-1/2 top-1/2 h-12 w-12 rounded-full shadow-xl" style={{ background: LIME, transform: `translate(calc(-50% + ${aim.x}px), calc(-50% + ${aim.y}px))` }} />
+            <div className="absolute left-1/2 whitespace-nowrap rounded-full bg-black/70 px-2.5 py-0.5 text-[13px] font-black uppercase italic text-white shadow-lg" style={{ top: -30, transform: 'translateX(-50%)' }}>
+              {aim.word}
             </div>
-          </>
+          </Circle>
+        ) : (
+          <Resting side="right" style={ring(false, ready)}>
+            {ready && <div className="absolute -inset-[2px] rounded-full border-[3px]" style={{ borderColor: LIME, animation: 'pbReady 1s ease-out infinite' }} />}
+            <div className="absolute inset-0 flex items-center justify-center text-[13px] font-black uppercase italic" style={{ color: ready ? LIME : 'rgba(255,255,255,0.75)' }}>
+              {everyday}
+            </div>
+            {!learned && <Hint>tap · or drag to aim</Hint>}
+          </Resting>
         )}
         {flash && (
-          // Where the thumb lifted, but above it so the thumb doesn't hide it: a small,
-          // quiet word for the shot you just made ("Dive left", "Spike deep"), under
-          // the game's own big calls rather than competing with them.
-          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full bg-black/60 px-2.5 py-0.5 text-[13px] font-black uppercase italic shadow-lg" style={{ left: flash.x, top: flash.y - 46, color: LIME, animation: 'pbShot 900ms ease-out both' }}>
+          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full bg-black/60 px-2.5 py-0.5 text-[13px] font-black uppercase italic shadow-lg" style={{ left: flash.x, top: flash.y, color: LIME, animation: 'pbShot 900ms ease-out both' }}>
             {flash.word}
           </div>
         )}
-
-        {/* the compass: four moves around a tap, under the resting thumb */}
-        <div
-          className="pointer-events-none absolute"
-          style={{ right: 'max(18px, env(safe-area-inset-right))', bottom: 'max(18px, env(safe-area-inset-bottom))', width: 214, height: 164, opacity: drag || ready ? 0.9 : learned ? 0.25 : 0.5, transform: 'scale(0.78)', transformOrigin: '100% 100%', transition: 'opacity 150ms' }}
-        >
-          <div className="absolute left-1/2 top-1/2" style={{ width: 64, height: 64 }}>
-            {ready && <div className="absolute left-1/2 top-1/2 h-16 w-16 rounded-full border-[3px]" style={{ borderColor: LIME, animation: 'pbReady 1s ease-out infinite' }} />}
-            <div
-              className="absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[12px] font-black uppercase italic shadow-xl transition-all duration-100"
-              style={{
-                background: live === 'tap' ? LIME : ready ? 'rgba(220,255,61,0.22)' : 'rgba(10,14,20,0.42)',
-                borderColor: ready || live === 'tap' ? LIME : 'rgba(255,255,255,0.25)',
-                color: live === 'tap' ? '#14200a' : 'white',
-              }}
-            >
-              {center}
-            </div>
-          </div>
-          <div className="absolute left-1/2 top-0 -translate-x-1/2"><ArmChip a="up" rot={0} label={pad.up} sub={showWords ? `· flick ${pad.flick}` : undefined} /></div>
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2"><ArmChip a="down" rot={180} label={pad.down} /></div>
-          <div className="absolute left-0 top-1/2 -translate-y-1/2"><ArmChip a="left" rot={-90} label={pad.side} /></div>
-          <div className="absolute right-0 top-1/2 -translate-y-1/2"><ArmChip a="right" rot={90} label={pad.side} /></div>
-        </div>
       </div>
     </>
   );
+}
+
+/** keep a thumb's moves coming here even if it slides off; never let a refusal break the touch */
+function capture(el: Element, id: number) {
+  try { el.setPointerCapture(id); } catch { /* not a live pointer */ }
+}
+
+/** a circle centered on (x, y) inside its half */
+function Circle({ x, y, style, children }: { x: number; y: number; style: React.CSSProperties; children?: React.ReactNode }) {
+  return (
+    <div className="pointer-events-none absolute rounded-full border-2" style={{ left: x - R, top: y - R, width: R * 2, height: R * 2, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+/** the circle waiting in its corner */
+function Resting({ side, style, children }: { side: 'left' | 'right'; style: React.CSSProperties; children?: React.ReactNode }) {
+  const at = side === 'left'
+    ? { left: 'max(36px, env(safe-area-inset-left))' }
+    : { right: 'max(36px, env(safe-area-inset-right))' };
+  return (
+    <div className="pointer-events-none absolute rounded-full border-2 transition-colors duration-150" style={{ ...at, bottom: 'max(36px, env(safe-area-inset-bottom))', width: R * 2, height: R * 2, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function Hint({ children }: { children: React.ReactNode }) {
+  return <div className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap text-[11px] font-semibold text-white/55">{children}</div>;
 }

@@ -86,6 +86,12 @@ function clampInt(v: unknown, lo: number, hi: number): number {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 0;
 }
 
+/** a stick axis off the wire: -1..1 in steps of 0.1 */
+function clampTenth(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(Math.min(1, Math.max(-1, n)) * 10) / 10 : 0;
+}
+
 export function sanitizeLobby(v: unknown): Lobby | null {
   const o = v as Lobby;
   if (!o || typeof o !== 'object' || !Array.isArray(o.seats) || (o.seats.length !== 2 && o.seats.length !== 4)) return null;
@@ -247,8 +253,9 @@ export class RoomNet {
       if (role !== 'host' || roleOfMember(from(meta)) !== 'guest') return;
       const list = (Array.isArray(data?.i) ? data.i : []).slice(0, 2).map((x) => ({
         seat: clampInt(x?.seat, 0, 3),
-        mx: clampInt(x?.mx, -1, 1),
-        mz: clampInt(x?.mz, -1, 1),
+        // the stick is analog, carried in tenths
+        mx: clampTenth(x?.mx),
+        mz: clampTenth(x?.mz),
         sw: clampInt(x?.sw, 0, 1e9),
         ...(Array.isArray(x?.g) && x.g.length === 3 && x.g.every((n) => typeof n === 'number' && Number.isFinite(n))
           ? { g: [clampInt(x.g[0], 0, 3), Math.max(-1, Math.min(1, x.g[1])), Math.max(-1, Math.min(1, x.g[2]))] as [number, number, number] }

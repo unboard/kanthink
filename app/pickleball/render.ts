@@ -586,19 +586,6 @@ export class CourtRenderer {
       const bz = Math.max(-8, Math.min(8, b.z * 0.25));
       this.camPosTarget.set((HW + 26 + (vb ? 5 : 0)) * pull, (24 + (vb ? 4 : 0)) * pull, bz);
       this.camLookTarget.set(0, vb ? 3 : 0, bz * 0.6);
-    } else if (sport.id === 'soccer') {
-      // The pitch is long, so the camera can't sit behind your goal: it rides up and
-      // down the touchline end with the play, behind the action from your side, between
-      // your player and the ball so both stay in frame.
-      const s = sgn(view.team);
-      const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
-      const fx = focus.reduce((acc, i) => acc + (state.players[i]?.x ?? 0), 0) / Math.max(1, focus.length);
-      const fz = focus.reduce((acc, i) => acc + (state.players[i]?.z ?? 0), 0) / Math.max(1, focus.length);
-      const bx = Math.max(-HW, Math.min(HW, b.x));
-      const bz = Math.max(-HL - 3, Math.min(HL + 3, b.z));
-      const mid = fz * 0.45 + bz * 0.55;
-      this.camPosTarget.set(fx * 0.3 + bx * 0.3, 27 * pull + Math.min(5, b.y * 0.3), mid + s * 30 * pull);
-      this.camLookTarget.set(fx * 0.25 + bx * 0.45, 1 + Math.min(4, b.y * 0.3), mid - s * 9);
     } else {
       const s = sgn(view.team);
       const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
@@ -615,13 +602,15 @@ export class CourtRenderer {
       // Your spike: as you leave the ground the camera rides up and in with you.
       const air = focus.reduce((m, i) => Math.max(m, state.players[i]?.y ?? 0), 0);
       this.lift += ((vb && air > 1 ? Math.min(1, air / 5) : 0) - this.lift) * Math.min(1, frameDt * 5);
-      const nr = this.near * (vb ? 0.32 : 0.22) + this.lift * 0.18;
+      // soccer's pitch is as big as volleyball's court, so it sits back as far
+      const big = vb || sport.id === 'soccer';
+      const nr = this.near * (big ? 0.32 : 0.22) + this.lift * 0.18;
       const bx = Math.max(-HW, Math.min(HW, b.x));
       const bzc = Math.max(-HL, Math.min(HL, b.z));
-      const back = s * (HL + (vb ? 21 : 13.5) * pull * (1 - nr)) + (bzc - s * HL) * 0.12;
+      const back = s * (HL + (big ? 21 : 13.5) * pull * (1 - nr)) + (bzc - s * HL) * 0.12;
       // Close in, the camera keeps more of your player under it and less of the far court.
       const camZ = back + (fz - s * HL) * this.near * 0.35;
-      this.camPosTarget.set(fx * (0.3 + this.near * 0.25) + bx * 0.25, (vb ? 18 : 13) * pull * (1 - nr * 0.8) + Math.min(6, b.y * 0.25) + this.lift * 2.5, camZ);
+      this.camPosTarget.set(fx * (0.3 + this.near * 0.25) + bx * 0.25, (big ? 18 : 13) * pull * (1 - nr * 0.8) + Math.min(6, b.y * 0.25) + this.lift * 2.5, camZ);
       this.camLookTarget.set(fx * (0.12 + this.near * 0.2) + bx * 0.35, (vb ? 3 : 1) + Math.min(5, b.y * 0.3) + this.lift * 2, bzc * 0.4 - s * (vb ? 1 : 3) + (fz - bzc * 0.4) * this.near * 0.25);
     }
     for (const o of this.venue.nearSide) o.visible = !view.broadcast;

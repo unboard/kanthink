@@ -1447,22 +1447,24 @@ export function poseFigure(f: Figure, o: PoseInput) {
       break;
     }
     case 'kick': {
-      // soccer: plant, draw the right leg back with the knee bent, then swing it through
-      // the ball and follow up and across, the left arm out for balance
-      rate = 36;
-      const back = ramp(a, 0, 0.3);
-      const thru = ramp(a, 0.3, 0.55);
-      const settle = ramp(a, 0.7, 1);
+      // soccer, big and readable from the far end: plant, draw the leg right back with
+      // the knee bent, lean back, then whip it through the ball and follow up high, the
+      // whole body following, a little hop off the standing foot and the arms flung wide
+      rate = 40;
+      const back = ramp(a, 0, 0.32);
+      const thru = ramp(a, 0.32, 0.5);
+      const settle = ramp(a, 0.72, 1);
       const k = 1 - settle;
-      p.hRx = mix(p.hRx, mix(-0.75 * back, 1.25, thru), k);
-      p.kR = mix(p.kR, mix(-1.5 * back - 0.2, -0.12, thru), k);
-      p.fR = mix(p.fR, mix(0.6, -0.3, thru), k);
-      p.hLx = mix(p.hLx, 0.25, k); p.kL = mix(p.kL, -0.45, k);
-      p.sLx = mix(p.sLx, 0.4, k); p.sLz = mix(p.sLz, -1.05, k); p.eL = mix(p.eL, 0.4, k);
-      p.sRx = mix(p.sRx, mix(0.6, -0.5, thru), k); p.sRz = mix(p.sRz, 0.5, k);
-      p.spY = mix(p.spY, mix(0.35, -0.3, thru) * 1, k);
-      p.spX = mix(p.spX, mix(0.1, -0.15, thru), k);
-      p.y = mix(p.y, -0.06, k);
+      p.hRx = mix(p.hRx, mix(-1.25 * back, 1.85, thru), k);
+      p.kR = mix(p.kR, mix(-1.9 * back - 0.2, -0.05, thru), k);
+      p.fR = mix(p.fR, mix(0.8, -0.45, thru), k);
+      p.hLx = mix(p.hLx, mix(0.35, 0.15, thru), k); p.kL = mix(p.kL, mix(-0.6, -0.25, thru), k);
+      p.sLx = mix(p.sLx, mix(0.9, 0.3, thru), k); p.sLz = mix(p.sLz, -1.35, k); p.eL = mix(p.eL, 0.35, k);
+      p.sRx = mix(p.sRx, mix(0.2, -0.9, thru), k); p.sRz = mix(p.sRz, 0.95, k); p.eR = mix(p.eR, 0.5, k);
+      p.spY = mix(p.spY, mix(0.55, -0.45, thru), k);
+      p.spX = mix(p.spX, mix(-0.2, 0.25, thru), k);
+      p.lean = mix(p.lean, mix(0.12, -0.1, thru), k);
+      p.y = mix(p.y, -0.08 + Math.sin(thru * Math.PI) * 0.22, k);
       break;
     }
     case 'slide': {

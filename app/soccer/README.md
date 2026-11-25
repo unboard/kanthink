@@ -1,49 +1,51 @@
 # Soccer
 
-Arcade soccer at `/soccer`: 1 v 1 or 2 v 2 on a small walled pitch, two goals, first to
-five. It runs on the same engine as pickleball and volleyball, so the people you made
-there play here too, with the same venues, online rooms, bots and touch controls.
+Arcade soccer at `/soccer`, played like the other court games: each side keeps to the box
+in front of its own goal and the ball goes back and forth between them. 1 v 1 or 2 v 2,
+first to five. Same engine, characters, venues, camera, online rooms, bots and touch
+controls as pickleball and volleyball.
 
 ## Playing
 
-- Move with the stick (WASD, arrows, a gamepad, or the left half of a phone screen).
-- **Dribble** by running into the ball: it stays at your feet while you run.
-- **One button**: with the ball, shoot at their goal (left/right aims across the mouth).
-  Without it, slide tackle whoever has it, or hit a loose ball at your feet first time.
-- **The walls**: the pitch is boarded all round, so the ball never goes out. It comes back
-  off the boards, and a goal off the wall is called a bank shot.
-- **Protect your goal**: a hard shot bounces off anyone it hits. Stop one in front of your
-  own goal and it's a save. Stay on someone dribbling for a moment and you win the ball.
-- **Kickoff**: the team that conceded kicks off from the middle; the other side waits
-  outside the circle. Nobody taking it? It starts on its own after six seconds.
+- **Your box**: you move only inside the shaded box in front of your goal. The middle of the
+  pitch is nobody's; a ball that dies there rolls to the side that didn't play it last.
+- **The walls**: the pitch is boarded all round, so the ball comes back off the side walls,
+  and a shot banked off the wall into the goal counts (and gets called).
+- **Protecting your goal**: stand in its way. A hard shot bounces off whoever it hits, and a
+  dive covers more ground. Stopping one is a save.
+- **Kickoff**: whoever conceded puts the ball in play from the front of their box.
+- **Holding it**: four seconds at most, then it goes.
 
-### The shot pad (phones, the right stick, or I J K L U O)
+### Kicks (the right thumb, or I J K L U O, or one button)
 
-- **Tap**: pass to your teammate (alone, a push forward to run onto).
-- **Swipe up**: shoot. Tilt the swipe to aim; a long swipe is a rocket, a short flick a chip.
-- **Sideways**: pass that way.
-- **Swipe down**: slide tackle the way you're running (at the ball if you're standing still).
+| Do | Kick |
+| --- | --- |
+| Tap | **Drive**: low and hard along the ground |
+| Swipe up | **Shoot**: rising, aimed by the tilt; a long swipe is a **rocket** |
+| Short flick up | **Lob**: high, dropping in under the bar |
+| Swipe sideways | **Bank**: off that side wall and back across into the goal |
+| Swipe down | **Dive**: the way you're running, or across to where the ball will cross |
 
-Swipe before the ball reaches you and the shot waits a moment for it.
+Swipe before the ball reaches you and the kick waits for it: a first-time strike, and a
+**volley** if the ball's in the air. One button is a drive, aimed with the stick.
 
 ## Heat
 
-Goals, saves and tackles build heat; at 100 you catch fire (a little faster, and every
-shot is a flaming super shot with a beat of slow motion). Concede and the fire goes out.
+Goals, saves and volleys build heat; at 100 you catch fire (a little faster, and every
+kick is a flaming super shot with a beat of slow motion). Concede and the fire goes out.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `sim.ts` | Deterministic rules and physics: the walls, goals, dribbling, kicks, tackles, saves |
-| `bot.ts` | Bots: carry it and shoot, get open, chase or mind the goal; three tiers |
-| `football.ts` | Soccer as a `Sport`: announcer lines, awards, poses, facing (named so it doesn't clash with `Soccer.tsx` on Windows) |
+| `sim.ts` | Deterministic rules and physics: the boxes, walls, goals, kicks, dives, saves |
+| `bot.ts` | Bots: read where the ball will cross and get in its way, fetch loose balls, pick a kick; three tiers |
+| `football.ts` | Soccer as a `Sport` (named so it can't clash with `Soccer.tsx` on Windows) |
 | `Soccer.tsx`, `page.tsx` | The page; everything else is `app/pickleball/CourtGame.tsx` |
 
-The pitch, goals and boards are drawn in `app/pickleball/venue.ts` (`buildGoals`); the
-kick and slide poses are in `app/pickleball/figure.ts`. Soccer is the one sport whose
-players turn to face where they run: `Sport.facing`.
+The pitch, the shaded boxes, the goals and the boards are drawn in `app/pickleball/venue.ts`
+(`buildGoals`); the kick pose is in `app/pickleball/figure.ts`.
 
 ```bash
-npm test   # tests/soccer.test.ts: walls, goals, saves, dribble, shoot, tackle, bot games
+npm test   # tests/soccer.test.ts: boxes, walls, goals, kicks, saves, dives, bot games
 ```

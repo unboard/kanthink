@@ -364,6 +364,9 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
       }
     } else if (soccer && spec.goal) {
       const G = spec.goal;
+      // each side's box, where its players play, lightly shaded so it reads at a glance
+      g.fillStyle = 'rgba(255,255,255,0.07)';
+      for (const s of [1, -1]) g.fillRect(X(-G.boxHalf), Z(s > 0 ? HL - G.boxDepth : -HL), G.boxHalf * 2 * PX, G.boxDepth * PX);
       // halfway line, center circle and spot, and a box and a goal area at each end
       seg(-HW, 0, HW, 0);
       g.beginPath();
@@ -1133,7 +1136,8 @@ function buildGoals(spec: CourtSpec, id: VenueId, add: <T extends THREE.Object3D
     const t = netTex.clone();
     t.needsUpdate = true;
     t.repeat.set(rx, ry);
-    return new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false, opacity: 0.8 });
+    // light enough to see play through your own goal, which sits right under the camera
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false, opacity: 0.22 });
   };
   for (const s of [1, -1]) {
     const z = s * HL;

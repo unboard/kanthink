@@ -504,7 +504,10 @@ export class Controller {
 
   /** the on-screen stick: x right, y up, each -1..1 */
   setTouchStick(x: number, y: number) {
-    this.touchStick = [Math.abs(x) > 0.35 ? Math.sign(x) : 0, Math.abs(y) > 0.35 ? Math.sign(y) : 0];
+    // Analog, in tenths (what goes over the wire for online play), with a small dead
+    // zone. It used to snap to eight directions at full speed, so a thumb could only
+    // lurch: there was no half step to line up a shot.
+    this.touchStick = analog(x, y);
   }
 
   /** the on-screen button */
@@ -554,10 +557,7 @@ export class Controller {
     if (dev.startsWith('pad')) {
       const pad = navigator.getGamepads?.()[Number(dev.slice(3))];
       if (!pad) return [0, 0];
-      const ax = pad.axes[0] ?? 0;
-      const ay = pad.axes[1] ?? 0;
-      let x = Math.abs(ax) > 0.4 ? Math.sign(ax) : 0;
-      let y = Math.abs(ay) > 0.4 ? -Math.sign(ay) : 0;
+      let [x, y] = analog(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0));
       if (pad.buttons[14]?.pressed) x = -1;
       if (pad.buttons[15]?.pressed) x = 1;
       if (pad.buttons[12]?.pressed) y = 1;
@@ -766,11 +766,21 @@ export class Controller {
       this.syncHeard(s);
       return;
     }
-    if (s.hitSeq > this.heard.hit) this.sfx.hit(s.ball.super ? 1.9 : s.ball.hot ? 1.4 : 1, this.sport.ball);
-    if (s.bounceSeq > this.heard.bounce && (s.phase === 'rally' || this.sport.ball === 'volley')) this.sfx.bounce(this.sport.ball);
+    if (s.hitSeq > this.heard.hit) {
+      this.sfx.hit(s.ball.super ? 1.9 : s.ball.hot ? 1.4 : 1, this.sport.ball);
+      // A buzz in the hand when it's you who struck it: short for a touch, longer
+      // for a hard one, a double thump for a super. Phones only; nothing elsewhere.
+      if (s.lastHitter !== undefined && this.locals.get(s.lastHitter) === 'touch') {
+        const pace = Math.hypot(s.ball.vx, s.ball.vy, s.ball.vz);
+        buzz(s.ball.super ? [28, 40, 46] : pace > 45 ? 26 : 12);
+      }
+    }
+    if (s.bounceSeq > this.heard.bounce && (s.phase === 'rally' || this.sport.ball !== 'pickle')) this.sfx.bounce(this.sport.ball);
     if (s.pointSeq > this.heard.point && s.lastPoint) {
       const mine = [...this.locals.keys()].map((i) => s.players[i]?.team);
-      this.sfx.point(!mine.length || !mine.includes(s.lastPoint.faultTeam));
+      const won = !mine.length || !mine.includes(s.lastPoint.faultTeam);
+      this.sfx.point(won);
+      if ([...this.locals.values()].includes('touch')) buzz(won ? [18, 60, 18, 60, 40] : [70]);
     }
     this.heard.hit = s.hitSeq;
     this.heard.bounce = s.bounceSeq;
@@ -868,3 +878,19 @@ export class Controller {
 }
 
 export type { Role };
+
+/** A stick as the game reads it: a dead zone, then the push rescaled to 0..1, in tenths. */
+export function analog(x: number, y: number): [number, number] {
+  const d = Math.hypot(x, y);
+  if (d < 0.15) return [0, 0];
+  const k = Math.min(1, (d - 0.15) / 0.75) / d;
+  const q = (v: number) => Math.round(Math.max(-1, Math.min(1, v * k)) * 10) / 10;
+  return [q(x), q(y)];
+}
+
+/** Vibrate the phone, where it can. Never throws: haptics are a courtesy. */
+function buzz(pattern: number | number[]) {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
+  } catch { /* not allowed here */ }
+}

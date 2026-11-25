@@ -21,10 +21,12 @@ too, with the same venues, online rooms, bots and touch controls.
 
 ### The shot pad (phones, the right stick, or I J K L U O)
 
-The left thumb only moves. The right thumb is the shot: swipe anywhere on the right half
-the way you want the ball to go, early, while it's still in the air. There's no help text:
-a small compass under the thumb shows the moves, lights up when the ball is yours, and
-names the shot while your thumb is still moving (the words fade once you've played a while).
+Two circles, one per thumb, the same in all three court games. Touch anywhere on the left
+half and a move stick appears under your thumb (analog: a small push is a small step).
+Touch anywhere on the right half and the action circle appears: tap for the everyday shot,
+or drag the way you want the ball to go, early, while it's still in the air, and let go.
+The circle names the shot while you drag; at rest it waits in the corner and lights up
+when the ball is yours. Your hits buzz the phone.
 
 - **Tap** (or a sideways swipe): pass. It waits for the ball and bumps or sets it when it
   comes down to you; sideways sets that side.

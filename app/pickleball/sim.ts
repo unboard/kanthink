@@ -737,12 +737,15 @@ function solveShot(from: Ball, tx: number, tz: number, t: number): { vx: number;
  */
 export function movePlayer(p: Player, input: PlayerInput, phase: Phase, serving: boolean, courtSign: number, speedMul = 1) {
   const s = sgn(p.team);
-  let wx = clamp(Math.round(input.mx), -1, 1) * s;
-  let wz = -clamp(Math.round(input.mz), -1, 1) * s;
-  if (wx !== 0 && wz !== 0) {
-    wx *= 0.7071;
-    wz *= 0.7071;
-  }
+  // Analog: how far the stick is pushed is how fast you go, in any direction. It used
+  // to be rounded to eight directions at full speed, so a thumb could only lurch, never
+  // shuffle half a step to line up. Keys and bots still send whole numbers, and a
+  // diagonal still comes out at the same speed as a straight line.
+  let wx = clamp(input.mx, -1, 1) * s;
+  let wz = -clamp(input.mz, -1, 1) * s;
+  const push = Math.hypot(wx, wz);
+  if (push > 1) { wx /= push; wz /= push; }
+  else if (push < 0.12) { wx = 0; wz = 0; }
   const speed = PLAYER_SPEED * speedMul * (p.swingT >= 0 ? 0.55 : 1) * (p.fire > 0 ? FIRE_MOVE : 1);
   const k = Math.min(1, 14 * DT);
   p.vx += (wx * speed - p.vx) * k;
