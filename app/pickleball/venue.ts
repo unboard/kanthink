@@ -26,7 +26,7 @@ export function isVenue(v: unknown): v is VenueId {
 }
 
 export interface CourtSpec {
-  sport: 'pickleball' | 'volleyball';
+  sport: 'pickleball' | 'volleyball' | 'soccer';
   halfWidth: number;
   halfLength: number;
   /** top of the net */
@@ -34,6 +34,8 @@ export interface CourtSpec {
   postX: number;
   /** non-volley zone depth; 0 for none */
   kitchen: number;
+  /** soccer: the goal mouths (half width, height, depth) and the box in front of them */
+  goal?: { half: number; h: number; depth: number; boxHalf: number; boxDepth: number; centerR: number };
 }
 
 export interface Venue {
@@ -130,8 +132,9 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
   const rnd = seeded(0x9e3779b9 ^ id.length * 7919);
   const HW = spec.halfWidth;
   const HL = spec.halfLength;
-  const padX = spec.sport === 'volleyball' ? 11 : 8;
-  const padZ = spec.sport === 'volleyball' ? 13 : 11;
+  const soccer = spec.sport === 'soccer';
+  const padX = soccer ? 7 : spec.sport === 'volleyball' ? 11 : 8;
+  const padZ = soccer ? 11 : spec.sport === 'volleyball' ? 13 : 11;
   const nearSide: THREE.Object3D[] = [];
   const tickers: Array<(t: number, dt: number) => void> = [];
   const add = <T extends THREE.Object3D>(o: T, near = false): T => {
@@ -256,7 +259,24 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
     const X = (x: number) => (x + HW + padX) * PX;
     const Z = (z: number) => (z + HL + padZ) * PX;
     const r2 = seeded(11);
-    if (sand) {
+    if (soccer && id === 'park') {
+      // a mown pitch: stripes across the width, a little wear in the goalmouths
+      g.fillStyle = '#2f6b34';
+      g.fillRect(0, 0, W, H);
+      const band = 6 * PX;
+      for (let y = 0, k = 0; y < H; y += band, k++) {
+        g.fillStyle = k % 2 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+        g.fillRect(0, y, W, band);
+      }
+      speckle(g, W, H, 30000, r2, 0.18, 0.08, 1.8);
+      for (const sz of [1, -1]) {
+        const grad = g.createRadialGradient(X(0), Z(sz * (HL - 4)), 0, X(0), Z(sz * (HL - 4)), 7 * PX);
+        grad.addColorStop(0, 'rgba(120,96,60,0.35)');
+        grad.addColorStop(1, 'rgba(120,96,60,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, W, H);
+      }
+    } else if (sand) {
       g.fillStyle = id === 'beach' ? '#e9cf9c' : '#e2c79a';
       g.fillRect(0, 0, W, H);
       // raked and trodden: soft blotches, then grain
@@ -342,6 +362,33 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
         seg(-HW, s * spec.kitchen, HW, s * spec.kitchen);
         seg(0, s * spec.kitchen, 0, s * HL);
       }
+    } else if (soccer && spec.goal) {
+      const G = spec.goal;
+      // halfway line, center circle and spot, and a box and a goal area at each end
+      seg(-HW, 0, HW, 0);
+      g.beginPath();
+      g.arc(X(0), Z(0), G.centerR * PX, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = L.line;
+      g.beginPath();
+      g.arc(X(0), Z(0), 0.5 * PX, 0, Math.PI * 2);
+      g.fill();
+      for (const s of [1, -1]) {
+        const zb = s * (HL - G.boxDepth);
+        seg(-G.boxHalf, s * HL, -G.boxHalf, zb);
+        seg(G.boxHalf, s * HL, G.boxHalf, zb);
+        seg(-G.boxHalf, zb, G.boxHalf, zb);
+        const za = s * (HL - 5);
+        seg(-G.half - 2, s * HL, -G.half - 2, za);
+        seg(G.half + 2, s * HL, G.half + 2, za);
+        seg(-G.half - 2, za, G.half + 2, za);
+        g.beginPath();
+        g.arc(X(0), Z(s * (HL - G.boxDepth)), 6 * PX, s > 0 ? Math.PI : 0, s > 0 ? Math.PI * 2 : Math.PI);
+        g.stroke();
+        g.beginPath();
+        g.arc(X(0), Z(s * (HL - 9)), 0.4 * PX, 0, Math.PI * 2);
+        g.fill();
+      }
     } else if (!sand) {
       seg(-HW, 0, HW, 0);
       for (const s of [1, -1]) seg(-HW, s * 9.8, HW, s * 9.8); // attack lines
@@ -419,7 +466,8 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
     }
   }
 
-  buildNet(spec, id, add);
+  if (soccer) buildGoals(spec, id, add);
+  else buildNet(spec, id, add);
 
   // ——— crowd ———
   interface Fan { x: number; y: number; z: number; ph: number; f: number; h: number }
@@ -552,7 +600,7 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
         g.font = '900 34px ui-sans-serif, system-ui, sans-serif';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.fillText(['KAN', 'PLAY', 'DINK', 'SPIKE', 'RALLY', 'ACE', 'SMASH', 'FAMILY'][k], k * 128 + 64, 34);
+        g.fillText((spec.sport === 'soccer' ? ['KAN', 'PLAY', 'GOAL', 'KICK', 'SAVE', 'BANK', 'SCORE', 'FAMILY'] : ['KAN', 'PLAY', 'DINK', 'SPIKE', 'RALLY', 'ACE', 'SMASH', 'FAMILY'])[k], k * 128 + 64, 34);
       }
     });
     const m = new THREE.Mesh(new THREE.BoxGeometry(X0 * 2 - 2, 2.2, 0.3), new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, emissive: new THREE.Color('#ffffff'), emissiveMap: t, emissiveIntensity: id === 'arena' || id === 'rooftop' ? 0.7 : 0.08 }));
@@ -842,7 +890,7 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
       g.font = '900 54px ui-sans-serif, system-ui, sans-serif';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText(spec.sport === 'volleyball' ? 'SPIKE!' : 'DINK!', 128, 66);
+      g.fillText(spec.sport === 'volleyball' ? 'SPIKE!' : spec.sport === 'soccer' ? 'GOAL!' : 'DINK!', 128, 66);
     });
     const body = new THREE.Mesh(new THREE.BoxGeometry(14, 7, 14), [0, 1, 2, 3, 4, 5].map((k) => (k === 2 || k === 3 ? M('#0b0f18', 0.6) : new THREE.MeshBasicMaterial({ map: screen, fog: false }))));
     cube.add(body);
@@ -1054,6 +1102,98 @@ export function buildVenue(id: VenueId, spec: CourtSpec, scene: THREE.Scene, low
       if (crowdT > (low ? 0.066 : 0.033)) { crowdT = 0; seatCrowd(t); }
     },
   };
+}
+
+/**
+ * Soccer's furniture: a goal at each end (posts, crossbar, a net you can see the ball
+ * hit) and boards all the way round, which the ball comes back off. Above the boards, a
+ * see-through panel so the cage reads as a cage without hiding the play.
+ */
+function buildGoals(spec: CourtSpec, id: VenueId, add: <T extends THREE.Object3D>(o: T, near?: boolean) => T) {
+  const G = spec.goal!;
+  const HW = spec.halfWidth;
+  const HL = spec.halfLength;
+  const frame = new THREE.MeshStandardMaterial({ color: '#f4f4f0', roughness: 0.3, metalness: 0.4 });
+  const netTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const g = c.getContext('2d')!;
+    g.strokeStyle = 'rgba(255,255,255,0.85)';
+    g.lineWidth = 3;
+    for (let k = 0; k <= 64; k += 16) {
+      g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 64); g.stroke();
+      g.beginPath(); g.moveTo(0, k); g.lineTo(64, k); g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  const netMat = (rx: number, ry: number) => {
+    const t = netTex.clone();
+    t.needsUpdate = true;
+    t.repeat.set(rx, ry);
+    return new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.DoubleSide, depthWrite: false, opacity: 0.8 });
+  };
+  for (const s of [1, -1]) {
+    const z = s * HL;
+    const r = 0.22;
+    for (const sx of [1, -1]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(r, r, G.h, 14), frame);
+      post.position.set(sx * G.half, G.h / 2, z);
+      post.castShadow = true;
+      add(post, sx > 0);
+    }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(r, r, G.half * 2 + r * 2, 14), frame);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, G.h, z);
+    bar.castShadow = true;
+    add(bar);
+    // the net: back, roof, sides
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(G.half * 2, G.h), netMat(G.half * 2 / 1.2, G.h / 1.2));
+    back.position.set(0, G.h / 2, z + s * G.depth);
+    add(back);
+    const roof = new THREE.Mesh(new THREE.PlaneGeometry(G.half * 2, G.depth), netMat(G.half * 2 / 1.2, G.depth / 1.2));
+    roof.rotation.x = -Math.PI / 2;
+    roof.position.set(0, G.h, z + s * G.depth / 2);
+    add(roof);
+    for (const sx of [1, -1]) {
+      const side = new THREE.Mesh(new THREE.PlaneGeometry(G.depth, G.h), netMat(G.depth / 1.2, G.h / 1.2));
+      side.rotation.y = Math.PI / 2;
+      side.position.set(sx * G.half, G.h / 2, z + s * G.depth / 2);
+      add(side, sx > 0);
+    }
+  }
+  // the boards: low and solid, in the venue's colors, then clear panels above
+  const boardColor = id === 'beach' ? '#1f6fb2' : id === 'rooftop' ? '#3b2d6e' : id === 'arena' ? '#1d3557' : '#e9e6dc';
+  const trim = id === 'rooftop' ? '#7df9ff' : id === 'beach' ? '#ffd23f' : '#ff5a5f';
+  const boardMat = new THREE.MeshStandardMaterial({ color: boardColor, roughness: 0.6 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: trim, roughness: 0.5, emissive: id === 'rooftop' ? trim : '#000000', emissiveIntensity: id === 'rooftop' ? 0.6 : 0 });
+  const glass = new THREE.MeshStandardMaterial({ color: '#cfe8ff', transparent: true, opacity: 0.12, roughness: 0.1, metalness: 0.1, depthWrite: false, side: THREE.DoubleSide });
+  const H = 3.2;
+  const panel = (w: number, x: number, z: number, along: 'x' | 'z', near = false) => {
+    const t = 0.35;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(along === 'x' ? w : t, H, along === 'x' ? t : w), boardMat);
+    b.position.set(x, H / 2, z);
+    b.castShadow = true;
+    b.receiveShadow = true;
+    add(b, near);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(along === 'x' ? w : t + 0.05, 0.18, along === 'x' ? t + 0.05 : w), trimMat);
+    cap.position.set(x, H + 0.09, z);
+    add(cap, near);
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(w, 4.5), glass);
+    if (along === 'z') g.rotation.y = Math.PI / 2;
+    g.position.set(x, H + 0.18 + 2.25, z);
+    add(g, near);
+  };
+  const t2 = 0.35 / 2;
+  panel(HL * 2 + 0.7, HW + t2, 0, 'z', true);
+  panel(HL * 2 + 0.7, -HW - t2, 0, 'z');
+  for (const s of [1, -1]) {
+    const w = HW - G.half - 0.25;
+    panel(w, G.half + 0.25 + w / 2, s * (HL + t2), 'x', true);
+    panel(w, -(G.half + 0.25 + w / 2), s * (HL + t2), 'x');
+  }
 }
 
 function buildNet(spec: CourtSpec, id: VenueId, add: <T extends THREE.Object3D>(o: T, near?: boolean) => T) {

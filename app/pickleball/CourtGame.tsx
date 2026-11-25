@@ -316,7 +316,7 @@ export default function CourtGame({ sport }: { sport: Sport }) {
         <Center>
           <div className={`${panel} w-[min(820px,calc(100vw-32px))] p-5 sm:p-7`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-[22px] font-black">Set the court</div>
+              <div className="text-[22px] font-black">{sport.id === 'soccer' ? 'Pick the teams' : 'Set the court'}</div>
               <div className="flex gap-1.5">
                 {(['doubles', 'singles'] as Format[]).map((f) => (
                   <button key={f} type="button" className={chip(format === f)} onClick={() => openSetup(f)}>{f === 'doubles' ? 'Doubles' : 'Singles'}</button>

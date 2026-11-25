@@ -45,7 +45,7 @@ export interface Lobby {
   /** bumps for every new game, so guests reset */
   game: number;
   /** which game this room is playing, and where */
-  sport: 'pickleball' | 'volleyball';
+  sport: 'pickleball' | 'volleyball' | 'soccer';
   venue: VenueId;
 }
 
@@ -93,7 +93,7 @@ export function sanitizeLobby(v: unknown): Lobby | null {
     format: o.format === 'doubles' ? 'doubles' : 'singles',
     started: Boolean(o.started),
     game: clampInt(o.game, 0, 1e9),
-    sport: o.sport === 'volleyball' ? 'volleyball' : 'pickleball',
+    sport: o.sport === 'volleyball' || o.sport === 'soccer' ? o.sport : 'pickleball',
     venue: isVenue(o.venue) ? o.venue : 'park',
     seats: o.seats.map((s) => ({
       kind: s?.kind === 'human' || s?.kind === 'bot' ? s.kind : 'open',

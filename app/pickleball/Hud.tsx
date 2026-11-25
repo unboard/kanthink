@@ -48,7 +48,7 @@ export function GameHud({ sport, hud, onLeave, onRematch, onLobby, devices }: {
               </div>
               <div className={`hidden min-w-0 sm:block ${t === 1 ? 'text-right' : ''}`}>
                 <div className="max-w-[150px] truncate text-[13px] font-bold">{teamName(t)}</div>
-                <div className="text-[11px] text-white/50">{hud.servingTeam === t ? (hud.sport === 'pickleball' && hud.format === 'doubles' ? `serving · ${hud.serverNum === 1 ? '1st' : '2nd'} server` : 'serving') : ' '}</div>
+                <div className="text-[11px] text-white/50">{hud.servingTeam === t ? (hud.sport === 'pickleball' && hud.format === 'doubles' ? `serving · ${hud.serverNum === 1 ? '1st' : '2nd'} server` : hud.sport === 'soccer' ? 'kickoff' : 'serving') : ' '}</div>
               </div>
               <div className="w-12 text-center font-mono text-[40px] font-black leading-none tabular-nums" style={{ color: TEAM_COLORS[t] }}>{hud.scores[t]}</div>
             </div>
@@ -57,7 +57,7 @@ export function GameHud({ sport, hud, onLeave, onRematch, onLobby, devices }: {
       </div>
       <div className="pointer-events-none absolute inset-x-0 top-[calc(max(8px,env(safe-area-inset-top))+66px)] flex justify-center sm:top-[92px]">
         <div className="rounded-full bg-black/40 px-3 py-1 text-[12px] font-semibold text-white/75 backdrop-blur">
-          <span className="font-mono text-white">{hud.scoreCall}</span> · {serverName} serves
+          <span className="font-mono text-white">{hud.scoreCall}</span>{hud.sport === 'soccer' ? (hud.phase === 'serve' ? <> · {serverName} kicks off</> : null) : <> · {serverName} serves</>}
         </div>
       </div>
 

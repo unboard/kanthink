@@ -77,7 +77,7 @@ export interface Hud {
   server: number;
   serverNum: 1 | 2;
   scoreCall: string;
-  sport: 'pickleball' | 'volleyball';
+  sport: 'pickleball' | 'volleyball' | 'soccer';
   venue: VenueId;
   /** someone here is playing on the touch screen */
   touch: boolean;
@@ -418,7 +418,7 @@ export class Controller {
   private receiveLobby(lobby: Lobby) {
     if (lobby.sport !== this.sport.id) {
       this.startAttract();
-      this.onFatal(`That room is playing ${lobby.sport}. Open ${lobby.sport === 'volleyball' ? 'Volleyball' : 'Pickleball'} and join with the same code.`);
+      this.onFatal(`That room is playing ${lobby.sport}. Open ${lobby.sport === 'volleyball' ? 'Volleyball' : lobby.sport === 'soccer' ? 'Soccer' : 'Pickleball'} and join with the same code.`);
       return;
     }
     this.applyVenue(lobby.venue);
@@ -799,6 +799,7 @@ export class Controller {
   private readyFor(seats: number[]): boolean {
     const s = this.view;
     if (!seats.length) return false;
+    if (this.sport.ready) return this.sport.ready(s, seats);
     if (s.phase === 'serve') return seats.includes(s.server);
     if (s.phase !== 'rally') return false;
     const g = sgn(s.players[seats[0]]?.team ?? 0);

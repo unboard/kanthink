@@ -93,7 +93,7 @@ export interface Award {
 }
 
 export interface Sport<S extends BaseState = BaseState> {
-  id: 'pickleball' | 'volleyball';
+  id: 'pickleball' | 'volleyball' | 'soccer';
   name: string;
   /** the line above the title on the home screen */
   tagline: string;
@@ -102,7 +102,7 @@ export interface Sport<S extends BaseState = BaseState> {
   path: string;
   court: CourtSpec;
   prop: FigureProp;
-  ball: 'pickle' | 'volley';
+  ball: 'pickle' | 'volley' | 'soccer';
   /** how big the ball is drawn, in feet */
   ballRadius: number;
   /** seconds per sim tick */
@@ -138,6 +138,13 @@ export interface Sport<S extends BaseState = BaseState> {
   landing?(state: S): { x: number; z: number; t: number } | null;
   /** the patch of court to light for a local server, or null */
   serveTarget(state: S): { x: number; z: number; w: number; d: number } | null;
+  /**
+   * Which way a player faces, as a world direction. Without it everyone faces the
+   * other end, which suits a net game; on a pitch you face where you're running.
+   */
+  facing?(state: S, i: number): { x: number; z: number };
+  /** the ball is this player's to play right now (lights the shot pad); without it, the ball coming their way */
+  ready?(state: S, seats: number[]): boolean;
   /** a local player is standing somewhere they shouldn't hit from */
   warnZone(state: S, focus: number[]): Team | null;
 

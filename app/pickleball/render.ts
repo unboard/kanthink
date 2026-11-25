@@ -43,7 +43,7 @@ function radialTexture(inner: string, outer: string, mid?: string): THREE.Canvas
 }
 
 /** a pickleball's holes, or a beach volleyball's swirling panels, as a little equirectangular map */
-function ballTexture(kind: 'pickle' | 'volley'): THREE.CanvasTexture {
+function ballTexture(kind: 'pickle' | 'volley' | 'soccer'): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
@@ -66,6 +66,43 @@ function ballTexture(kind: 'pickle' | 'volley'): THREE.CanvasTexture {
         g.fillStyle = '#93ad16';
       }
     });
+  } else if (kind === 'soccer') {
+    // white with black pentagons, laid out on the equirectangular map: two at the poles
+    // (stretched across the top and bottom rows) and two rings of five between
+    g.fillStyle = '#f7f7f2';
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = '#16161a';
+    g.fillRect(0, 0, 256, 9);
+    g.fillRect(0, 119, 256, 9);
+    const pent = (cx: number, cy: number, r: number) => {
+      g.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const a = -Math.PI / 2 + (k / 5) * Math.PI * 2;
+        const x = cx + Math.cos(a) * r * 1.35;
+        const y = cy + Math.sin(a) * r;
+        if (k === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.closePath();
+      g.fill();
+    };
+    for (let k = 0; k < 5; k++) {
+      for (const dx of [0, 256, -256]) {
+        pent((k / 5) * 256 + dx, 42, 11);
+        pent(((k + 0.5) / 5) * 256 + dx, 86, 11);
+      }
+    }
+    // the seams between the white hexagons
+    g.strokeStyle = 'rgba(30,30,40,0.35)';
+    g.lineWidth = 1.2;
+    for (let k = 0; k < 10; k++) {
+      const x = (k / 10) * 256;
+      g.beginPath();
+      g.moveTo(x, 9);
+      g.lineTo(x + 12, 64);
+      g.lineTo(x, 119);
+      g.stroke();
+    }
   } else {
     // three colors in six swirled panels, stitched
     const colors = ['#ffd23f', '#1d6fd6', '#ffffff'];
@@ -109,6 +146,8 @@ interface Rig {
   sulkAt: number;
   t: number;
   step: number;
+  /** which way the figure faces now, eased toward where it should */
+  yaw?: number;
 }
 
 export interface RenderView {
@@ -547,6 +586,19 @@ export class CourtRenderer {
       const bz = Math.max(-8, Math.min(8, b.z * 0.25));
       this.camPosTarget.set((HW + 26 + (vb ? 5 : 0)) * pull, (24 + (vb ? 4 : 0)) * pull, bz);
       this.camLookTarget.set(0, vb ? 3 : 0, bz * 0.6);
+    } else if (sport.id === 'soccer') {
+      // The pitch is long, so the camera can't sit behind your goal: it rides up and
+      // down the touchline end with the play, behind the action from your side, between
+      // your player and the ball so both stay in frame.
+      const s = sgn(view.team);
+      const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
+      const fx = focus.reduce((acc, i) => acc + (state.players[i]?.x ?? 0), 0) / Math.max(1, focus.length);
+      const fz = focus.reduce((acc, i) => acc + (state.players[i]?.z ?? 0), 0) / Math.max(1, focus.length);
+      const bx = Math.max(-HW, Math.min(HW, b.x));
+      const bz = Math.max(-HL - 3, Math.min(HL + 3, b.z));
+      const mid = fz * 0.45 + bz * 0.55;
+      this.camPosTarget.set(fx * 0.3 + bx * 0.3, 27 * pull + Math.min(5, b.y * 0.3), mid + s * 30 * pull);
+      this.camLookTarget.set(fx * 0.25 + bx * 0.45, 1 + Math.min(4, b.y * 0.3), mid - s * 9);
     } else {
       const s = sgn(view.team);
       const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
@@ -650,23 +702,40 @@ export class CourtRenderer {
     for (let i = 0; i < n; i++) {
       const rig = this.rigs[i];
       const p = state.players[i];
-      const s = sgn(p.team);
       const pose = sport.pose(state, i);
       const speed = Math.hypot(p.vx, p.vz);
       rig.t += frameDt;
       rig.fig.root.position.set(p.x, 0, p.z);
+      // Which way the figure faces. A net game faces the other end; a sport that says
+      // otherwise (soccer) turns its players toward where they're going, smoothly.
+      // Everything the pose reads (lean, look, dive direction) is then in the figure's
+      // own frame: world deltas turned by -yaw. For a fixed team facing that is the
+      // same as multiplying by the team's sign, which is what it used to do.
+      const face = sport.facing ? sport.facing(state, i) : null;
+      const wantYaw = face ? Math.atan2(-face.x, -face.z) : p.team === 0 ? 0 : Math.PI;
+      if (rig.yaw === undefined) rig.yaw = wantYaw;
+      let dy = wantYaw - rig.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      rig.yaw += dy * Math.min(1, frameDt * 14);
+      rig.fig.root.rotation.y = rig.yaw;
+      const cy = Math.cos(rig.yaw);
+      const sy = Math.sin(rig.yaw);
+      const local = (wx: number, wz: number) => ({ x: wx * cy - wz * sy, z: wx * sy + wz * cy });
+      const lv = local(p.vx, p.vz);
+      const lb = local(b.x - p.x, b.z - p.z);
       const fire = p.fire > 0;
       const cheer = rig.cheerAt >= 0 ? this.time - rig.cheerAt : -1;
       const sulk = rig.sulkAt >= 0 ? this.time - rig.sulkAt : -1;
       poseFigure(rig.fig, {
-        t: rig.t, dt: frameDt, speed, fwd: p.vz * s, side: p.vx * s,
+        t: rig.t, dt: frameDt, speed, fwd: lv.z, side: lv.x,
         action: pose.action, phase: pose.phase, air: pose.air,
         ready: state.phase === 'rally' || (state.phase === 'serve' && i !== state.server),
         cheer: over && p.team === state.winner ? (this.time % 3.2) : cheer,
         sulk: over && p.team !== state.winner ? Math.min(1.1, this.time % 6) : sulk,
-        look: over || state.phase === 'point' ? null : { x: (b.x - p.x) * s, y: b.y, z: (b.z - p.z) * s },
+        look: over || state.phase === 'point' ? null : { x: lb.x, y: b.y, z: lb.z },
         heat: p.heat, fire, chef: pose.chef,
-        diveYaw: speed > 0.5 ? Math.atan2(-p.vx * s, -p.vz * s) : 0,
+        diveYaw: speed > 0.5 ? Math.atan2(-lv.x, -lv.z) : 0,
       });
       rig.fig.ring.position.y = 0.06;
       const ringMat = rig.fig.ring.material as THREE.MeshBasicMaterial;

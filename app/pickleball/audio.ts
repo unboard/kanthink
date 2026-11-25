@@ -26,11 +26,11 @@ export class Sfx {
   }
 
   /** the hollow "pock" of a paddle on a plastic ball */
-  hit(strength = 1, kind: 'pickle' | 'volley' = 'pickle') {
+  hit(strength = 1, kind: 'pickle' | 'volley' | 'soccer' = 'pickle') {
     const ctx = this.ready();
     if (!ctx || !this.noise) return;
     const t = ctx.currentTime;
-    if (kind === 'volley') {
+    if (kind !== 'pickle') {
       // forearms or a palm on a leather ball: a short thud, with a crack when it's hit hard
       this.tone(210 * Math.min(1.4, strength), 95, 0, 0.11, Math.min(0.5, 0.2 * strength), 'sine');
       this.hiss(0, 0.05, Math.min(0.6, 0.22 * strength), 900 * strength, 350);
@@ -61,11 +61,11 @@ export class Sfx {
     osc.stop(t + 0.1);
   }
 
-  bounce(kind: 'pickle' | 'volley' = 'pickle') {
+  bounce(kind: 'pickle' | 'volley' | 'soccer' = 'pickle') {
     const ctx = this.ready();
     if (!ctx) return;
     const t = ctx.currentTime;
-    if (kind === 'volley') {
+    if (kind !== 'pickle') {
       this.tone(120, 60, 0, 0.14, 0.22, 'sine');
       this.hiss(0, 0.16, 0.2, 700, 200);
       return;

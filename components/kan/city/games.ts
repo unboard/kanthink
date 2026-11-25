@@ -18,13 +18,14 @@ import type { Rect } from './market';
  * merge leaves it alone.
  */
 
-export type GameId = 'mow' | 'volleyball' | 'pickleball' | 'catlife';
+export type GameId = 'mow' | 'volleyball' | 'pickleball' | 'catlife' | 'soccer';
 
 export const GAMES: Record<GameId, { name: string; path: string; blurb: string }> = {
   mow: { name: 'Clean Cut', path: '/mow', blurb: 'Mow lawns in perfect stripes' },
   volleyball: { name: 'Volleyball', path: '/volleyball', blurb: 'Bump, set, super spike' },
   pickleball: { name: 'Pickleball', path: '/pickleball', blurb: 'Doubles with hot streaks' },
   catlife: { name: 'Whisker Wilds', path: '/catlife', blurb: 'A cat clan on a wild island' },
+  soccer: { name: 'Soccer', path: '/soccer', blurb: 'Two goals, off the walls' },
 };
 
 export interface GameLot {
@@ -286,6 +287,48 @@ function volleyLot(ticks: GamePark['ticks']): { group: THREE.Group; top: number 
   return { group: g, top: 7.4 };
 }
 
+/** A little walled pitch: mown stripes, two goals, and a pass going end to end. */
+function soccerLot(ticks: GamePark['ticks']): { group: THREE.Group; top: number } {
+  const g = new THREE.Group();
+  const H = LOT / 2;
+  const pw = 6.4, pl = 7.6;
+  for (let k = 0; k < 8; k++) box(g, pw * 2, 0.14, (pl * 2) / 8, mat(k % 2 ? '#3f9a4a' : '#358a40', { rough: 1 }), 0, TOP - 0.08, -pl + (pl * 2 / 8) * (k + 0.5));
+  const line = mat('#ffffff');
+  box(g, pw * 2, 0.03, 0.12, line, 0, TOP + 0.06, 0);
+  for (const sz of [-1, 1]) box(g, pw * 2, 0.03, 0.12, line, 0, TOP + 0.06, sz * pl);
+  for (const sx of [-1, 1]) box(g, 0.12, 0.03, pl * 2, line, sx * pw, TOP + 0.06, 0);
+  const circle = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.75, 28), line);
+  circle.rotation.x = -Math.PI / 2;
+  circle.position.set(0, TOP + 0.08, 0);
+  g.add(circle);
+  // boards round the edge, low enough to see over
+  const board = mat('#e9e6dc');
+  for (const sx of [-1, 1]) box(g, 0.2, 0.7, pl * 2 + 0.4, board, sx * (pw + 0.2), TOP, 0, true);
+  for (const sz of [-1, 1]) for (const sx of [-1, 1]) box(g, pw - 1.7, 0.7, 0.2, board, sx * (pw + 1.7) / 2, TOP, sz * (pl + 0.2), true);
+  // the goals: white frames with a gray net
+  const frame = mat('#ffffff', { metal: 0.3, rough: 0.3 });
+  const net = mat('#94a3b8', { opacity: 0.45 });
+  for (const sz of [-1, 1]) {
+    for (const sx of [-1, 1]) cyl(g, 0.08, 0.08, 1.6, frame, sx * 1.6, TOP, sz * pl, 8);
+    box(g, 3.36, 0.14, 0.14, frame, 0, TOP + 1.55, sz * pl, true);
+    box(g, 3.2, 1.5, 0.04, net, 0, TOP, sz * (pl + 1));
+  }
+  // two a side, and the ball rolling end to end
+  player(g, 21, -1.6, 4.2, Math.PI, ticks, 0);
+  player(g, 22, 2.2, 2.6, Math.PI, ticks, 1.1);
+  player(g, 23, 1.4, -4.4, 0, ticks, 0.6);
+  player(g, 24, -2.4, -2.4, 0, ticks, 1.8);
+  const ball = dyn(new THREE.Group());
+  const white = ballMesh(0.3, mat('#f8fafc'));
+  const patch = new THREE.Mesh(new THREE.IcosahedronGeometry(0.31, 0), mat('#111827', { opacity: 0.6 }));
+  ball.add(white, patch);
+  g.add(ball);
+  const roll = rally(ball, new THREE.Vector3(-1.2, TOP + 0.3, 3.6), new THREE.Vector3(1.2, TOP + 0.3, -3.8), 0.6, 1.9);
+  ticks.push((t) => { roll(t); ball.rotation.x = t * 6; });
+  void H;
+  return { group: g, top: 5 };
+}
+
 function pickleLot(ticks: GamePark['ticks']): { group: THREE.Group; top: number } {
   const g = new THREE.Group();
   const H = LOT / 2;
@@ -430,20 +473,26 @@ export function buildGamePark(grid: Grid): GamePark {
   const g = new THREE.Group();
   const ticks: GamePark['ticks'] = [];
   const W = grid.width;
-  const w = LOT * 2 + PATH * 3, d = LOT * 2 + PATH * 3;
+  // Two columns of lots round a fountain, then a third column east for the pitch at
+  // the end of the main path.
+  const w = LOT * 3 + PATH * 4, d = LOT * 2 + PATH * 3;
   const x0 = W / 2 + 3 + GAP, x1 = x0 + w;
   const z0 = -d / 2, z1 = d / 2;
-  const cx = (x0 + x1) / 2;
+  const cx = x0 + (LOT * 2 + PATH * 3) / 2;
+  const mid = (x0 + x1) / 2;
   const bounds: Rect = { x0, z0, x1, z1 };
 
   // The ground: earth under grass, the same height as the city's island.
   const earth = new THREE.Mesh(new THREE.BoxGeometry(w, 5, d), mat('#6b4f3a'));
-  earth.position.set(cx, -2.6, 0);
+  earth.position.set(mid, -2.6, 0);
   g.add(earth);
-  box(g, w, 0.56, d, mat('#a6d98a'), cx, -0.2, 0);
+  box(g, w, 0.56, d, mat('#a6d98a'), mid, -0.2, 0);
   // A cross of paths from the gate, and a fountain where they meet.
   const pathM = mat('#e7dcc6', { rough: 1 });
-  box(g, w - 2, 0.06, PATH, pathM, cx, TOP - 0.02, 0);
+  // the main path runs from the gate to the pitch
+  const pitchX = cx + 3 * (LOT / 2 + PATH / 2);
+  const pathEnd = pitchX - LOT / 2;
+  box(g, pathEnd - x0 - 1, 0.06, PATH, pathM, (x0 + 1 + pathEnd) / 2, TOP - 0.02, 0);
   box(g, PATH, 0.06, d - 2, pathM, cx, TOP - 0.02, 0);
   cyl(g, 2.2, 2.4, 0.6, mat('#cbd5e1'), cx, TOP, 0, 20);
   const water = new THREE.Mesh(new THREE.CircleGeometry(1.9, 20), mat('#60a5fa', { rough: 0.1, metal: 0.3 }));
@@ -463,12 +512,13 @@ export function buildGamePark(grid: Grid): GamePark {
   }));
 
   // The four lots. Their own frame has the path along +z; turn each to face the cross.
-  const builds: Record<GameId, (t: GamePark['ticks']) => { group: THREE.Group; top: number }> = { mow: mowLot, volleyball: volleyLot, pickleball: pickleLot, catlife: catLot };
+  const builds: Record<GameId, (t: GamePark['ticks']) => { group: THREE.Group; top: number }> = { mow: mowLot, volleyball: volleyLot, pickleball: pickleLot, catlife: catLot, soccer: soccerLot };
   const signs: Record<GameId, [string, string, string]> = {
     mow: ['CLEAN CUT', '#166534', '#fef08a'],
     volleyball: ['VOLLEYBALL', '#0369a1', '#fde047'],
     pickleball: ['PICKLEBALL', '#1d3557', '#dcff3d'],
     catlife: ['WHISKER WILDS', '#7c2d12', '#fed7aa'],
+    soccer: ['SOCCER', '#14532d', '#ffffff'],
   };
   const off = LOT / 2 + PATH / 2;
   // The two nearest the gate are the sports; the far two are the lawn and the cats.
@@ -485,6 +535,15 @@ export function buildGamePark(grid: Grid): GamePark {
     const [text, bg, fg] = signs[id];
     lotSign(g, text, bg, fg, lx + sx * -3.5, lz - sz * (LOT / 2 - 0.4), sz > 0 ? Math.PI : 0);
     lots.push({ id, group: built.group, center: { x: lx, z: lz }, door: { x: lx, z: lz - sz * (LOT / 2) }, top: built.top });
+  }
+  // The pitch, at the end of the main path: its path side (local +z) faces west.
+  {
+    const built = soccerLot(ticks);
+    built.group.position.set(pitchX, 0, 0);
+    built.group.rotation.y = -Math.PI / 2;
+    g.add(built.group);
+    lotSign(g, 'SOCCER', '#14532d', '#ffffff', pathEnd + 0.4, -5.5, -Math.PI / 2);
+    lots.push({ id: 'soccer', group: built.group, center: { x: pitchX, z: 0 }, door: { x: pathEnd, z: 0 }, top: built.top });
   }
 
   // The gate, on the town side, with the road back to town.
@@ -509,8 +568,8 @@ export function buildGamePark(grid: Grid): GamePark {
   }
   // Hedges around the edge, with a gap for the gate.
   const hedge = mat('#3e8e47');
-  box(g, w - 2, 1.2, 0.9, hedge, cx, TOP - 0.1, z0 + 0.6, true);
-  box(g, w - 2, 1.2, 0.9, hedge, cx, TOP - 0.1, z1 - 0.6, true);
+  box(g, w - 2, 1.2, 0.9, hedge, mid, TOP - 0.1, z0 + 0.6, true);
+  box(g, w - 2, 1.2, 0.9, hedge, mid, TOP - 0.1, z1 - 0.6, true);
   box(g, 0.9, 1.2, d - 2, hedge, x1 - 0.6, TOP - 0.1, 0, true);
   for (const s of [-1, 1]) box(g, 0.9, 1.2, d / 2 - 4, hedge, x0 + 0.6, TOP - 0.1, s * (d / 4 + 1.5), true);
 

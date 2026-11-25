@@ -3,7 +3,7 @@
  * mobile bottom nav, the board's sheet, the icon rail, the AI status bar) belongs on
  * them, on any screen size. Add a new game here and every piece of chrome steps aside.
  */
-export const GAME_ROUTES = ['/mow', '/catlife', '/rescue', '/pickleball', '/volleyball'] as const;
+export const GAME_ROUTES = ['/mow', '/catlife', '/rescue', '/pickleball', '/volleyball', '/soccer'] as const;
 
 export function isGameRoute(pathname: string | null | undefined): boolean {
   if (!pathname) return false;

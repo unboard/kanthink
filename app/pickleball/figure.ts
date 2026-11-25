@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import { HEIGHT_SCALE, victoryOf, wearsSkirt, type Character, type Mood } from './characters';
 
-export type FigureAction = 'none' | 'swing' | 'bump' | 'set' | 'spike' | 'block' | 'dive' | 'down' | 'toss';
+export type FigureAction = 'none' | 'swing' | 'bump' | 'set' | 'spike' | 'block' | 'dive' | 'down' | 'toss' | 'kick' | 'slide';
 export type FigureProp = 'paddle' | 'none';
 
 interface Arm { shoulder: THREE.Group; elbow: THREE.Group; hand: THREE.Group }
@@ -1444,6 +1444,41 @@ export function poseFigure(f: Figure, o: PoseInput) {
       p.spX = mix(p.spX, -0.1, k);
       if (o.air > 0.05) { p.kL = -0.12; p.kR = -0.12; p.hLx = 0.05; p.hRx = 0.05; p.fL = 0.9; p.fR = 0.9; }
       p.hdX = -0.3 * k;
+      break;
+    }
+    case 'kick': {
+      // soccer: plant, draw the right leg back with the knee bent, then swing it through
+      // the ball and follow up and across, the left arm out for balance
+      rate = 36;
+      const back = ramp(a, 0, 0.3);
+      const thru = ramp(a, 0.3, 0.55);
+      const settle = ramp(a, 0.7, 1);
+      const k = 1 - settle;
+      p.hRx = mix(p.hRx, mix(-0.75 * back, 1.25, thru), k);
+      p.kR = mix(p.kR, mix(-1.5 * back - 0.2, -0.12, thru), k);
+      p.fR = mix(p.fR, mix(0.6, -0.3, thru), k);
+      p.hLx = mix(p.hLx, 0.25, k); p.kL = mix(p.kL, -0.45, k);
+      p.sLx = mix(p.sLx, 0.4, k); p.sLz = mix(p.sLz, -1.05, k); p.eL = mix(p.eL, 0.4, k);
+      p.sRx = mix(p.sRx, mix(0.6, -0.5, thru), k); p.sRz = mix(p.sRz, 0.5, k);
+      p.spY = mix(p.spY, mix(0.35, -0.3, thru) * 1, k);
+      p.spX = mix(p.spX, mix(0.1, -0.15, thru), k);
+      p.y = mix(p.y, -0.06, k);
+      break;
+    }
+    case 'slide': {
+      // a slide tackle: down onto the hip, leaning back, the leading leg out straight
+      rate = 30;
+      const out = ramp(a, 0, 0.22);
+      const up = ramp(a, 0.75, 1);
+      const k = out * (1 - up);
+      p.pitch = 0.95 * k;
+      p.y = mix(p.y, -1.55, k);
+      p.roll += 0.3 * k;
+      p.hLx = mix(p.hLx, 1.45, k); p.kL = mix(p.kL, -0.05, k); p.fL = mix(p.fL, -0.3, k);
+      p.hRx = mix(p.hRx, 1.0, k); p.kR = mix(p.kR, -1.3, k);
+      p.sLx = mix(p.sLx, -0.6, k); p.sLz = mix(p.sLz, -1.1, k); p.eL = mix(p.eL, 0.2, k);
+      p.sRx = mix(p.sRx, -0.9, k); p.sRz = mix(p.sRz, 0.8, k); p.eR = mix(p.eR, 0.4, k);
+      p.hdX = 0.35 * k;
       break;
     }
     case 'dive': {
