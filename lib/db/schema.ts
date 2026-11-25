@@ -398,6 +398,10 @@ export const playgroundApps = sqliteTable('playground_apps', {
   buildProgress: text('build_progress', { mode: 'json' }).$type<{
     startedAt: number
     steps: { label: string; status: 'running' | 'done' | 'error'; at: number }[]
+    /** Set once the build ended; then error or note says how. See lib/playground/buildProgress. */
+    finishedAt?: number
+    error?: string
+    note?: string
   } | null>(),
   /**
    * Runtime dependency declarations in lib/playground/runtime grammar, as declared

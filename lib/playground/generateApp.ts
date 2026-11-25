@@ -673,11 +673,23 @@ export async function generatePlaygroundApp(
   // Each phase is written to the app row as it starts, so the drawer can show the
   // build as a trace. Cleared on every way out — a stale step would read as a
   // build still running.
+  //
+  // How it ended is written too, rather than cleared: the response to this call is
+  // not a reliable messenger. A phone drops a connection held for minutes, and a
+  // failure reported only there was reported to nobody ("Failed to fetch").
   const progress = body.appId ? buildTracker(body.appId) : undefined;
   try {
-    return await runGeneration(body, session, options, progress);
-  } finally {
-    await progress?.clear();
+    const res = await runGeneration(body, session, options, progress);
+    if (progress) {
+      const data = await res.clone().json().catch(() => ({})) as { error?: string; asked?: boolean; unsupported?: unknown; clarification?: unknown; messages?: { content?: string }[]; app?: { messages?: { content?: string }[] } };
+      if (!res.ok || data.error) await progress.finish({ error: data.error || `The build failed (${res.status}).` });
+      else if (data.asked || data.unsupported || data.clarification) await progress.finish({ note: (data.app?.messages ?? data.messages)?.at(-1)?.content || 'Kan has a question about this change. Answer it in the app’s thread.' });
+      else await progress.finish({});
+    }
+    return res;
+  } catch (err) {
+    await progress?.finish({ error: err instanceof Error ? `The build stopped: ${err.message}` : 'The build stopped unexpectedly.' });
+    throw err;
   }
 }
 
@@ -1202,7 +1214,13 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // Claude's adaptive thinking has no separate budget: it spends from max_tokens, so
   // the ceiling that suits Gemini (whose thinking is capped) would truncate a Claude
   // rewrite that thought hard. Claude builds stream, so a larger ceiling is safe.
-  const rewriteCeiling = model.provider === 'anthropic' ? 64000 : 32000;
+  //
+  // Gemini's own limit is 65,536 and it counts thinking against it. At 32,000 a
+  // whole-file rewrite of a grown app (a 70 KB game is ~20k tokens of code, plus up
+  // to 8k of thinking, plus notes) came back cut off, and "make the court vertical"
+  // failed every time. Only the tokens actually written are billed, so the higher
+  // ceiling costs nothing on an ordinary build.
+  const rewriteCeiling = model.provider === 'anthropic' ? 64000 : model.provider === 'google' ? 65536 : 32000;
 
   // A build on Kanthink's key counts against the account's allowance, like every
   // other AI call — it used to count nothing, which left the most expensive call in

@@ -59,7 +59,11 @@ export async function runStructured(request: StructuredRequest): Promise<Structu
 async function runGemini(request: StructuredRequest): Promise<StructuredResponse> {
   const client = new GoogleGenAI({ apiKey: request.apiKey });
 
-  const response = await client.models.generateContent({
+  // Streamed, and gathered here. A single generateContent sends no headers until
+  // the whole app is written, and Node's fetch gives up on a response with no
+  // headers after 300s, so a long rewrite failed as "fetch failed" just short of
+  // finishing. A stream starts answering at once.
+  const stream = await client.models.generateContentStream({
     model: request.model.id,
     contents: [{
       role: 'user',
@@ -82,14 +86,23 @@ async function runGemini(request: StructuredRequest): Promise<StructuredResponse
     },
   });
 
+  let text = '';
+  let finishReason: string | undefined;
+  let usage: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number } | undefined;
+  for await (const chunk of stream) {
+    text += chunk.text ?? '';
+    finishReason = chunk.candidates?.[0]?.finishReason ?? finishReason;
+    usage = chunk.usageMetadata ?? usage;
+  }
+
   return {
-    text: response.text ?? null,
+    text: text || null,
     // Gemini counts thinking against maxOutputTokens, so a run that thinks too hard
     // returns truncated JSON with this reason.
-    truncated: response.candidates?.[0]?.finishReason === 'MAX_TOKENS',
-    inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+    truncated: finishReason === 'MAX_TOKENS',
+    inputTokens: usage?.promptTokenCount ?? 0,
     // Thinking is billed at the output rate but reported apart from the answer.
-    outputTokens: (response.usageMetadata?.candidatesTokenCount ?? 0) + (response.usageMetadata?.thoughtsTokenCount ?? 0),
+    outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
   };
 }
 

@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid'
 import { inBucket, inColumnBucket } from '@/lib/db/cardBuckets'
 import type { BotContext, BotTool } from '@/lib/kan/bots/tools'
 import { residentOf, type Resident } from './residents'
+import { isBuilding } from '@/lib/playground/buildProgress'
 
 /**
  * Talking with the bots who live in the city.
@@ -560,7 +561,8 @@ export async function appStatus(ownerId: string, appId: string) {
   if (!app) return null
   const ch = await db.query.channels.findFirst({ where: and(eq(channels.id, app.channelId), eq(channels.ownerId, ownerId)), columns: { id: true } })
   if (!ch) return null
-  const building = Boolean(app.buildProgress)
+  // A finished build keeps its ending on the row; only an unfinished one is building.
+  const building = isBuilding(app.buildProgress)
   const since = +(app.updatedAt ?? app.createdAt ?? 0)
   const status = app.code && !building ? 'ready' : building || Date.now() - since < 12 * 60_000 ? 'building' : 'failed'
   const step = app.buildProgress?.steps?.filter((x) => x.status === 'running').at(-1)?.label ?? null

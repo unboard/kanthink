@@ -33,24 +33,38 @@ export function ChangeAppPanel({ appId }: { appId: string }) {
   };
 
   const uploading = images.some((i) => !i.url && !i.error);
+  const [step, setStep] = useState<string | null>(null);
+
+  /**
+   * Start the change, then watch the app until it ends.
+   *
+   * This used to be one request held open for the whole build. A big change runs
+   * for minutes, a phone drops a connection held that long, and the panel said
+   * "Failed to fetch" while the server went on (and sometimes failed for a reason
+   * nobody saw). Now the request only starts the build, and each poll is a short,
+   * fresh request: a locked screen or a network switch costs a tick, not the build,
+   * and how it ended, good or bad, is read from the app itself.
+   */
   const submit = async () => {
     const prompt = text.trim();
     if (!prompt || working || uploading) return;
     setWorking(true);
     setNote(null);
+    setStep(null);
     try {
       const imageUrls = images.map((i) => i.url).filter((u): u is string => Boolean(u));
       const res = await fetch('/api/playground/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appId, prompt, imageUrls: imageUrls.length ? imageUrls : undefined }),
+        body: JSON.stringify({ appId, prompt, imageUrls: imageUrls.length ? imageUrls : undefined, background: true }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) throw new Error(data.error || `The change didn't go through (${res.status})`);
-      // Kan asked something instead of building: show it, keep what they wrote.
-      if (data.asked || data.unsupported) {
-        const last = (data.app?.messages ?? []).at(-1)?.content as string | undefined;
-        setNote({ tone: 'error', text: last ?? 'Kan has a question about this change. Answer it in the app’s thread.' });
+      const started = await res.json().catch(() => ({}));
+      if (!res.ok || started.error) throw new Error(started.error || `The change didn't start (${res.status}). Try again.`);
+      const outcome = await watchBuild(appId, started.since ?? 0, started.startedAt ?? Date.now(), setStep);
+      if (outcome.error) throw new Error(outcome.error);
+      if (outcome.note) {
+        // Kan asked something instead of building: show it, keep what they wrote.
+        setNote({ tone: 'error', text: outcome.note });
         return;
       }
       setText('');
@@ -62,6 +76,7 @@ export function ChangeAppPanel({ appId }: { appId: string }) {
       setNote({ tone: 'error', text: err instanceof Error ? err.message : 'Something went wrong' });
     } finally {
       setWorking(false);
+      setStep(null);
     }
   };
 
@@ -128,8 +143,8 @@ export function ChangeAppPanel({ appId }: { appId: string }) {
             {canUndo && !working && (
               <button onClick={() => void undo()} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"><Undo2 className="h-3.5 w-3.5" /> Undo that change</button>
             )}
-            <span className={`min-w-0 flex-1 truncate text-xs ${note?.tone === 'error' ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`} title={note?.text}>
-              {working ? 'Kan is rebuilding it. A minute or two.' : note?.text}
+            <span className={`min-w-0 flex-1 line-clamp-3 text-xs ${note?.tone === 'error' ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`} title={note?.text}>
+              {working ? (step ? `${step}…` : 'Kan is changing it. A minute or two; you can lock your phone.') : note?.text}
             </span>
             <button
               onClick={() => void submit()}
@@ -144,4 +159,46 @@ export function ChangeAppPanel({ appId }: { appId: string }) {
       )}
     </>
   );
+}
+
+/**
+ * Poll the app until the build started at `startedAt` ends. Never gives up on a
+ * network error (that is the phone being a phone); gives up only past the longest a
+ * build can run.
+ */
+async function watchBuild(
+  appId: string,
+  since: number,
+  startedAt: number,
+  onStep: (label: string | null) => void,
+): Promise<{ error?: string; note?: string }> {
+  const giveUpAt = Date.now() + 15 * 60_000;
+  while (Date.now() < giveUpAt) {
+    await nextTick();
+    try {
+      const res = await fetch(`/api/playground/status/${appId}?since=${since}`, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.app && data.generationCount > since) return {};
+      const p = data.progress as { startedAt?: number; finishedAt?: number; error?: string; note?: string; steps?: { label: string; status: string }[] } | null;
+      // Only this build's ending counts; the route marks the start before answering.
+      if (p && (p.startedAt ?? 0) >= startedAt - 60_000) {
+        if (p.finishedAt) return p.error ? { error: p.error } : p.note ? { note: p.note } : {};
+        onStep(p.steps?.filter((x) => x.status === 'running').at(-1)?.label ?? null);
+      }
+    } catch {
+      // Offline for a moment: the build carries on without us. Try again.
+    }
+  }
+  return { error: 'This is taking far longer than a build can run. Reload the page to see where it got to.' };
+}
+
+/** Two and a half seconds, or sooner when the page comes back into view. */
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(t); document.removeEventListener('visibilitychange', onVis); resolve(); };
+    const onVis = () => { if (document.visibilityState === 'visible') done(); };
+    const t = setTimeout(done, 2500);
+    document.addEventListener('visibilitychange', onVis);
+  });
 }

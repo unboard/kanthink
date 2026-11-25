@@ -291,6 +291,17 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
         const data = await res.json();
         const fresh = data.app as PlaygroundApp | undefined;
         if (!stopped && Array.isArray(data.progress?.steps)) setBuildSteps(data.progress.steps);
+        // The build ended without a new version: it failed, or Kan asked something.
+        // Its ending is on the row, so a dropped connection no longer means waiting
+        // here until the watch gives up with nothing said.
+        const p = data.progress as { startedAt?: number; finishedAt?: number; error?: string; note?: string } | null;
+        if (!fresh && p?.finishedAt && (p.startedAt ?? 0) >= startTime - 60_000 && (p.error || p.note)) {
+          setError(p.error ?? p.note ?? null);
+          setOptimistic([]);
+          setIsBuilding(false);
+          stopped = true;
+          return;
+        }
         if (fresh && fresh.generationCount > (buildStartCount.current ?? 0)) {
           applyApp(fresh);
           setOptimistic([]);

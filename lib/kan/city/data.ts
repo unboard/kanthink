@@ -16,6 +16,7 @@ import { parseInterior } from './interior'
 import { callName } from './talk'
 import { botJob, claudeJobs, reportJobs, type CityJob } from './work'
 import { claudePresence } from './claude'
+import { isBuilding } from '@/lib/playground/buildProgress'
 
 /**
  * Your channels as a city, and what's happening in it right now: which bots
@@ -221,7 +222,7 @@ const QUIET_MS = 14 * 24 * HOUR
   const pending = approvals.filter((a) => a.status === 'pending')
   const building = new Set(approvals.filter((a) => a.status === 'approved').map((a) => a.channelId))
   const appBuilding = new Map<string, string>()
-  for (const a of apps) if (a.buildProgress && now - a.buildProgress.startedAt < 15 * 60_000) appBuilding.set(a.channelId, a.title)
+  for (const a of apps) if (isBuilding(a.buildProgress, now)) appBuilding.set(a.channelId, a.title)
 
   const shroomsIn = new Map<string, { id: string; title: string; action: string; automatic: boolean; lastRanAt: number | null }[]>()
   const shroomLast = new Map<string, number>()
