@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RefreshCw, Eye } from 'lucide-react';
+import { RefreshCw, Eye, Rocket, Check, ExternalLink } from 'lucide-react';
 import { useAppStorage } from '@/lib/playground/useAppStorage';
 import { ChangeAppPanel } from './ChangeAppPanel';
 
@@ -17,6 +17,8 @@ interface Props {
   versionIsLive?: boolean;
   /** They can edit it: offer to change it right here. */
   canEdit?: boolean;
+  /** The public link serves something older than this draft (or nothing yet). */
+  ahead?: boolean;
 }
 
 /**
@@ -27,8 +29,26 @@ interface Props {
  * published yet. The iframe gets everything else.
  */
 export function PreviewPlaygroundFrame({
-  srcDoc, title, isPublished, appId, versionLabel, versionIsLive, canEdit,
+  srcDoc, title, isPublished, appId, versionLabel, versionIsLive, canEdit, ahead,
 }: Props) {
+  // Publishing from here: the draft you're looking at is the one you'd ship, so the
+  // button sits next to it instead of somewhere else in the app.
+  const [pub, setPub] = useState<{ state: 'idle' | 'busy' | 'done' | 'error'; url?: string; error?: string }>({ state: 'idle' });
+  const publish = async () => {
+    if (!appId) return;
+    setPub({ state: 'busy' });
+    try {
+      const res = await fetch(`/api/playground/apps/${appId}/release`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publish' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setPub({ state: 'error', error: data.error || 'Couldn’t publish' }); return; }
+      const token = data.shareToken ?? data.release?.shareToken ?? data.app?.shareToken;
+      setPub({ state: 'done', url: token ? `/play/${token}` : undefined });
+    } catch {
+      setPub({ state: 'error', error: 'Couldn’t publish' });
+    }
+  };
   // A draft's own bucket, separate from the published app's, so trying a save in
   // preview cannot overwrite what customers have stored.
   const { withSeed, frameRef } = useAppStorage(appId ? 'draft_' + appId : 'draft');
@@ -61,11 +81,31 @@ export function PreviewPlaygroundFrame({
             </span>
           ) : (
             <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-600 dark:text-violet-400">
-              Draft
+              {ahead ? 'Newest — not on the public link yet' : 'Newest — same as the public link'}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1.5">
+        {canEdit && appId && !versionLabel && ahead && pub.state !== 'done' && (
+          <button
+            onClick={publish}
+            disabled={pub.state === 'busy'}
+            title={pub.error || (isPublished ? 'Put this version on the public link' : 'Publish this app')}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-60 transition-colors"
+          >
+            <Rocket className="w-3.5 h-3.5" />
+            {pub.state === 'busy' ? 'Publishing…' : pub.state === 'error' ? 'Try again' : isPublished ? 'Publish this version' : 'Publish'}
+          </button>
+        )}
+        {pub.state === 'done' && (
+          pub.url ? (
+            <a href={pub.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
+              <Check className="w-3.5 h-3.5" /> Live <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"><Check className="w-3.5 h-3.5" /> Live</span>
+          )
+        )}
         {canEdit && appId && !versionLabel && <ChangeAppPanel appId={appId} />}
         <button
           onClick={() => setRunId((n) => n + 1)}

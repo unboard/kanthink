@@ -724,7 +724,8 @@ function Steps({ turn, now, open, onToggle }: { turn: Extract<Turn, { role: 'kan
       </div>
     );
   }
-  const changes = turn.steps.filter((s) => s.write || s.status === 'error');
+  // what changed, what failed, and anything there is to open stay in view when folded
+  const changes = turn.steps.filter((s) => s.write || s.status === 'error' || (s.status === 'done' && s.href?.startsWith('/play/')));
   return (
     <div className="space-y-1">
       <button onClick={onToggle} className="text-[12px] text-neutral-500 hover:text-neutral-300">
@@ -743,6 +744,16 @@ function Line({ step, now }: { step: ChatStep; now: number }) {
         : step.status === 'error' ? <X className="h-3.5 w-3.5 flex-shrink-0 text-rose-400" />
         : <Check className={`h-3.5 w-3.5 flex-shrink-0 ${step.write ? 'text-violet-400' : 'text-neutral-600'}`} />}
       <span className="min-w-0 truncate">{step.label}</span>
+      {step.href && !running && step.status !== 'error' && (
+        <a
+          href={step.href}
+          target={/^https?:/.test(step.href) || step.href.startsWith('/play/') ? '_blank' : undefined}
+          rel="noreferrer"
+          className="flex flex-shrink-0 items-center gap-1 rounded-full bg-violet-500/20 px-2.5 py-0.5 text-[12px] font-medium text-violet-200 hover:bg-violet-500/30"
+        >
+          Open <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
       {running && now - step.startedAt > 2000 && <span className="flex-shrink-0 text-[11px] text-neutral-600">{formatElapsed(now - step.startedAt)}</span>}
     </div>
   );

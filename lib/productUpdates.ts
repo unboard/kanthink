@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-fixes-open-and-publish',
+    date: '2026-11-24',
+    kind: 'fix',
+    title: 'Open and publish an app’s newest version from Kan',
+    body: 'When Kan looks at an app, the line under its reply has an Open button for the newest build, and that page has a Publish button when the public link is behind. Ask Kan to publish and it puts the fix live. Apps no longer crash on an icon name they don’t recognize.',
+  },
+  {
     id: 'kan-city-game-park',
     date: '2026-11-24',
     kind: 'capability',

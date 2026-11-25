@@ -83,7 +83,7 @@ const quote = (v: unknown, max = 48) => {
 const VOICE_LABELS: Record<string, [kind: 'read' | 'write', running: (i: Record<string, unknown>) => string]> = {
   search_cards: ['read', (i) => `Searching ${str(i.channelId) || 'a channel'}${i.query ? ` for ${quote(i.query)}` : ''}`],
   show_card: ['read', (i) => `Reading ${quote(i.cardId) || 'the card'}`],
-  show_app: ['read', (i) => (i.appName ? `Opening ${quote(i.appName)}` : 'Looking over your apps')],
+  show_app: ['read', (i) => (i.appName ? `Looking at ${quote(i.appName)}` : 'Looking over your apps')],
   app_audience: ['read', (i) => (i.appName ? `Checking who uses ${quote(i.appName)}` : 'Checking who uses your apps')],
   query_mixpanel: ['read', (i) => `Asking Mixpanel ${quote(i.question, 60)}`],
   kanwatch_lookup: ['read', (i) => (i.query ? `Looking through your reading for ${quote(i.query)}` : `Reading your browsing for ${str(i.date) || 'today'}`)],
@@ -106,7 +106,7 @@ const VOICE_LABELS: Record<string, [kind: 'read' | 'write', running: (i: Record<
 /** Voice mode reads these aloud or draws them on its own screen; the agent leaves them out. */
 const VOICE_ONLY = new Set(['draft_email', 'generate_image'])
 
-type ActionResponse = { result?: string; modelResult?: string; cardId?: string; channelId?: string; error?: string; costUsd?: number }
+type ActionResponse = { result?: string; modelResult?: string; cardId?: string; channelId?: string; error?: string; costUsd?: number; appPreview?: { id: string; title: string } }
 
 export async function callAction(action: string, args: Record<string, unknown>, ctx: ToolContext, scope = ctx.scope): Promise<ActionResponse> {
   // Voice actions take strings, except where a declaration says array.
@@ -141,6 +141,9 @@ async function titledLabel(running: string, input: Record<string, unknown>, card
   return named ? label : undefined
 }
 
+/** The owner's view of an app's newest build (the draft), published or not. */
+export const appPreviewHref = (appId: string) => `/play/preview/${appId}`
+
 const cardHref = (channelId?: string, cardId?: string) => (channelId && cardId ? `/channel/${channelId}/card/${cardId}` : channelId ? `/channel/${channelId}` : undefined)
 
 export function voiceTools(): AgentTool[] {
@@ -165,7 +168,9 @@ export function voiceTools(): AgentTool[] {
             label: await titledLabel(running(input), input, data.cardId),
             isError: Boolean(data.error),
             cardId: data.cardId,
-            href: cardHref(data.channelId, data.cardId),
+            // One app looked at: the line opens its newest build, the same one the
+            // answer is about, rather than the card.
+            href: data.appPreview ? appPreviewHref(data.appPreview.id) : cardHref(data.channelId, data.cardId),
             costMillicents: typeof data.costUsd === 'number' ? Math.ceil(data.costUsd * 100_000) : undefined,
           }
         },
@@ -392,8 +397,47 @@ export const approvalTools: AgentTool[] = [
   },
 ]
 
+/**
+ * Put an app's newest build on its public link. Without it, Kan could only say a fix
+ * was "in the draft" and leave the person holding a broken public link.
+ */
+const publishAppTool: AgentTool = {
+  name: 'publish_app',
+  description: "Publish an app's newest build so its public link serves it (and open the link if it was closed). Use when the user says to publish, push the fix live, or update the link. show_app tells you whether the draft has changes the public link doesn't have yet; when it does, offer this.",
+  input_schema: { type: 'object', properties: { appName: { type: 'string', description: "The app's title, or part of it" } }, required: ['appName'] },
+  kind: 'write',
+  running: (i) => `Publishing ${quote(i.appName)}`,
+  async run(input, ctx) {
+    const { db } = await import('@/lib/db')
+    const { playgroundApps } = await import('@/lib/db/schema')
+    const { and, desc, eq, inArray } = await import('drizzle-orm')
+    const want = str(input.appName).trim().toLowerCase()
+    if (!want || !ctx.readable.length) return { content: 'Which app?', isError: true }
+    const apps = await db.query.playgroundApps.findMany({
+      where: and(inArray(playgroundApps.channelId, ctx.readable), eq(playgroundApps.isArchived, false)),
+      orderBy: [desc(playgroundApps.updatedAt)],
+    })
+    const app = apps.find((a) => a.title.toLowerCase() === want) ?? apps.find((a) => a.title.toLowerCase().includes(want))
+    if (!app) return { content: `No app called "${input.appName}". Apps: ${apps.slice(0, 12).map((a) => a.title).join(', ')}.`, isError: true }
+    const { getChannelPermission } = await import('@/lib/api/permissions')
+    const perm = await getChannelPermission(app.channelId, ctx.userId)
+    if (!perm || perm.role === 'viewer') return { content: 'They can view that channel but not publish its apps.', isError: true }
+    const { publishDraft } = await import('@/lib/playground/appRelease')
+    const r = await publishDraft(app, ctx.userId)
+    if (!r.ok) return { content: r.error, isError: true }
+    const { nanoid } = await import('nanoid')
+    const token = app.shareToken || nanoid(16)
+    await db.update(playgroundApps).set({ isPublic: true, shareToken: token, updatedAt: new Date() }).where(eq(playgroundApps.id, app.id))
+    return {
+      content: `${app.title} version ${r.version.version} is live on its public link${r.reused ? ' (it already was)' : ''}. The link under your reply opens it.`,
+      label: `Published ${quote(app.title)}`,
+      href: `/play/${token}`,
+    }
+  },
+}
+
 export function agentTools(ctx: Pick<ToolContext, 'readable' | 'isAdmin'>): AgentTool[] {
-  const tools = [nowTool, ...voiceTools(), ...studioTools(), ...approvalTools, suggestTool]
+  const tools = [nowTool, ...voiceTools(), publishAppTool, ...studioTools(), ...approvalTools, suggestTool]
   if (ctx.readable.includes(WORK_CHANNEL_ID)) tools.splice(1, 0, claudeCodeTool)
   return ctx.isAdmin ? tools : tools.filter((t) => t.name !== 'query_mixpanel')
 }

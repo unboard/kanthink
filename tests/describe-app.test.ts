@@ -80,7 +80,8 @@ describe('what state the app is in', () => {
       release(1, 'const A = 1'),
       { full: true },
     )
-    expect(out).toMatch(/changes nobody can see yet/)
+    expect(out).toMatch(/changes the public link doesn't serve yet/)
+    expect(out).toContain('kanthink.com/play/preview/')
   })
 
   it('stays quiet about unpublished changes when there are none', () => {
@@ -89,7 +90,7 @@ describe('what state the app is in', () => {
       release(1, 'const A = 1'),
       { full: true },
     )
-    expect(out).not.toMatch(/changes nobody can see/)
+    expect(out).not.toMatch(/public link doesn't serve/)
   })
 
   it('mentions the price when the app charges', () => {

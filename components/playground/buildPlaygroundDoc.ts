@@ -145,6 +145,7 @@ export function buildPlaygroundDoc(
     .replace(/^\s*import\s+React\s+from\s*['"]react['"]\s*;?\s*$/gm, '')
     // `import * as React from 'react';`          →  removed
     .replace(/^\s*import\s+\*\s+as\s+React\s+from\s*['"]react['"]\s*;?\s*$/gm, '');
+  const runnableCode = safeLucideImports(cleanCode);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -753,7 +754,7 @@ class __KPG_ErrorBoundary extends React.Component {
 }
 
 // === USER CODE START ===
-${cleanCode}
+${runnableCode}
 // === USER CODE END ===
 
 const __kpg_root = createRoot(document.getElementById('root'));
@@ -765,6 +766,33 @@ __kpg_root.render(
 </script>
 </body>
 </html>`;
+}
+
+/**
+ * Named icon imports that can't fail. A model writing an app knows lucide's icon
+ * names from many versions, and the frame pins one: an icon added later (say
+ * `CloudCheck`) is a missing named export, which stops the whole module before a
+ * single line runs, so the app is a blank page with an error. Rewritten to read
+ * from the namespace instead, a missing icon becomes a plain circle and the app
+ * runs. Kept on one line per import so error line numbers don't move.
+ */
+export function safeLucideImports(code: string): string {
+  let n = 0;
+  return code.replace(/import\s*\{([^}]*)\}\s*from\s*['"]lucide-react['"]\s*;?/g, (whole, list: string) => {
+    const specs = list.split(',').map((x) => x.trim()).filter(Boolean);
+    const parsed = specs.map((spec) => spec.match(/^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/));
+    // Something we don't understand (a type import, a comment): leave it as written.
+    if (!specs.length || parsed.some((m) => !m)) return whole;
+    const ns = `__kpgLucide${n++}`;
+    const decls = parsed.map((m) => {
+      const name = m![1];
+      const local = m![2] || name;
+      const bare = name.replace(/^Lucide/, '').replace(/Icon$/, '');
+      const tries = [...new Set([name, bare, `${bare}Icon`, `Lucide${bare}`])].map((k) => `${ns}[${JSON.stringify(k)}]`);
+      return `const ${local} = ${tries.join(' || ')} || ${ns}.Circle;`;
+    });
+    return `import * as ${ns} from 'lucide-react'; ${decls.join(' ')}`;
+  });
 }
 
 /** JSON that is safe inside a <script> element. */

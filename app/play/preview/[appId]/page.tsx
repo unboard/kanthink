@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { playgroundAppVersions, playgroundApps } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { getChannelPermission } from '@/lib/api/permissions';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
@@ -12,6 +12,7 @@ import { previewPay } from '@/lib/playground/payments/settings';
 import { ownerDraftDataToken } from '@/lib/playground/publicApp';
 import { readAll } from '@/lib/playground/customerData';
 import { PreviewPlaygroundFrame } from './PreviewPlaygroundFrame';
+import { getPublishedVersion, hasUnpublishedChanges } from '@/lib/playground/appRelease';
 import type { Metadata } from 'next';
 
 /**
@@ -51,7 +52,12 @@ export default async function PlaygroundPreviewPage({ params, searchParams }: Pa
   const { v: versionId, topic } = await searchParams;
 
   const session = await auth();
-  if (!session?.user?.id) notFound();
+  // Opened from a phone's browser tab that isn't signed in yet: sign in and come
+  // straight back, rather than a 404 that reads as "your fix is gone".
+  if (!session?.user?.id) {
+    const back = `/play/preview/${appId}${versionId ? `?v=${encodeURIComponent(versionId)}` : ''}`;
+    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(back)}`);
+  }
 
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
   if (!app) notFound();
@@ -138,6 +144,7 @@ export default async function PlaygroundPreviewPage({ params, searchParams }: Pa
       versionLabel={version ? `Version ${version.version}` : null}
       versionIsLive={version ? version.id === app.publishedVersionId : false}
       canEdit={permission.canEdit}
+      ahead={!version && (!app.publishedVersionId || hasUnpublishedChanges(app, await getPublishedVersion(app)))}
     />
   );
 }

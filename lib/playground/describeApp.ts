@@ -35,13 +35,18 @@ export function describeApp(
 
   const bits = [state]
   if (published && hasUnpublishedChanges(app, published as AppVersion)) {
-    bits.push('the draft has changes nobody can see yet')
+    bits.push("the draft has changes the public link doesn't serve yet (publish_app puts them live)")
   }
   if (app.paywallEnabled && app.priceAmount) {
     bits.push(`costs ${formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval)}`)
   }
   if (status === 'published' && app.shareToken) {
-    bits.push(`link kanthink.com/play/${app.shareToken}`)
+    bits.push(`public link kanthink.com/play/${app.shareToken}`)
+  }
+  if (app.code) {
+    // The owner can always open the newest build, published or not: the step line
+    // for this lookup links to it, so point them there rather than describing menus.
+    bits.push(`newest build opens at kanthink.com/play/preview/${app.id} (signed in; the "Looked at" line under the reply links to it)`)
   }
 
   const lines = [`App "${app.title}": ${bits.join('; ')}.`]
