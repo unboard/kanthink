@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'change-app-survives-phone',
+    date: '2026-11-25',
+    kind: 'fix',
+    title: 'Big app changes finish from your phone',
+    body: 'Change this app now runs the build in the background, so you can lock your phone and come back to it finished, or to the real reason it failed. Big rewrites of large apps no longer get cut off partway.',
+  },
+  {
     id: 'app-fixes-open-and-publish',
     date: '2026-11-24',
     kind: 'fix',
