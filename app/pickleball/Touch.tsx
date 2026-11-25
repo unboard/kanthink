@@ -82,7 +82,7 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
     setFlash({ word, x: cx - box.left, y: cy - box.top, k });
     setFired({ arm: armOf(dx, dy), k });
     setDrag(null);
-    setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 600);
+    setTimeout(() => setFlash((f) => (f && f.k === k ? null : f)), 900);
     setTimeout(() => setFired((f) => (f && f.k === k ? null : f)), 420);
     setUses((u) => {
       const n = u + 1;
@@ -127,7 +127,7 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
 
       {/* left half: the stick */}
       <div
-        className="absolute bottom-0 left-0 top-[22%] w-1/2"
+        className="absolute bottom-0 left-0 top-[calc(max(8px,env(safe-area-inset-top))+56px)] w-1/2"
         style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
           if (origin.current) return;
@@ -141,21 +141,19 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
         onPointerUp={(e) => { if (origin.current?.id === e.pointerId) end(); }}
         onPointerCancel={(e) => { if (origin.current?.id === e.pointerId) end(); }}
       >
-        {base ? (
+        {/* Nothing drawn until a thumb lands: the whole left half is the stick, so
+            there's no ring to aim for and nothing to slide out of. */}
+        {base && (
           <div className="pointer-events-none absolute" style={{ left: base.x - R, top: base.y - R, width: R * 2, height: R * 2 }}>
-            <div className="absolute inset-0 rounded-full border-2 border-white/35 bg-white/10 backdrop-blur-sm" />
-            <div className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full bg-white/85 shadow-xl" style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }} />
-          </div>
-        ) : (
-          <div className="pointer-events-none absolute bottom-[max(28px,env(safe-area-inset-bottom))] left-[max(28px,env(safe-area-inset-left))] h-24 w-24 rounded-full border-2 border-white/20 bg-white/[0.05]">
-            <div className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30" />
+            <div className="absolute inset-0 rounded-full border-2 border-white/25 bg-white/[0.06]" />
+            <div className="absolute left-1/2 top-1/2 h-12 w-12 rounded-full bg-white/70 shadow-xl" style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }} />
           </div>
         )}
       </div>
 
       {/* right half: the shot pad. Swipe anywhere here. */}
       <div
-        className="absolute bottom-0 right-0 top-[22%] w-1/2"
+        className="absolute bottom-0 right-0 top-[calc(max(8px,env(safe-area-inset-top))+56px)] w-1/2"
         style={{ touchAction: 'none' }}
         onPointerDown={(e) => {
           if (swipe.current) return;
@@ -194,7 +192,10 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
           </>
         )}
         {flash && (
-          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full px-3.5 py-1 text-[17px] font-black uppercase italic text-[#14200a] shadow-xl" style={{ left: flash.x, top: flash.y, background: LIME, animation: 'pbShot 600ms ease-out both' }}>
+          // Where the thumb lifted, but above it so the thumb doesn't hide it: a small,
+          // quiet word for the shot you just made ("Dive left", "Spike deep"), under
+          // the game's own big calls rather than competing with them.
+          <div key={flash.k} className="pointer-events-none absolute whitespace-nowrap rounded-full bg-black/60 px-2.5 py-0.5 text-[13px] font-black uppercase italic shadow-lg" style={{ left: flash.x, top: flash.y - 46, color: LIME, animation: 'pbShot 900ms ease-out both' }}>
             {flash.word}
           </div>
         )}
@@ -202,7 +203,7 @@ export function TouchControls({ pad, sportId, ready, serving, preview, onStick, 
         {/* the compass: four moves around a tap, under the resting thumb */}
         <div
           className="pointer-events-none absolute"
-          style={{ right: 'max(18px, env(safe-area-inset-right))', bottom: 'max(18px, env(safe-area-inset-bottom))', width: 214, height: 164, opacity: drag || ready ? 1 : 0.72, transition: 'opacity 150ms' }}
+          style={{ right: 'max(18px, env(safe-area-inset-right))', bottom: 'max(18px, env(safe-area-inset-bottom))', width: 214, height: 164, opacity: drag || ready ? 0.9 : learned ? 0.25 : 0.5, transform: 'scale(0.78)', transformOrigin: '100% 100%', transition: 'opacity 150ms' }}
         >
           <div className="absolute left-1/2 top-1/2" style={{ width: 64, height: 64 }}>
             {ready && <div className="absolute left-1/2 top-1/2 h-16 w-16 rounded-full border-[3px]" style={{ borderColor: LIME, animation: 'pbReady 1s ease-out infinite' }} />}
