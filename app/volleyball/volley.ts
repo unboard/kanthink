@@ -123,7 +123,7 @@ export const VOLLEYBALL: Sport<GameState> = {
       const deep = len > 170;
       return { shot: { act: 'jump', ax, az: deep ? -1 : 0 }, word: deep ? 'Spike deep' : ax > 0.4 ? 'Spike right' : ax < -0.4 ? 'Spike left' : 'Spike' };
     }
-    if (dy < -len * 0.55) return { shot: { act: 'dive', ax: dx / len, az: dy / len }, word: 'Dive' };
+    if (dy < -len * 0.55) return { shot: { act: 'dive', ax: dx / len, az: dy / len }, word: dx > len * 0.45 ? 'Dive right' : dx < -len * 0.45 ? 'Dive left' : 'Dive' };
     return { shot: { act: 'pass', ax: Math.sign(dx), az: 0 }, word: dx > 0 ? 'Set right' : 'Set left' };
   },
   pad: { tap: 'Pass', up: 'Spike', flick: 'Tip', down: 'Dive', side: 'Set', serve: 'Serve' },

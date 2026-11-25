@@ -32,7 +32,12 @@ names the shot while your thumb is still moving (the words fade once you've play
   On a ball set to you, the last steps of the approach and the jump are taken for you;
   how hard and clean it goes depends on the read: commit early and be close.
   On their ball at the net, swipe up is a block, timed off their hitter.
-- **Swipe down**: dive, the way you swiped (straight down dives at the ball).
+- **Swipe down**: dive. You go the way your left thumb is running (forward, sideways,
+  anywhere); with the stick at rest a straight swipe dives at the ball, and a down-left or
+  down-right swipe dives that side.
+
+The camera leans in behind you while the ball is on your side, rides up with your jump,
+and eases back out when it goes over. Every hit of yours lands with a small punch.
 
 On a gamepad the right stick does the same flicks; on one keyboard, I U O are up, J L
 are sideways and K is down. The old one-button press still works everywhere.

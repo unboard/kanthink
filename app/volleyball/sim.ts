@@ -823,11 +823,18 @@ function shotPress(state: GameState, i: number, input: PlayerInput) {
     const s = sgn(p.team);
     const b = state.ball;
     const land = landing(b);
-    let dx = shot.ax * s;
-    let dz = -shot.az * s;
-    const len = Math.hypot(dx, dz);
-    // straight down: dive at the ball
-    if (len < 0.3) { dx = land.x - p.x; dz = land.z - p.z; }
+    // Which way to dive. It used to be the swipe's own direction, and a dive is a
+    // swipe *down*, so every dive went backward ("I can only dive backwards"). Now:
+    // the way your left thumb is running is the way you go (forward, sideways,
+    // anywhere); a down-and-sideways swipe goes that side; otherwise straight at
+    // where the ball will land, which is the dive you almost always mean.
+    const sx = clamp(input.mx, -1, 1);
+    const sz = clamp(input.mz, -1, 1);
+    let dx: number;
+    let dz: number;
+    if (Math.hypot(sx, sz) > 0.35) { dx = sx * s; dz = -sz * s; }
+    else if (Math.abs(shot.ax) > 0.45) { dx = Math.sign(shot.ax) * s; dz = (land.z - p.z) * 0.15; }
+    else { dx = land.x - p.x; dz = land.z - p.z; }
     const d = Math.hypot(dx, dz) || 1;
     p.act = 'dive';
     p.swingT = 0;

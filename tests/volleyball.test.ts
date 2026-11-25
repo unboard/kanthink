@@ -462,6 +462,26 @@ describe('right-thumb shots', () => {
     expect(s.players[0].vx).toBeGreaterThan(10);
   });
 
+  it('a dive goes the way the stick is running: forward, not only backward', () => {
+    // "I can't dive forward or sideways, only backwards": a dive is a swipe down, and
+    // it used to follow the swipe. The stick says where you're going.
+    let s = rally('doubles', { x: 0, y: 6, z: 10, vy: -2 });
+    s.players[0].x = 0;
+    s.players[0].z = 17;
+    s = pressOnce(s, 0, { mz: 1, ...shot('dive', 0, -1) });
+    expect(s.players[0].act).toBe('dive');
+    // team 0 faces -z: forward is toward the net
+    expect(s.players[0].vz).toBeLessThan(-10);
+  });
+
+  it('a plain swipe down with the stick at rest dives at the ball, even in front of you', () => {
+    let s = rally('doubles', { x: 0, y: 4, z: 11, vy: -4 });
+    s.players[0].x = 0;
+    s.players[0].z = 17;
+    s = pressOnce(s, 0, shot('dive', 0, -1));
+    expect(s.players[0].vz).toBeLessThan(-10);
+  });
+
   it('a short flick up is a tip over the block', () => {
     let s = rally('doubles', { x: 0, y: 9, z: 6, vy: 14, vz: -1.2 }, { touches: 2, lastHitter: 1, lastTouch: 'set' });
     s.players[0].x = 0;

@@ -177,6 +177,10 @@ export class CourtRenderer {
   private camLookTarget = new THREE.Vector3();
   private camReady = false;
   private punch = 0;
+  /** 0..1: how far the camera has leaned in on your side of the play */
+  private near = 0;
+  /** 0..1: riding up with your jump */
+  private lift = 0;
   private time = 0;
   private lastBounceTick = -1;
   private ringAge = 99;
@@ -547,12 +551,26 @@ export class CourtRenderer {
       const s = sgn(view.team);
       const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
       const fx = focus.reduce((acc, i) => acc + (state.players[i]?.x ?? 0), 0) / Math.max(1, focus.length);
-      // Low and close behind your side, riding with the play: the camera leans toward the
-      // ball across the court and lifts its gaze with it, so the ball stays big and in frame.
+      const fz = focus.reduce((acc, i) => acc + (state.players[i]?.z ?? s * HL * 0.6), 0) / Math.max(1, focus.length);
+      // In and out with the play, so you're close when it's yours to play. When the
+      // ball is on your side (or coming to it) the camera eases in behind your player:
+      // they're bigger, their feet and the ball's shadow are easy to read, and the
+      // stick feels like it moves *you*. When it goes over, it eases back out to show
+      // the other side's answer. Never a cut: `near` glides, so the change reads as
+      // the camera paying attention rather than jumping.
+      const coming = b.z * s > 0 || b.vz * s > 4;
+      this.near += ((state.phase === 'rally' && coming ? 1 : state.phase === 'serve' ? 0.45 : 0) - this.near) * Math.min(1, frameDt * 1.6);
+      // Your spike: as you leave the ground the camera rides up and in with you.
+      const air = focus.reduce((m, i) => Math.max(m, state.players[i]?.y ?? 0), 0);
+      this.lift += ((vb && air > 1 ? Math.min(1, air / 5) : 0) - this.lift) * Math.min(1, frameDt * 5);
+      const nr = this.near * (vb ? 0.32 : 0.22) + this.lift * 0.18;
       const bx = Math.max(-HW, Math.min(HW, b.x));
       const bzc = Math.max(-HL, Math.min(HL, b.z));
-      this.camPosTarget.set(fx * 0.3 + bx * 0.25, (vb ? 18 : 13) * pull + Math.min(6, b.y * 0.25), s * (HL + (vb ? 21 : 13.5) * pull) + (bzc - s * HL) * 0.12);
-      this.camLookTarget.set(fx * 0.12 + bx * 0.35, (vb ? 3 : 1) + Math.min(5, b.y * 0.3), bzc * 0.4 - s * (vb ? 1 : 3));
+      const back = s * (HL + (vb ? 21 : 13.5) * pull * (1 - nr)) + (bzc - s * HL) * 0.12;
+      // Close in, the camera keeps more of your player under it and less of the far court.
+      const camZ = back + (fz - s * HL) * this.near * 0.35;
+      this.camPosTarget.set(fx * (0.3 + this.near * 0.25) + bx * 0.25, (vb ? 18 : 13) * pull * (1 - nr * 0.8) + Math.min(6, b.y * 0.25) + this.lift * 2.5, camZ);
+      this.camLookTarget.set(fx * (0.12 + this.near * 0.2) + bx * 0.35, (vb ? 3 : 1) + Math.min(5, b.y * 0.3) + this.lift * 2, bzc * 0.4 - s * (vb ? 1 : 3) + (fz - bzc * 0.4) * this.near * 0.25);
     }
     for (const o of this.venue.nearSide) o.visible = !view.broadcast;
     const k = this.camReady ? Math.min(1, frameDt * (view.orbit ? 1.2 : 3)) : 1;
@@ -612,6 +630,16 @@ export class CourtRenderer {
     if (state.hitSeq !== this.lastHit) {
       if (this.lastHit >= 0) {
         if (b.hot) this.shake = Math.max(this.shake, 0.9);
+        // Your hit lands with a thump you can feel: a punch toward the ball that
+        // scales with how hard it went, biggest on a spike off the top of a jump.
+        const mineHit = state.lastHitter !== undefined && view.focus.includes(state.lastHitter);
+        if (mineHit) {
+          const pace = Math.hypot(b.vx, b.vy, b.vz);
+          const spike = vb && (state.players[state.lastHitter!]?.y ?? 0) > 1.5 && b.vy < 0;
+          this.punch = Math.max(this.punch, spike ? 0.75 : Math.min(0.35, pace / 120));
+          this.shake = Math.max(this.shake, spike ? 0.75 : 0.25);
+          if (spike) for (let k2 = 0; k2 < 14; k2++) this.spark(b.x, b.y, b.z, (Math.random() - 0.5) * 10, (Math.random() - 0.2) * 8, (Math.random() - 0.5) * 10);
+        }
         this.flashAge = b.hot || b.super ? 0 : 0.12;
         this.flash.position.set(b.x, b.y, b.z);
       }

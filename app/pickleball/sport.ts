@@ -67,6 +67,8 @@ export interface BaseState {
   lastPoint: BasePoint | null;
   pointSeq: number;
   hitSeq: number;
+  /** who touched the ball last, -1 for nobody yet */
+  lastHitter?: number;
   bounceSeq: number;
   /** bumps each time a super spike is struck */
   superSeq?: number;

@@ -429,13 +429,33 @@ function mouthTexture(c: Character, mood: Mood): THREE.CanvasTexture {
       if (teeth) { g.fillStyle = '#fbfbf6'; g.fillRect(cx - w, my - h * 0.3, w * 2, h * 0.52); }
       if (tongue) { g.fillStyle = '#f0808c'; g.beginPath(); g.ellipse(cx, my + h * 0.95, w * 0.55, h * 0.5, 0, 0, Math.PI * 2); g.fill(); }
       g.restore();
+      // lips around an open mouth: a soft rim of lip color, then the line
+      g.strokeStyle = shade(c.skin, -0.22);
+      g.lineWidth = 9;
+      g.stroke();
       g.strokeStyle = lip;
-      g.lineWidth = 6;
+      g.lineWidth = 3;
       g.stroke();
     };
     const line = (pts: number[], w = 7) => {
+      // A closed mouth is two lips meeting, not a drawn line: a soft lower lip with a
+      // touch of color under the parting, then the parting itself.
+      g.fillStyle = 'rgba(170,80,80,0.2)';
+      g.beginPath();
+      g.moveTo(cx + pts[0], my + pts[1]);
+      g.quadraticCurveTo(cx + pts[2], my + pts[3] + 18, cx + pts[4], my + pts[5]);
+      g.quadraticCurveTo(cx + pts[2], my + pts[3] + 2, cx + pts[0], my + pts[1]);
+      g.fill();
+      g.strokeStyle = shade(c.skin, -0.18);
+      g.globalAlpha = 0.45;
+      g.lineWidth = w + 5;
+      g.beginPath();
+      g.moveTo(cx + pts[0] * 0.75, my + pts[1] + 7);
+      g.quadraticCurveTo(cx + pts[2], my + pts[3] + 13, cx + pts[4] * 0.75, my + pts[5] + 7);
+      g.stroke();
+      g.globalAlpha = 1;
       g.strokeStyle = lip;
-      g.lineWidth = w;
+      g.lineWidth = w - 2;
       g.beginPath();
       g.moveTo(cx + pts[0], my + pts[1]);
       g.quadraticCurveTo(cx + pts[2], my + pts[3], cx + pts[4], my + pts[5]);
@@ -487,28 +507,63 @@ function mouthTexture(c: Character, mood: Mood): THREE.CanvasTexture {
 }
 
 function irisTexture(color: string): THREE.CanvasTexture {
-  return canvasTex(64, 64, (g) => {
-    const grad = g.createRadialGradient(32, 32, 6, 32, 32, 30);
-    grad.addColorStop(0, shade(color, 0.25));
-    grad.addColorStop(0.7, color);
-    grad.addColorStop(0.9, shade(color, -0.7));
-    grad.addColorStop(1, '#101014');
+  // A real iris: lighter around the pupil, fine fibers out to a dark limbal ring,
+  // a modest pupil and one soft catchlight. The old one was a flat disc with a
+  // pupil half its size and two big white dots, which read as a cartoon hole.
+  return canvasTex(128, 128, (g) => {
+    const c = 64;
+    const grad = g.createRadialGradient(c, c, 8, c, c, 62);
+    grad.addColorStop(0, shade(color, 0.45));
+    grad.addColorStop(0.45, shade(color, 0.12));
+    grad.addColorStop(0.8, color);
+    grad.addColorStop(0.93, shade(color, -0.6));
+    grad.addColorStop(1, '#14141a');
     g.fillStyle = grad;
     g.beginPath();
-    g.arc(32, 32, 30, 0, Math.PI * 2);
+    g.arc(c, c, 62, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = '#0c0c10';
+    g.lineWidth = 1.2;
+    for (let k = 0; k < 90; k++) {
+      const a = (k / 90) * Math.PI * 2 + Math.sin(k * 7.3) * 0.03;
+      g.strokeStyle = k % 3 ? `rgba(0,0,0,${0.08 + (k % 5) * 0.02})` : `rgba(255,255,255,${0.06 + (k % 4) * 0.02})`;
+      g.beginPath();
+      g.moveTo(c + Math.cos(a) * 20, c + Math.sin(a) * 20);
+      g.lineTo(c + Math.cos(a) * 55, c + Math.sin(a) * 55);
+      g.stroke();
+    }
+    g.fillStyle = '#08080b';
     g.beginPath();
-    g.arc(32, 32, 17, 0, Math.PI * 2);
+    g.arc(c, c, 19, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = 'rgba(255,255,255,0.95)';
-    g.beginPath();
-    g.arc(42, 21, 7, 0, Math.PI * 2);
-    g.fill();
-    g.beginPath();
-    g.arc(24, 42, 3, 0, Math.PI * 2);
-    g.fill();
+    const hi = g.createRadialGradient(c + 18, c - 20, 0, c + 18, c - 20, 11);
+    hi.addColorStop(0, 'rgba(255,255,255,0.95)');
+    hi.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = hi;
+    g.fillRect(0, 0, 128, 128);
   });
+}
+
+/**
+ * An eyebrow: an arch that is thick at the inner end and tapers to the tail, laid
+ * along y so the pose code's rotation.z = PI/2 lays it flat (the arch rises to +y).
+ * The old capsule was a straight bar of even width, which is most of why the faces
+ * looked startled and unfinished.
+ */
+function browGeometry(side: number): THREE.BufferGeometry {
+  const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(-0.005, -0.13, 0), new THREE.Vector3(0.06, 0, 0), new THREE.Vector3(0.0, 0.14, 0));
+  const g = new THREE.TubeGeometry(curve, 16, 0.03, 8, false);
+  const pos = g.attributes.position;
+  const p = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.min(1, Math.max(0, (pos.getY(i) + 0.13) / 0.27));
+    curve.getPoint(t, p);
+    // inner end: +y for the figure's right brow (side 1), -y for the left
+    const inner = side > 0 ? t : 1 - t;
+    const k = 0.35 + 0.75 * Math.pow(inner, 0.7);
+    pos.setXYZ(i, p.x + (pos.getX(i) - p.x) * k, pos.getY(i), (pos.getZ(i) - p.z) * k * 0.55);
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
 function buildArm(side: 1 | -1, c: Character, skin: THREE.Material, sleeve: THREE.Material | null, sleeveLong: boolean): Arm {
@@ -768,10 +823,13 @@ export function buildFigure(c: Character, teamColor: string, prop: FigureProp = 
   const noseM = new THREE.MeshPhysicalMaterial({ color: shade(c.skin, -0.04), roughness: 0.5, sheen: 0.5, sheenColor: new THREE.Color(shade(c.skin, 0.3)) });
   const nose = new THREE.Group();
   nose.position.set(0, -0.1, -HR * 1.0);
-  const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.16, 4, 10), noseM);
-  bridge.position.set(0, 0.1, 0.04);
-  bridge.rotation.x = 0.32;
-  nose.add(bridge, ball(0.068, noseM, 0, -0.025, -0.045, 1, 0.85, 1), ball(0.042, noseM, -0.055, -0.045, -0.005), ball(0.042, noseM, 0.055, -0.045, -0.005));
+  // Slimmer than it was: three equal balls made a clown's nose. A narrow bridge,
+  // a modest tip, and wings tucked back into the cheeks.
+  const bridge = new THREE.Mesh(new THREE.CapsuleGeometry(0.034, 0.17, 4, 12), noseM);
+  bridge.position.set(0, 0.095, 0.045);
+  bridge.rotation.x = 0.3;
+  bridge.scale.set(0.9, 1, 1);
+  nose.add(bridge, ball(0.052, noseM, 0, -0.03, -0.035, 1.05, 0.8, 0.95), ball(0.032, noseM, -0.045, -0.045, 0.01, 1.1, 0.8, 1), ball(0.032, noseM, 0.045, -0.045, 0.01, 1.1, 0.8, 1));
   head.add(nose);
 
   // eyes set into the sockets, each with a lid that can close
@@ -784,24 +842,28 @@ export function buildFigure(c: Character, teamColor: string, prop: FigureProp = 
   for (const sx of [-1, 1]) {
     sculpt(sx * 0.37, 0.06, -0.927, v);
     const eye = new THREE.Group();
-    eye.position.set(v.x * 0.97, v.y, v.z + 0.085);
+    // seated less deep, so the white shows and the eye isn't lost in its socket
+    eye.position.set(v.x * 0.97, v.y, v.z + 0.065);
     eye.rotation.y = -sx * 0.16;
     const big = c.face === 'sparkle' ? 1.12 : 1;
     eye.scale.set(big, big * 1.12, 0.7);
     const globe = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 16), white);
-    const ir = new THREE.Mesh(new THREE.CircleGeometry(0.105, 28), new THREE.MeshStandardMaterial({ map: iris, roughness: 0.15 }));
-    ir.position.set(0, -0.006, -0.153);
+    // An iris about half the eye's width, as in life; at 0.105 of a 0.15 eye it
+    // filled it, and the eyes read as dark holes.
+    const ir = new THREE.Mesh(new THREE.CircleGeometry(0.082, 32), new THREE.MeshStandardMaterial({ map: iris, roughness: 0.12 }));
+    ir.position.set(0, -0.004, -0.1515);
     ir.rotation.y = Math.PI;
     const lid = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), skin);
-    lid.rotation.x = 0.95;
-    const lash = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.013, 6, 24, Math.PI), std('#1b1b22', 0.6));
+    // the upper lid rests just over the top of the iris, as relaxed eyes do
+    lid.rotation.x = 0.8;
+    const lash = new THREE.Mesh(new THREE.TorusGeometry(0.162, 0.009, 6, 24, Math.PI), std('#1b1b22', 0.6));
     lash.rotation.set(Math.PI / 2, 0, Math.PI);
     lid.add(lash);
     eye.add(globe, ir, lid);
     head.add(eye);
     lids.push(lid);
-    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.032, 0.2, 4, 8), browM);
-    brow.position.set(v.x * 1.0, v.y + 0.235, v.z - 0.05);
+    const brow = new THREE.Mesh(browGeometry(sx), browM);
+    brow.position.set(v.x * 1.0, v.y + 0.2, v.z - 0.035);
     brow.rotation.set(0, -sx * 0.3, Math.PI / 2);
     brow.userData.side = sx;
     head.add(brow);
@@ -997,13 +1059,46 @@ function addHair(head: THREE.Group, c: Character, m: THREE.MeshStandardMaterial,
     head.add(t);
     return t;
   };
-  /** a fringe across the forehead */
+  /**
+   * A fringe across the forehead: one sheet of hair over the brow with a choppy
+   * edge of locks, rather than a row of separate balls (which read as sausages).
+   * `drop` brings it lower; `sweep` pushes it to one side.
+   */
   const bangs = (n: number, drop: number, sweep = 0) => {
-    for (let k = 0; k < n; k++) {
-      const u = n === 1 ? 0 : k / (n - 1) - 0.5;
-      const a = u * 1.5;
-      tuft(Math.sin(a) * R * 0.86, R * (0.62 - Math.abs(u) * 0.18) - drop * 0.1, -Math.cos(a) * R * 0.84, 0.72, 0.5 + drop * 0.25, 0.42, -a * 0.5 + sweep);
+    const cols = 40;
+    const rows = 10;
+    const half = 0.95;
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const idx: number[] = [];
+    for (let j = 0; j <= rows; j++) {
+      for (let i = 0; i <= cols; i++) {
+        const u = i / cols;
+        const a = -half + 2 * half * u;
+        // the edge: higher at the temples, a point per lock, a little longer on the sweep side
+        const lock = Math.pow(Math.abs(Math.sin((u * n + 0.5) * Math.PI)), 0.6);
+        const edge = 0.68 + drop * 0.12 - Math.abs(a) * 0.28 + lock * 0.07 + sweep * a * 0.12;
+        const th = 0.2 + (edge - 0.2) * (j / rows);
+        // thicker toward the edge, so it has a body and doesn't look painted on
+        const r = R * (1.075 + 0.05 * Math.pow(j / rows, 2));
+        const aa = a + sweep * 0.25 * (j / rows);
+        pos.push(Math.sin(aa) * Math.sin(th) * r, Math.cos(th) * r, -Math.cos(aa) * Math.sin(th) * r);
+        uv.push(u * 3, 1 - j / rows);
+      }
     }
+    const W = cols + 1;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const k = j * W + i;
+      idx.push(k, k + 1, k + W, k + 1, k + W + 1, k + W);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const mat = m.clone();
+    mat.side = THREE.DoubleSide;
+    head.add(new THREE.Mesh(g, mat));
   };
   switch (c.hair) {
     case 'bald':
@@ -1488,7 +1583,7 @@ export function poseFigure(f: Figure, o: PoseInput) {
   const shut = mood === 'blink' || mood === 'joy' || mood === 'ouch';
   const squint = mood === 'effort' ? 0.45 : mood === 'sad' ? 0.3 : f.character.face === 'smirk' || f.character.face === 'focused' ? 0.18 : 0;
   f.lids.forEach((lid, i) => {
-    const want = shut || (wink && i === 1 && mood === 'play') ? -0.62 : 0.95 - squint;
+    const want = shut || (wink && i === 1 && mood === 'play') ? -0.62 : 0.8 - squint;
     lid.rotation.x += (want - lid.rotation.x) * Math.min(1, o.dt * 38);
   });
   const tilt = mood === 'effort' ? 0.42 : mood === 'sad' || mood === 'ouch' ? -0.38 : mood === 'joy' ? -0.12 : f.character.face === 'focused' ? 0.22 : f.character.face === 'smirk' ? 0.1 : 0;
