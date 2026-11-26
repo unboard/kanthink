@@ -436,3 +436,21 @@ describe('right-thumb shots', () => {
     expect(s.ball.vz).toBeGreaterThan(0);
   });
 });
+
+describe('backhand', () => {
+  it('a ball coming on the left is played on the backhand, and it still goes back', () => {
+    for (const side of [-1, 1]) {
+      let s = createGame(11);
+      s = { ...s, phase: 'rally', hits: 3, bounces: 1, lastHitter: 1, touched: 2 };
+      const p = s.players[0];
+      p.x = 0; p.z = 12;
+      // incoming from the far side, arriving beside them
+      s.ball = { ...s.ball, x: side * 2, y: 2.5, z: 12 - (10 * SWING_SWEET) / 120, vx: 0, vy: 0, vz: 10, hot: false };
+      s = step(s, s.players.map((_, i) => (i === 0 ? { mx: 0, mz: 0, swing: true } : { mx: 0, mz: 0, swing: false })));
+      expect(s.players[0].backhand).toBe(side < 0);
+      for (let k = 0; k < 40 && s.lastHitter !== 0; k++) s = step(s, s.players.map(() => ({ mx: 0, mz: 0, swing: false })));
+      expect(s.lastHitter).toBe(0);
+      expect(s.ball.vz).toBeLessThan(0);
+    }
+  });
+});

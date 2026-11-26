@@ -169,6 +169,8 @@ export interface Player {
   swingT: number;
   cooldown: number;
   swingHit: boolean;
+  /** this swing is a backhand: the ball is coming on the non-paddle side */
+  backhand: boolean;
   /** 0–100 */
   heat: number;
   /** fire fuel 0–100; 0 = not on fire */
@@ -398,7 +400,7 @@ function clamp(v: number, lo: number, hi: number): number {
 
 function newPlayer(team: Team): Player {
   return {
-    team, x: 0, z: sgn(team) * 20, vx: 0, vz: 0, swingT: -1, cooldown: 0, swingHit: false,
+    team, x: 0, z: sgn(team) * 20, vx: 0, vz: 0, swingT: -1, cooldown: 0, swingHit: false, backhand: false,
     heat: 0, fire: 0, refilled: false, chill: 0, streak: 0, chefUntil: 0, qT: -1, aimX: 0, aimZ: 0, aimOn: false,
     stats: { hits: 0, dinks: 0, lobs: 0, winners: 0, run: 0, fires: 0, bestStreak: 0, kitchen: 0 },
   };
@@ -780,6 +782,17 @@ function tickSwing(p: Player, input: PlayerInput) {
   }
 }
 
+/**
+ * Whether the ball will meet this player on their backhand (left, paddle-hand right)
+ * side: where it will be at the sweet spot of the swing, relative to them.
+ */
+export function backhandSide(state: GameState, i: number): boolean {
+  const p = state.players[i];
+  const b: Ball = { ...state.ball };
+  for (let k = 0; k < SWING_SWEET; k++) if (stepBall(b) === 'net') break;
+  return (b.x - p.x) * sgn(p.team) < -0.35;
+}
+
 /** how long a right-thumb shot waits for the ball before it's forgotten */
 const SHOT_WAIT = 300;
 
@@ -831,8 +844,10 @@ function tickShot(state: GameState, i: number, input: PlayerInput): PlayerInput 
   // a shot asked for with the stick at rest: take the steps to the ball for you
   if (meet && Math.abs(input.mx) < 0.2 && Math.abs(input.mz) < 0.2) {
     const s = sgn(p.team);
-    // stand a little to the side so it comes onto the paddle, not the body
-    const wantX = meet.x - s * 0.9;
+    // stand a little to the side so it comes onto the paddle, not the body: forehand
+    // unless it's clearly coming to the other side, then set up for the backhand
+    const fore = (meet.x - p.x) * s > -0.6;
+    const wantX = meet.x - s * 0.9 * (fore ? 1 : -1);
     const dx = wantX - p.x;
     const dz = meet.z - p.z;
     const d = Math.hypot(dx, dz);
@@ -880,6 +895,9 @@ export function step(prev: GameState, inputs: PlayerInput[]): GameState {
       p.fire -= 100 / (FIRE_SECONDS * HZ);
       if (p.fire <= 0) { putOut(state, i, 0); call(state, 'cooled', i); }
     }
+
+    // forehand or backhand, from where the ball will be when the paddle comes through
+    if (wasIdle && p.swingT === 0) p.backhand = state.phase === 'rally' && backhandSide(state, i);
 
     if (state.phase === 'serve' && serving && wasIdle && p.swingT === 0) {
       if (state.phaseTicks < SERVE_READY) {

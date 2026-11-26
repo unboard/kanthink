@@ -1251,6 +1251,8 @@ export interface PoseInput {
   action: FigureAction;
   /** 0..1 through the action */
   phase: number;
+  /** a swing on the backhand side */
+  backhand?: boolean;
   /** feet off the ground */
   air: number;
   /** a rally is on: stand ready on the balls of your feet */
@@ -1341,7 +1343,29 @@ export function poseFigure(f: Figure, o: PoseInput) {
 
   const a = o.phase;
   switch (o.action) {
-    case 'swing': {
+    case 'swing': if (o.backhand) {
+      // backhand: turn the paddle shoulder toward the net, take it back across the body
+      // to the left hip, then swing out and through to the right
+      rate = 34;
+      const back = ramp(a, 0, 0.22);
+      const thru = ramp(a, 0.22, 0.5);
+      const rec = ramp(a, 0.62, 1);
+      const w = thru * (1 - rec);
+      p.spY = mix(0.8 * back, -0.45, thru) * (1 - rec);
+      p.sRx = mix(mix(0.5, 0.55, back), 1.35, thru);
+      p.sRz = mix(mix(0.3, -0.55, back), 1.2, thru);
+      p.sRy = mix(mix(0, 0.5, back), 0.7, thru);
+      p.eR = mix(mix(1.25, 1.55, back), 0.2, thru);
+      p.sRx = mix(p.sRx, 0.55, rec); p.sRz = mix(p.sRz, 0.3, rec); p.sRy = mix(p.sRy, 0, rec); p.eR = mix(p.eR, 1.25, rec);
+      // the free hand steadies the paddle on the way back, then opens out behind
+      p.sLx = mix(mix(0.55, 0.8, back), 0.2, thru) * (1 - rec) + 0.55 * rec;
+      p.sLz = mix(mix(-0.3, 0.25, back), -0.9, thru) * (1 - rec) - 0.3 * rec;
+      p.eL = mix(1.25, 1.5, back) * (1 - w) + 0.6 * w;
+      p.spX -= 0.12 * w;
+      p.hLx += 0.25 * w; p.kL -= 0.2 * w;
+      p.hdY = -p.spY * 0.6;
+      break;
+    } else {
       // forehand: turn and take the paddle back, then whip through and across
       rate = 34;
       const back = ramp(a, 0, 0.22);

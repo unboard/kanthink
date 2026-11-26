@@ -28,6 +28,9 @@ tiers, family moments) came from a Gemini 4 Neon design pass and are noted where
   drops mid-game is covered by a bot until they're back.
 - While swinging: left/right aims, up dinks into the kitchen, down lobs. Timing and where
   the ball is relative to your body bend the shot.
+- Forehand or backhand is picked from where the ball will meet you: on your left it's a
+  backhand. When the shot pad walks you to the ball, it sets you up on whichever side the
+  ball is already coming.
 
 - **Shot pad** (phones, the right stick, I J K L U O): tap to hit, swipe up to drive (tilt
   to aim), flick up to dink, swipe down to lob. Ask early; the swing is timed for you as

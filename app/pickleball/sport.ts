@@ -84,6 +84,8 @@ export interface FigurePose {
   /** feet off the ground */
   air: number;
   chef: boolean;
+  /** a swing taken on the backhand side */
+  backhand?: boolean;
 }
 
 export interface Award {

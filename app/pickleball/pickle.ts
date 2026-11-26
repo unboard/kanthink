@@ -120,7 +120,7 @@ export const PICKLEBALL: Sport<GameState> = {
 
   pose(state, i) {
     const p = state.players[i];
-    return { action: p.swingT >= 0 ? 'swing' : 'none', phase: p.swingT >= 0 ? p.swingT / SWING_TOTAL : 0, air: 0, chef: p.chefUntil > state.tick };
+    return { action: p.swingT >= 0 ? 'swing' : 'none', phase: p.swingT >= 0 ? p.swingT / SWING_TOTAL : 0, air: 0, chef: p.chefUntil > state.tick, backhand: p.swingT >= 0 && p.backhand };
   },
   landing(state) {
     const b = state.ball;

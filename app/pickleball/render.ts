@@ -730,7 +730,7 @@ export class CourtRenderer {
       const sulk = rig.sulkAt >= 0 ? this.time - rig.sulkAt : -1;
       poseFigure(rig.fig, {
         t: rig.t, dt: frameDt, speed, fwd: lv.z, side: lv.x,
-        action: pose.action, phase: pose.phase, air: pose.air,
+        action: pose.action, phase: pose.phase, air: pose.air, backhand: !!pose.backhand,
         ready: state.phase === 'rally' || (state.phase === 'serve' && i !== state.server),
         cheer: over && p.team === state.winner ? (this.time % 3.2) : cheer,
         sulk: over && p.team !== state.winner ? Math.min(1.1, this.time % 6) : sulk,
