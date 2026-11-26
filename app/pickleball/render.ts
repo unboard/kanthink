@@ -586,6 +586,18 @@ export class CourtRenderer {
       const bz = Math.max(-8, Math.min(8, b.z * 0.25));
       this.camPosTarget.set((HW + 26 + (vb ? 5 : 0)) * pull, (24 + (vb ? 4 : 0)) * pull, bz);
       this.camLookTarget.set(0, vb ? 3 : 0, bz * 0.6);
+    } else if (sport.id === 'soccer') {
+      // A running game on a long pitch: the camera rides up and down behind your side,
+      // between your player and the ball, close enough to see feet and angles.
+      const s = sgn(view.team);
+      const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team).slice(0, 1);
+      const fx = focus.reduce((acc, i) => acc + (state.players[i]?.x ?? 0), 0) / Math.max(1, focus.length);
+      const fz = focus.reduce((acc, i) => acc + (state.players[i]?.z ?? 0), 0) / Math.max(1, focus.length);
+      const bx = Math.max(-HW, Math.min(HW, b.x));
+      const bz = Math.max(-HL - 3, Math.min(HL + 3, b.z));
+      const mid = fz * 0.5 + bz * 0.5;
+      this.camPosTarget.set(fx * 0.35 + bx * 0.25, 21 * pull + Math.min(5, b.y * 0.3), mid + s * 22 * pull);
+      this.camLookTarget.set(fx * 0.3 + bx * 0.4, 1 + Math.min(4, b.y * 0.3), mid - s * 7);
     } else {
       const s = sgn(view.team);
       const focus = view.focus.length ? view.focus : state.players.map((_, i) => i).filter((i) => state.players[i].team === view.team);
@@ -603,7 +615,7 @@ export class CourtRenderer {
       const air = focus.reduce((m, i) => Math.max(m, state.players[i]?.y ?? 0), 0);
       this.lift += ((vb && air > 1 ? Math.min(1, air / 5) : 0) - this.lift) * Math.min(1, frameDt * 5);
       // soccer's pitch is as big as volleyball's court, so it sits back as far
-      const big = vb || sport.id === 'soccer';
+      const big = vb;
       const nr = this.near * (big ? 0.32 : 0.22) + this.lift * 0.18;
       const bx = Math.max(-HW, Math.min(HW, b.x));
       const bzc = Math.max(-HL, Math.min(HL, b.z));

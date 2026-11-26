@@ -206,6 +206,11 @@ export class Controller {
     return botCharacter(seat, this.sport.botNames);
   }
 
+  /** a goalkeeper: nobody's pick, played by the game, in a keeper's bright kit */
+  private keeperChar(i: number): Character {
+    return { ...botCharacter(i + 5, ['Keeper']), id: `keeper${i}`, name: 'Keeper', primary: i % 2 ? '#a3e635' : '#facc15', hair: 'buzz', accessory: 'none' };
+  }
+
   /** move the game somewhere else; in a room only the host can */
   setVenue(venue: VenueId) {
     if (this.mode === 'guest') return;
@@ -699,7 +704,8 @@ export class Controller {
       if (this.mode === 'host' && playing) this.net?.maybeSendSnapshot(this.state, now);
     }
 
-    this.renderer.setRoster(this.chars.slice(0, this.view.players.length), this.view.players.map((p) => p.team));
+    // a sport can field players nobody picked (soccer's keepers): they get a kit of their own
+    this.renderer.setRoster(this.view.players.map((_, i) => this.chars[i] ?? this.keeperChar(i)), this.view.players.map((p) => p.team));
     this.hearCalls(this.view, now);
     this.playSounds(this.view);
     this.highFive(this.view);
@@ -743,7 +749,7 @@ export class Controller {
   }
 
   private nameOf(i: number): string {
-    return this.chars[i]?.name ?? 'Player';
+    return this.chars[i]?.name ?? (i >= this.chars.length ? 'Keeper' : 'Player');
   }
 
   private hearCalls(s: GameState, now: number) {
@@ -834,7 +840,8 @@ export class Controller {
       venue: this.venue,
       touch: [...this.locals.values()].includes('touch'),
       ready: this.readyFor(localSeats),
-      players: s.players.map((p, i) => ({
+      // the people and bots in the seats (not a sport's extra players, like keepers)
+      players: s.players.slice(0, this.chars.length || s.players.length).map((p, i) => ({
         name: this.nameOf(i),
         team: p.team,
         heat: Math.round(p.heat),

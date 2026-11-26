@@ -1,204 +1,180 @@
 /**
- * Soccer, played like the other court games.
+ * Soccer: arcade, small-sided, with a goalkeeper you have to beat.
  *
- * First asked for as "two goals, balls can bounce off walls, and you gotta protect your
- * goal". The first build was a running game over the whole pitch; the correction was
- * "the player is restricted to their side, just that square in front of the goal, and
- * kicks it to the other goal: straight, up in the air, off the wall". These pin that:
- * the boxes, the walls, the goals, the kinds of kick, protecting the goal, and that bot
- * games play out and end.
+ * Third version. The first was a running game with no keeper (too easy); the second kept
+ * each side in a box in front of its own goal ("just boring: such a distance, you can't
+ * really angle anything"). This one is built around the keeper, like the arcade soccer
+ * people love: a shot at the keeper is saved, and scoring is placement and pace, in the
+ * corners, curled round it, chipped over it when it comes out, first time before it's set.
+ * These pin those, plus the walls, the goals, and that bot games play out and end.
  */
 import { describe, it, expect } from 'vitest'
 import {
-  BALL_R, GAME_TO, GOAL_HALF, HALF_LENGTH, HALF_WIDTH, HZ, IDLE, ZONE_DEPTH, ZONE_HALF, createGame, inZone, step, stepBall,
+  BALL_R, GAME_TO, GOAL_HALF, HALF_LENGTH, HALF_WIDTH, HZ, IDLE, createGame, keeperOf, step, stepBall,
   type GameState, type PlayerInput, type Shot,
 } from '../app/soccer/sim'
 import { botInput } from '../app/soccer/bot'
 import { SOCCER } from '../app/soccer/football'
 
+const ball = (o: Partial<GameState['ball']>): GameState['ball'] => ({ x: 0, y: BALL_R, z: 0, vx: 0, vy: 0, vz: 0, curl: 0, hot: false, super: false, ...o })
 const idle = (s: GameState): PlayerInput[] => s.players.map(() => ({ ...IDLE }))
-
-function runUntil(s: GameState, done: (s: GameState) => boolean, max: number, f?: (s: GameState) => PlayerInput[]): GameState {
-  for (let k = 0; k < max && !done(s); k++) s = step(s, f ? f(s) : idle(s))
+function run(s: GameState, ticks: number, f?: (s: GameState) => PlayerInput[]) {
+  for (let k = 0; k < ticks && s.phase === 'rally'; k++) s = step(s, f ? f(s) : idle(s))
   return s
 }
 
-const only = (i: number, input: PlayerInput) => (s: GameState) => s.players.map((_, k) => (k === i ? input : { ...IDLE }))
-const kickWith = (shot?: Shot): PlayerInput => ({ mx: 0, mz: 0, swing: true, ...(shot ? { shot } : {}) })
-
-/** player 0 (team 0, attacking -z) with the ball at their feet, the rally on */
-function withBall(format: 'singles' | 'doubles' = 'singles'): GameState {
-  let s = createGame(7, { format, traits: [], firstTeam: 0 })
-  expect(s.owner).toBe(0)
-  return s
+/**
+ * Player 0 (team 0, shooting at the goal at -z) on the ball `dist` feet out, the keeper
+ * settled, then one shot. Returns whether it went in.
+ */
+function attempt(seed: number, dist: number, shot: Shot, x0 = 0): 'goal' | 'saved' | 'missed' {
+  let s = createGame(seed, { format: 'singles', traits: [], firstTeam: 0 })
+  s = { ...s, phase: 'rally' }
+  const p = s.players[0]
+  p.x = x0; p.z = -HALF_LENGTH + dist; p.fx = 0; p.fz = -1
+  s.owner = 0
+  s.ball = ball({ x: x0, z: p.z - 1.6 })
+  s.players[1].x = 18; s.players[1].z = 30
+  for (let k = 0; k < 90; k++) s = step(s, idle(s))
+  const k = keeperOf(s, 1)
+  const saves = s.players[k].stats.saves
+  s = step(s, s.players.map((_, i) => (i === 0 ? { mx: 0, mz: 0, swing: true, shot } : { ...IDLE })))
+  s = run(s, 240)
+  if (s.scores[0] > 0) return 'goal'
+  return s.players[k].stats.saves > saves ? 'saved' : 'missed'
+}
+const rate = (dist: number, shot: Shot) => {
+  let goals = 0
+  for (let seed = 1; seed <= 30; seed++) if (attempt(seed, dist, shot, ((seed % 5) - 2) * 4) === 'goal') goals += 1
+  return goals / 30
 }
 
-describe('each side keeps to its box', () => {
-  it('running toward the other goal stops at the front of your box', () => {
-    let s = createGame(3, { format: 'singles', traits: [], firstTeam: 1 })
-    s = runUntil(s, () => false, HZ * 4, only(0, { mx: 0, mz: 1, swing: false }))
-    const p = s.players[0]
-    expect(inZone(0, p.x, p.z)).toBe(true)
-    expect(p.z).toBeCloseTo(HALF_LENGTH - ZONE_DEPTH, 1)
+describe('the keeper', () => {
+  it('saves a shot hit straight at it', () => {
+    expect(rate(22, { act: 'jump', ax: 0, az: 0 })).toBeLessThan(0.15)
   })
 
-  it('and sideways stops at its edge, well short of the wall', () => {
-    let s = createGame(3, { format: 'singles', traits: [], firstTeam: 1 })
-    s = runUntil(s, () => false, HZ * 4, only(0, { mx: 1, mz: 0, swing: false }))
-    expect(s.players[0].x).toBeCloseTo(ZONE_HALF, 1)
-    expect(ZONE_HALF).toBeLessThan(HALF_WIDTH)
+  it('is beaten in the corners often, but not always', () => {
+    const r = rate(22, { act: 'jump', ax: 1, az: 0 })
+    expect(r).toBeGreaterThan(0.3)
+    expect(r).toBeLessThan(0.85)
   })
 
-  it('a ball left dead in the middle rolls to a side that can play it', () => {
-    let s = createGame(3, { format: 'singles', traits: [], firstTeam: 1 })
-    s = { ...s, phase: 'rally', owner: -1, lastHitter: 1 }
-    s.ball = { x: 2, y: BALL_R, z: 0, vx: 0, vy: 0, vz: 0, hot: false, super: false }
-    s = runUntil(s, (x) => inZone(0, x.ball.x, x.ball.z) || inZone(1, x.ball.x, x.ball.z), HZ * 6)
-    // team 1 played it last, so it goes to team 0
-    expect(inZone(0, s.ball.x, s.ball.z)).toBe(true)
+  it('closer is easier, further is harder', () => {
+    expect(rate(14, { act: 'jump', ax: 1, az: 0 })).toBeGreaterThan(rate(30, { act: 'jump', ax: 1, az: 0 }))
+  })
+
+  it('a chip beats a keeper that has come out, but not one on its line', () => {
+    expect(rate(14, { act: 'jump', ax: 0, az: 1 })).toBeGreaterThan(0.5)
+    expect(rate(30, { act: 'jump', ax: 0, az: 1 })).toBeLessThan(0.2)
+  })
+
+  it('a curler bends round it from the edge of the box', () => {
+    expect(rate(22, { act: 'pass', ax: 1, az: 0 })).toBeGreaterThan(0.4)
+  })
+
+  it('catches what it reaches, then throws it out long', () => {
+    let s = createGame(5, { format: 'singles', traits: [], firstTeam: 0 })
+    s = { ...s, phase: 'rally', owner: -1 }
+    const k = keeperOf(s, 1)
+    s.ball = ball({ x: s.players[k].x, y: 2, z: s.players[k].z + 10, vz: -25 })
+    s.shooter = 0
+    s.lastHitter = 0
+    s.hitTick = s.tick - 60
+    s = run(s, HZ, )
+    expect([k, -1]).toContain(s.owner)
+    s = run(s, HZ * 2)
+    // it came out of the area
+    expect(Math.abs(s.ball.z)).toBeLessThan(HALF_LENGTH - 6)
   })
 })
 
 describe('the walls and the goals', () => {
   it('a ball sent at the side boards comes back', () => {
-    const b = { x: HALF_WIDTH - 3, y: BALL_R, z: 0, vx: 40, vy: 0, vz: 0, hot: false, super: false }
+    const b = ball({ x: HALF_WIDTH - 3, vx: 40 })
     let hit = false
     for (let k = 0; k < HZ; k++) hit = stepBall(b).wall || hit
     expect(hit).toBe(true)
     expect(b.vx).toBeLessThan(0)
   })
 
-  it('the end boards beside the goal send it back, the goal mouth lets it in', () => {
-    const wide = { x: GOAL_HALF + 4, y: BALL_R, z: -HALF_LENGTH + 3, vx: 0, vy: 0, vz: -40, hot: false, super: false }
+  it('the end boards beside the goal send it back, the mouth lets it in', () => {
+    const wide = ball({ x: GOAL_HALF + 4, z: -HALF_LENGTH + 3, vz: -40 })
     for (let k = 0; k < HZ / 2; k++) stepBall(wide)
     expect(wide.vz).toBeGreaterThan(0)
-    const onTarget = { x: 0, y: BALL_R, z: -HALF_LENGTH + 3, vx: 0, vy: 0, vz: -40, hot: false, super: false }
-    for (let k = 0; k < HZ / 2; k++) stepBall(onTarget)
-    expect(onTarget.z).toBeLessThan(-HALF_LENGTH)
-  })
-
-  it('an undefended drive from your box scores at the other end, and they kick off next', () => {
-    let s = withBall()
-    s.players[1].x = 14 // their keeper out of the way
-    s = step(s, only(0, kickWith())(s))
-    s = runUntil(s, (x) => x.phase !== 'rally', HZ * 4)
-    expect(s.scores).toEqual([1, 0])
-    s = runUntil(s, (x) => x.phase === 'serve', HZ * 4)
-    expect(s.servingTeam).toBe(1)
-    expect(s.owner).toBe(s.server)
+    const on = ball({ z: -HALF_LENGTH + 3, vz: -40 })
+    for (let k = 0; k < HZ / 2; k++) stepBall(on)
+    expect(on.z).toBeLessThan(-HALF_LENGTH)
   })
 
   it('first to five wins', () => {
-    let s = withBall()
+    let s = createGame(7, { format: 'singles', traits: [], firstTeam: 0 })
+    const k = keeperOf(s, 1)
     for (let g = 0; g < GAME_TO; g++) {
       s = { ...s, phase: 'rally', owner: -1 }
-      s.ball = { x: 0, y: BALL_R, z: -HALF_LENGTH + 3, vx: 0, vy: 0, vz: -45, hot: false, super: false }
+      s.players[k].x = 6
+      s.ball = ball({ x: -3, z: -HALF_LENGTH + 3, vz: -45 })
       s.lastHitter = 0
-      s = runUntil(s, (x) => x.phase === 'serve' || x.phase === 'over', HZ * 5)
+      for (let t = 0; t < HZ * 5 && s.phase !== 'serve' && s.phase !== 'over'; t++) s = step(s, idle(s))
     }
     expect(s.phase).toBe('over')
     expect(s.winner).toBe(0)
   })
 })
 
-describe('the kicks', () => {
-  const first = (shot?: Shot) => step(withBall(), only(0, kickWith(shot))(withBall()))
-
-  it('a tap drives it low along the ground', () => {
-    const s = first({ act: 'pass', ax: 0, az: 0 })
-    expect(s.lastKick).toBe('drive')
-    expect(s.ball.vz).toBeLessThan(-40)
-    expect(s.ball.vy).toBeLessThan(2)
+describe('the controls', () => {
+  it('running into the ball takes it, and it stays at your feet', () => {
+    let s = createGame(3, { format: 'singles', traits: [], firstTeam: 0 })
+    s = { ...s, phase: 'rally' }
+    s.ball = ball({ z: 6 })
+    s.players[0].x = 0; s.players[0].z = 12
+    const go = (x: GameState) => x.players.map((_, i) => (i === 0 ? { mx: 0, mz: 1, swing: false } : { ...IDLE }))
+    for (let k = 0; k < HZ * 2 && s.owner !== 0; k++) s = step(s, go(s))
+    expect(s.owner).toBe(0)
+    s = run(s, HZ / 2, go)
+    expect(Math.hypot(s.ball.x - s.players[0].x, s.ball.z - s.players[0].z)).toBeLessThan(2.5)
   })
 
-  it('a short flick lobs it high', () => {
-    const s = first({ act: 'jump', ax: 0, az: 1 })
-    expect(s.lastKick).toBe('lob')
-    expect(s.ball.vy).toBeGreaterThan(20)
+  it('a swipe down slide-tackles the ball off them', () => {
+    let s = createGame(3, { format: 'singles', traits: [], firstTeam: 0 })
+    s = { ...s, phase: 'rally', owner: 1 }
+    s.players[1].x = 0; s.players[1].z = 0; s.players[1].fz = 1
+    s.players[0].x = 0; s.players[0].z = 6
+    s.ball = ball({ z: 1.6 })
+    s = step(s, s.players.map((_, i) => (i === 0 ? { mx: 0, mz: 0, swing: true, shot: { act: 'dive', ax: 0, az: -1 } } : { ...IDLE })))
+    for (let k = 0; k < HZ / 2 && s.players[0].stats.tackles === 0; k++) s = step(s, idle(s))
+    expect(s.players[0].stats.tackles).toBe(1)
+    expect(s.owner).not.toBe(1)
+    // and only once, however long it lies there
+    s = run(s, HZ * 2)
+    expect(s.players[0].stats.tackles).toBe(1)
   })
 
-  it('a sideways swipe banks it off that wall', () => {
-    let s = first({ act: 'pass', ax: 1, az: 0 })
-    expect(s.lastKick).toBe('bank')
-    // team 0's right is +x: it heads for the right wall first
-    expect(s.ball.vx).toBeGreaterThan(10)
-    s = runUntil(s, (x) => x.wallHits > 0 || x.phase !== 'rally', HZ * 3)
-    expect(s.wallHits).toBeGreaterThan(0)
-  })
-
-  it('a kick swiped before the ball arrives strikes it first time', () => {
-    let s = withBall()
-    s = { ...s, phase: 'rally', owner: -1 }
-    const p = s.players[0]
-    s.ball = { x: p.x, y: BALL_R, z: p.z - 12, vx: 0, vy: 0, vz: 20, hot: false, super: false }
-    s.lastHitter = 1
-    s = step(s, only(0, kickWith({ act: 'jump', ax: 0, az: 0 }))(s))
-    expect(s.players[0].qShot).not.toBeNull()
-    s = runUntil(s, (x) => x.lastHitter === 0, HZ)
-    expect(s.lastHitter).toBe(0)
-    expect(s.ball.vz).toBeLessThan(-30)
-  })
-
-  it('the shot pad reads swipes as soccer kicks', () => {
-    expect(SOCCER.gesture(0, 0).word).toBe('Drive')
-    expect(SOCCER.gesture(0, 120).word).toBe('Shoot')
-    expect(SOCCER.gesture(0, 30).word).toBe('Lob')
-    expect(SOCCER.gesture(120, 0).word).toBe('Bank right')
-    expect(SOCCER.gesture(0, -120).word).toBe('Dive')
-  })
-})
-
-describe('protecting your goal', () => {
-  it('a hard shot that hits you bounces off: a save', () => {
-    let s = withBall()
-    s = { ...s, phase: 'rally', owner: -1 }
-    const keeper = s.players[1]
-    keeper.x = 0
-    keeper.z = -HALF_LENGTH + 4
-    s.ball = { x: 0, y: 1.5, z: -HALF_LENGTH + 18, vx: 0, vy: 0, vz: -60, hot: false, super: false }
-    s.lastHitter = 0
-    s.shooter = 0
-    s.hitTick = s.tick - 60
-    s = runUntil(s, (x) => x.ball.vz > 0 || x.phase !== 'rally', HZ)
-    expect(s.scores).toEqual([0, 0])
-    expect(s.players[1].stats.saves).toBe(1)
-  })
-
-  it('a dive reaches a shot you could not have run to', () => {
-    let s = withBall()
-    s = { ...s, phase: 'rally', owner: -1 }
-    const keeper = s.players[1]
-    keeper.x = 0
-    keeper.z = -HALF_LENGTH + 4
-    // headed for the far post, past where the keeper stands
-    s.ball = { x: 4.5, y: 1.2, z: -HALF_LENGTH + 18, vx: 0, vy: 0, vz: -50, hot: false, super: false }
-    s.lastHitter = 0
-    s.shooter = 0
-    s.hitTick = s.tick - 60
-    s = step(s, only(1, kickWith({ act: 'dive', ax: 0, az: -1 }))(s))
-    expect(s.players[1].act).toBe('dive')
-    s = runUntil(s, (x) => x.ball.vz > 0 || x.phase !== 'rally', HZ)
-    expect(s.scores).toEqual([0, 0])
+  it('the shot pad names the finish', () => {
+    expect(SOCCER.gesture(0, 0).word).toBe('Low shot')
+    expect(SOCCER.gesture(80, 100).word).toBe('Corner right')
+    expect(SOCCER.gesture(-90, 160).word).toBe('Top left')
+    expect(SOCCER.gesture(0, 30).word).toBe('Chip')
+    expect(SOCCER.gesture(120, 0).word).toBe('Curl right')
+    expect(SOCCER.gesture(0, -120).word).toBe('Tackle')
   })
 })
 
 describe('bots', () => {
-  it('bot games play like soccer and finish', () => {
+  it('bot games play out and finish', () => {
     let finished = 0
     let goals = 0
     for (const format of ['singles', 'doubles'] as const) {
       for (let g = 0; g < 3; g++) {
         let s = createGame(100 + g, { format, traits: [] })
-        for (let k = 0; k < HZ * 60 * 8 && s.phase !== 'over'; k++) {
-          s = step(s, s.players.map((_, i) => botInput(s, i, { tier: 'club', humans: [] })))
-        }
+        for (let k = 0; k < HZ * 60 * 8 && s.phase !== 'over'; k++) s = step(s, s.players.map((_, i) => botInput(s, i, { tier: 'club', humans: [] })))
         goals += s.scores[0] + s.scores[1]
         if (s.phase === 'over') finished += 1
       }
     }
     expect(goals).toBeGreaterThan(20)
     expect(finished).toBeGreaterThanOrEqual(5)
-  }, 120_000)
+  }, 180_000)
 
   it('the same inputs give the same game', () => {
     const play = () => {
