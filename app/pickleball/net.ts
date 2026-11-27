@@ -29,7 +29,8 @@ export interface WireInput {
 }
 
 export interface Seat {
-  kind: 'human' | 'bot' | 'open';
+  /** invite: kept for someone the host sent a link to, with the player the host made for them */
+  kind: 'human' | 'bot' | 'open' | 'invite';
   /** presence member id of the browser playing it; the host's own id for the host */
   owner: string | null;
   char: Character | null;
@@ -47,13 +48,15 @@ export interface Lobby {
   /** which game this room is playing, and where */
   sport: 'pickleball' | 'volleyball' | 'soccer';
   venue: VenueId;
+  /** start the moment everyone invited is here */
+  auto?: boolean;
 }
 
 export interface NetEvents {
   onStatus: (status: NetStatus) => void;
   /** guests currently in the room (host side), or whether the host is here (guest side) */
   onMembers: (guests: string[], hostHere: boolean) => void;
-  onHello?: (from: string, chars: Character[]) => void;
+  onHello?: (from: string, chars: Character[], seat: number | null) => void;
   onLobby?: (lobby: Lobby) => void;
   onSnapshot?: (state: BaseState) => void;
   onInput?: (from: string, inputs: WireInput[]) => void;
@@ -101,8 +104,9 @@ export function sanitizeLobby(v: unknown): Lobby | null {
     game: clampInt(o.game, 0, 1e9),
     sport: o.sport === 'volleyball' || o.sport === 'soccer' ? o.sport : 'pickleball',
     venue: isVenue(o.venue) ? o.venue : 'park',
+    auto: Boolean(o.auto),
     seats: o.seats.map((s) => ({
-      kind: s?.kind === 'human' || s?.kind === 'bot' ? s.kind : 'open',
+      kind: s?.kind === 'human' || s?.kind === 'bot' || s?.kind === 'invite' ? s.kind : 'open',
       owner: typeof s?.owner === 'string' ? s.owner.slice(0, 40) : null,
       char: s?.char ? sanitize(s.char) : null,
       tier: s?.tier === 'chill' || s?.tier === 'champ' ? s.tier : 'club',
@@ -244,10 +248,12 @@ export class RoomNet {
       const lobby = sanitizeLobby(data);
       if (lobby) this.events.onLobby?.(lobby);
     });
-    ch.bind('client-hello', (data: { chars?: unknown[] }, meta?: { user_id?: string }) => {
+    ch.bind('client-hello', (data: { chars?: unknown[]; seat?: unknown }, meta?: { user_id?: string }) => {
       if (role !== 'host' || roleOfMember(from(meta)) !== 'guest') return;
       const chars = (Array.isArray(data?.chars) ? data.chars : []).slice(0, 2).map(sanitize).filter((c): c is Character => c !== null);
-      if (chars.length) this.events.onHello?.(from(meta), chars);
+      const seat = typeof data?.seat === 'number' ? clampInt(data.seat, 0, 3) : null;
+      // no player and no spot is fine too: the host finds them one
+      this.events.onHello?.(from(meta), chars, seat);
     });
     ch.bind('client-input', (data: { i?: Partial<WireInput>[] }, meta?: { user_id?: string }) => {
       if (role !== 'host' || roleOfMember(from(meta)) !== 'guest') return;
@@ -289,11 +295,11 @@ export class RoomNet {
     return this.role === 'host' ? this.guests.size > 0 : !!this.hostId;
   }
 
-  /** guest: who I am and who I'm bringing */
-  sendHello(chars: Character[]) {
+  /** guest: who I am and who I'm bringing, or the spot my invite link was for */
+  sendHello(chars: Character[], seat: number | null = null) {
     if (!this.ready()) return;
     this.take(performance.now());
-    this.channel!.trigger('client-hello', { chars: chars.slice(0, 2) });
+    this.channel!.trigger('client-hello', { chars: chars.slice(0, 2), ...(seat !== null ? { seat } : {}) });
   }
 
   /** host: the lobby, whenever it changes (rare; never dropped) */

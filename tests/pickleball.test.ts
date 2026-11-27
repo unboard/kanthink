@@ -374,6 +374,11 @@ describe('play styles', () => {
     expect(c.number).toBe(99);
     expect(sanitizeLobby({ seats: [{ kind: 'human', char: { name: 'A' } }] })).toBeNull();
     expect(sanitizeLobby({ format: 'doubles', seats: [{}, {}, {}, {}] })?.seats.every((s) => s.kind === 'open')).toBe(true);
+    // a spot kept for an invited friend survives the wire, with the player made for them
+    const inv = sanitizeLobby({ format: 'singles', auto: true, seats: [{ kind: 'human' }, { kind: 'invite', char: { name: 'Mia' } }] });
+    expect(inv?.auto).toBe(true);
+    expect(inv?.seats[1].kind).toBe('invite');
+    expect(inv?.seats[1].char?.name).toBe('Mia');
   });
 
   it('everyone gets a different award', () => {

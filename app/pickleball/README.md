@@ -23,9 +23,12 @@ tiers, family moments) came from a Gemini 4 Neon design pass and are noted where
   - Two people: WASD + Space, and arrows + Enter. Gamepads: stick or d-pad, A to swing.
   - People on opposite teams on one screen get a side ("broadcast") view, and the keys
     follow the screen.
-- **Online:** one computer hosts and gets a code; up to three more join (each can bring
-  two players). The host arranges teams and starts. Empty seats get bots; someone who
-  drops mid-game is covered by a bot until they're back.
+- **Online (Play a friend online):** the host picks 1 v 1 or 2 v 2 and sets every spot:
+  themselves, a bot, or a friend, with the player the host picks or makes for them. Each
+  friend gets a link (`?room=CODE&seat=N`) that drops them straight into that spot, with
+  nothing to choose, and the game starts the moment everyone invited is in (or the host
+  starts it and bots fill in). The old way still works: "Join with a code" seats you in the
+  next free spot. Someone who drops mid-game is covered by a bot until they're back.
 - While swinging: left/right aims, up dinks into the kitchen, down lobs. Timing and where
   the ball is relative to your body bend the shot.
 - Forehand or backhand is picked from where the ball will meet you: on your left it's a

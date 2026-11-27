@@ -41,6 +41,13 @@ export interface LocalPlayer {
   device: Device;
 }
 
+/** a spot in a room the host has laid out: theirs, a friend's (with the player made for them), or a bot */
+export interface RoomSpot {
+  kind: 'me' | 'invite' | 'bot';
+  char?: Character | null;
+  tier?: BotTier;
+}
+
 export interface SeatPlan {
   kind: 'human' | 'bot';
   char: Character | null;
@@ -166,6 +173,8 @@ export class Controller {
   private guests: string[] = [];
   private hostHere = false;
   private myLocals: LocalPlayer[] = [];
+  /** a guest who came in on an invite link brings no player, just a way to play */
+  private guestDevice: Device = 'keys';
   private remote = new Map<number, { input: PlayerInput; sw: number; latched: boolean; shot?: Shot }>();
   private rematchAsks = new Set<string>();
 
@@ -268,36 +277,57 @@ export class Controller {
 
   // ————— online —————
 
-  hostRoom(code: string, format: Format, players: LocalPlayer[]) {
+  /**
+   * Open a room. With `layout`, the host has said who goes where: a spot is the host's
+   * own player, a bot, or kept for a friend (with the player made for them) who gets a
+   * link to exactly that spot. Such a room starts by itself once every friend is in.
+   */
+  hostRoom(code: string, format: Format, players: LocalPlayer[], layout?: Array<RoomSpot>) {
     this.leaveNet();
     this.sfx.unlock();
     this.mode = 'host';
     this.format = format;
-    this.myLocals = players.slice(0, format === 'doubles' ? 2 : 1);
     const id = `h_${stableClientId()}`;
-    const seats: Seat[] = teamsFor(format).map(() => ({ kind: 'open', owner: null, char: null, tier: 'club', away: false }));
-    // the host's players take team 0 (two of them share it in doubles)
-    this.myLocals.forEach((lp, k) => { seats[k] = { kind: 'human', owner: id, char: lp.char, tier: 'club', away: false }; });
-    this.lobby = { format, seats, started: false, game: 0, sport: this.sport.id, venue: this.venue };
+    let seats: Seat[];
+    if (layout) {
+      this.myLocals = players.slice(0, 1);
+      seats = teamsFor(format).map((_, i) => {
+        const spot = layout[i];
+        if (spot?.kind === 'me') return { kind: 'human', owner: id, char: this.myLocals[0]?.char ?? this.bot(i), tier: 'club', away: false };
+        if (spot?.kind === 'invite') return { kind: 'invite', owner: null, char: spot.char ?? this.bot(i), tier: spot.tier ?? 'club', away: false };
+        return { kind: 'bot', owner: null, char: this.bot(i), tier: spot?.tier ?? 'club', away: false };
+      });
+    } else {
+      this.myLocals = players.slice(0, format === 'doubles' ? 2 : 1);
+      seats = teamsFor(format).map(() => ({ kind: 'open', owner: null, char: null, tier: 'club', away: false }));
+      // the host's players take team 0 (two of them share it in doubles)
+      this.myLocals.forEach((lp, k) => { seats[k] = { kind: 'human', owner: id, char: lp.char, tier: 'club', away: false }; });
+    }
+    this.lobby = { format, seats, started: false, game: 0, sport: this.sport.id, venue: this.venue, auto: !!layout };
     this.guests = [];
     this.rematchAsks.clear();
     this.status = 'connecting';
     this.net = new RoomNet(code, 'host', stableClientId(), players[0]?.char.name ?? 'Host', {
       onStatus: (s) => { this.status = s; },
       onMembers: (guests) => this.membersChanged(guests),
-      onHello: (from, chars) => this.hello(from, chars),
+      onHello: (from, chars, seat) => this.hello(from, chars, seat),
       onInput: (from, list) => this.receiveInput(from, list),
       onRematch: (from) => { this.rematchAsks.add(from); },
       onFatal: (msg) => { this.startAttract(); this.onFatal(msg); },
     });
     this.lobbyChanged();
+    // nobody to wait for: play
+    if (layout && !seats.some((x) => x.kind === 'invite')) this.startOnlineGame();
   }
 
-  joinRoom(code: string, players: LocalPlayer[]) {
+  /** `seat`: the spot an invite link was for; the host has already made the player in it */
+  joinRoom(code: string, players: LocalPlayer[], seat: number | null = null, device: Device = 'keys') {
     this.leaveNet();
     this.sfx.unlock();
     this.mode = 'guest';
     this.myLocals = players.slice(0, 2);
+    this.guestDevice = device;
+    const hi = () => net.sendHello(seat !== null ? [] : this.myLocals.map((p) => p.char), seat);
     this.lobby = null;
     this.status = 'connecting';
     this.own.clear();
@@ -305,12 +335,12 @@ export class Controller {
     const net = new RoomNet(code, 'guest', stableClientId(), players[0]?.char.name ?? 'Guest', {
       onStatus: (s) => {
         this.status = s;
-        if (s === 'connected') net.sendHello(this.myLocals.map((p) => p.char));
+        if (s === 'connected') hi();
       },
       onMembers: (_g, hostHere) => {
         const back = hostHere && !this.hostHere;
         this.hostHere = hostHere;
-        if (back) net.sendHello(this.myLocals.map((p) => p.char));
+        if (back) hi();
       },
       onLobby: (lobby) => this.receiveLobby(lobby),
       onSnapshot: (s) => this.receiveSnapshot(s),
@@ -324,20 +354,31 @@ export class Controller {
   }
 
   /** host: a guest arrived with their characters; seat them (or welcome them back) */
-  private hello(from: string, chars: Character[]) {
+  private hello(from: string, chars: Character[], want: number | null = null) {
     if (!this.lobby) return;
     const seats = this.lobby.seats;
     const mine = seats.map((s, i) => (s.owner === from ? i : -1)).filter((i) => i >= 0);
     if (mine.length) {
       mine.forEach((i, k) => { seats[i] = { ...seats[i], kind: 'human', char: chars[k] ?? seats[i].char, away: false }; });
+    } else if (want !== null && seats[want] && seats[want].kind !== 'human') {
+      // an invite link: straight into the spot it was for, as the player made for them
+      seats[want] = { kind: 'human', owner: from, char: chars[0] ?? seats[want].char ?? this.bot(want), tier: seats[want].tier, away: false };
     } else {
-      for (const c of chars) {
-        // an open seat first, then one a bot is keeping
-        let i = seats.findIndex((s) => s.kind === 'open');
-        if (i < 0) i = seats.findIndex((s) => s.kind === 'bot');
+      // someone with the code (or a link whose spot is taken): the next free spot
+      const free = (k: Seat['kind']) => seats.findIndex((s) => s.kind === k);
+      const take = chars.length ? chars : [null];
+      for (const c of take) {
+        let i = free('invite');
+        if (i < 0) i = free('open');
+        if (i < 0) i = free('bot');
         if (i < 0) break;
-        seats[i] = { kind: 'human', owner: from, char: c, tier: 'club', away: false };
+        seats[i] = { kind: 'human', owner: from, char: c ?? seats[i].char ?? this.bot(i), tier: 'club', away: false };
       }
+    }
+    // everyone invited is here: play
+    if (this.lobby.auto && !this.lobby.started && !seats.some((s) => s.kind === 'invite')) {
+      this.startOnlineGame();
+      return;
     }
     this.lobbyChanged();
   }
@@ -350,7 +391,7 @@ export class Controller {
       if (s.kind !== 'human' || !s.owner || s.owner === this.myId() || guests.includes(s.owner)) return;
       changed = true;
       // gone: mid-game a bot keeps the seat warm; in the lobby the seat opens up
-      this.lobby!.seats[i] = this.lobby!.started ? { ...s, away: true } : { kind: 'open', owner: null, char: null, tier: 'club', away: false };
+      this.lobby!.seats[i] = this.lobby!.started ? { ...s, away: true } : this.lobby!.auto ? { ...s, kind: 'invite', owner: null } : { kind: 'open', owner: null, char: null, tier: 'club', away: false };
       this.remote.delete(i);
     });
     for (const id of [...this.rematchAsks]) if (!guests.includes(id)) this.rematchAsks.delete(id);
@@ -394,7 +435,7 @@ export class Controller {
   backToLobby() {
     if (this.mode !== 'host' || !this.lobby) return;
     this.lobby.started = false;
-    this.lobby.seats = this.lobby.seats.map((s) => (s.kind === 'human' && s.away ? { kind: 'open', owner: null, char: null, tier: 'club', away: false } : s));
+    this.lobby.seats = this.lobby.seats.map((s) => (s.kind === 'human' && s.away ? (this.lobby!.auto ? { ...s, kind: 'invite', owner: null, away: false } : { kind: 'open', owner: null, char: null, tier: 'club', away: false }) : s));
     this.lobbyChanged();
   }
 
@@ -408,13 +449,13 @@ export class Controller {
   private adoptLobby(lobby: Lobby) {
     this.format = lobby.format;
     this.chars = lobby.seats.map((s, i) => s.char ?? this.bot(i));
-    this.bots = lobby.seats.map((s) => (s.kind === 'bot' || s.away || s.kind === 'open' ? s.tier : null));
+    this.bots = lobby.seats.map((s) => (s.kind !== 'human' || s.away ? s.tier : null));
     const me = this.myId();
     this.locals.clear();
     let k = 0;
     lobby.seats.forEach((s, i) => {
       if (s.kind === 'human' && s.owner && s.owner === me) {
-        this.locals.set(i, this.myLocals[k]?.device ?? 'keys');
+        this.locals.set(i, this.myLocals[k]?.device ?? this.guestDevice);
         k += 1;
       }
     });
